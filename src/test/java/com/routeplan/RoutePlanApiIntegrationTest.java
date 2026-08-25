@@ -82,6 +82,9 @@ class RoutePlanApiIntegrationTest {
                 .andExpect(jsonPath("$.returnArrivalTime").exists())
                 .andExpect(jsonPath("$.totalStayMinutes").value(120))
                 .andExpect(jsonPath("$.routeDataType").value("STRAIGHT_LINE_ESTIMATE"))
+                .andExpect(jsonPath("$.routeProviderCallCount").value(0))
+                .andExpect(jsonPath("$.routeMatrixElementCount").value(9))
+                .andExpect(jsonPath("$.routeMatrixBuildMillis").isNumber())
                 .andExpect(jsonPath("$.items[0].placeId").value(osakaCastleId))
                 .andExpect(jsonPath("$.items[1].placeId").value(dotonboriId));
 
@@ -310,6 +313,38 @@ class RoutePlanApiIntegrationTest {
                 .andExpect(jsonPath("$.violations[0].placeId").value(closedPlaceId))
                 .andExpect(jsonPath("$.violations[0].reason").value("CLOSED"))
                 .andExpect(jsonPath("$.violations[0].message").value("목요일 휴무 박물관은 여행일에 휴무입니다."));
+    }
+
+    @Test
+    void importsExternalPlaceIdempotentlyAndExplainsDisabledSearchProvider() throws Exception {
+        mockMvc.perform(get("/api/v1/places/search")
+                        .queryParam("query", "오사카성"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("EXTERNAL_PROVIDER_NOT_CONFIGURED"));
+
+        String body = """
+                {
+                  "externalPlaceId":"google-osaka-castle-import",
+                  "name":"오사카성 외부 검색",
+                  "latitude":34.687300,
+                  "longitude":135.526200,
+                  "category":"historical_landmark",
+                  "averageStayMinutes":120
+                }
+                """;
+        MvcResult created = mockMvc.perform(post("/api/v1/places/import")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.externalPlaceId").value("google-osaka-castle-import"))
+                .andReturn();
+        Number placeId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+        mockMvc.perform(post("/api/v1/places/import")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(placeId.longValue()));
     }
 
     private long postAndReadId(String path, String body) throws Exception {
