@@ -87,6 +87,48 @@ class ConstraintSchedulePlannerTest {
                 });
     }
 
+    @Test
+    void startsAtCurrentLocationAndReturnsToAccommodationWithNoRemainingPlaces() {
+        Location currentLocation = location(2, 2);
+        ScheduleRequest request = new ScheduleRequest(
+                VISIT_DATE,
+                LocalTime.of(12, 0),
+                LocalTime.of(13, 0),
+                currentLocation,
+                ACCOMMODATION,
+                TransportMode.WALKING,
+                OptimizationAlgorithm.NEAREST_NEIGHBOR,
+                List.of(),
+                List.of()
+        );
+
+        ConstraintSchedule result = planner.plan(request);
+
+        assertThat(result.visits()).isEmpty();
+        assertThat(result.returnTravelDistanceMeters()).isEqualTo(100);
+        assertThat(result.returnTravelMinutes()).isEqualTo(10);
+        assertThat(result.returnArrivalTime()).isEqualTo(LocalTime.of(12, 10));
+    }
+
+    @Test
+    void rejectsReturnFromCurrentLocationAfterDailyEndWithNoRemainingPlaces() {
+        ScheduleRequest request = new ScheduleRequest(
+                VISIT_DATE,
+                LocalTime.of(12, 0),
+                LocalTime.of(12, 5),
+                location(2, 2),
+                ACCOMMODATION,
+                TransportMode.WALKING,
+                OptimizationAlgorithm.NEAREST_NEIGHBOR,
+                List.of(),
+                List.of()
+        );
+
+        assertThatThrownBy(() -> planner.plan(request))
+                .isInstanceOf(InfeasibleReturnException.class)
+                .hasMessageContaining("숙소로 돌아갈 수 없습니다");
+    }
+
     private ScheduleRequest request(
             LocalTime start,
             LocalTime end,
@@ -96,6 +138,7 @@ class ConstraintSchedulePlannerTest {
                 VISIT_DATE,
                 start,
                 end,
+                ACCOMMODATION,
                 ACCOMMODATION,
                 TransportMode.WALKING,
                 OptimizationAlgorithm.NEAREST_NEIGHBOR,

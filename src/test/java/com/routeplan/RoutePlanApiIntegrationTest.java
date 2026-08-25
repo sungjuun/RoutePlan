@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -350,6 +351,165 @@ class RoutePlanApiIntegrationTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(placeId.longValue()));
+    }
+
+    @Test
+    void reoptimizesOnlyRemainingPlacesAndPreservesCompletedPrefix() throws Exception {
+        long userId = postAndReadId("/api/v1/users", """
+                {"nickname":"reoptimization-tester"}
+                """);
+        long completedPlaceId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"완료 장소 A",
+                  "latitude":34.665400,
+                  "longitude":135.501900,
+                  "averageStayMinutes":60
+                }
+                """);
+        long removedPlaceId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"삭제 장소 B",
+                  "latitude":34.665400,
+                  "longitude":135.501900,
+                  "averageStayMinutes":60
+                }
+                """);
+        long addedPlaceId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"추가 장소 C",
+                  "latitude":34.665400,
+                  "longitude":135.501900,
+                  "averageStayMinutes":60
+                }
+                """);
+        long tripId = postAndReadId("/api/v1/trips", """
+                {
+                  "userId":%d,
+                  "name":"재최적화 여행",
+                  "startDate":"2026-09-10",
+                  "endDate":"2026-09-10",
+                  "dailyStartTime":"09:00",
+                  "dailyEndTime":"20:00",
+                  "accommodationName":"난바 숙소",
+                  "accommodationLatitude":34.665400,
+                  "accommodationLongitude":135.501900,
+                  "transportMode":"WALKING"
+                }
+                """.formatted(userId));
+        addPlace(tripId, completedPlaceId);
+        addPlace(tripId, removedPlaceId);
+
+        MvcResult initialResult = mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", tripId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.generationType").value("INITIAL_OPTIMIZATION"))
+                .andExpect(jsonPath("$.parentItineraryId").doesNotExist())
+                .andExpect(jsonPath("$.items[0].status").value("PLANNED"))
+                .andExpect(jsonPath("$.items[1].status").value("PLANNED"))
+                .andReturn();
+        String initialJson = initialResult.getResponse().getContentAsString();
+        Number sourceItineraryId = JsonPath.read(initialJson, "$.itineraryId");
+        Number completedItemId = JsonPath.read(initialJson, "$.items[0].itineraryItemId");
+        String completedStartTime = JsonPath.read(initialJson, "$.items[0].startTime");
+        String completedEndTime = JsonPath.read(initialJson, "$.items[0].endTime");
+
+        mockMvc.perform(delete("/api/v1/trips/{tripId}/places/{placeId}", tripId, removedPlaceId))
+                .andExpect(status().isNoContent());
+        addPlace(tripId, addedPlaceId);
+
+        String reoptimizeBody = """
+                {
+                  "sourceItineraryId":%d,
+                  "currentTime":"11:00",
+                  "currentLatitude":34.665400,
+                  "currentLongitude":135.501900,
+                  "completedItemIds":[%d],
+                  "reason":"DELAY",
+                  "reasonDetail":"첫 장소에서 한 시간 지연"
+                }
+                """.formatted(sourceItineraryId.longValue(), completedItemId.longValue());
+        MvcResult reoptimizedResult = mockMvc.perform(
+                        post("/api/v1/trips/{tripId}/reoptimize", tripId)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(reoptimizeBody)
+                )
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.generationType").value("REOPTIMIZATION"))
+                .andExpect(jsonPath("$.parentItineraryId").value(sourceItineraryId.longValue()))
+                .andExpect(jsonPath("$.changeReason").value("DELAY"))
+                .andExpect(jsonPath("$.changeReasonDetail").value("첫 장소에서 한 시간 지연"))
+                .andExpect(jsonPath("$.reoptimizationStartTime").value("11:00:00"))
+                .andExpect(jsonPath("$.reoptimizationStartLatitude").value(34.6654))
+                .andExpect(jsonPath("$.reoptimizationStartLongitude").value(135.5019))
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].placeId").value(completedPlaceId))
+                .andExpect(jsonPath("$.items[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.items[0].startTime").value(completedStartTime))
+                .andExpect(jsonPath("$.items[0].endTime").value(completedEndTime))
+                .andExpect(jsonPath("$.items[1].placeId").value(addedPlaceId))
+                .andExpect(jsonPath("$.items[1].status").value("PLANNED"))
+                .andExpect(jsonPath("$.items[1].startTime").value("11:00:00"))
+                .andExpect(jsonPath("$.totalStayMinutes").value(120))
+                .andReturn();
+        String reoptimizedJson = reoptimizedResult.getResponse().getContentAsString();
+        Number reoptimizedItineraryId = JsonPath.read(reoptimizedJson, "$.itineraryId");
+        Number firstV2ItemId = JsonPath.read(reoptimizedJson, "$.items[0].itineraryItemId");
+        Number secondV2ItemId = JsonPath.read(reoptimizedJson, "$.items[1].itineraryItemId");
+
+        mockMvc.perform(get("/api/v1/itineraries/{itineraryId}", sourceItineraryId.longValue()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.items[0].status").value("PLANNED"))
+                .andExpect(jsonPath("$.items[1].placeId").value(removedPlaceId));
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/reoptimize", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reoptimizeBody))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("REOPTIMIZATION_SOURCE_NOT_LATEST"));
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/reoptimize", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceItineraryId":%d,
+                                  "currentTime":"13:00",
+                                  "currentLatitude":34.665400,
+                                  "currentLongitude":135.501900,
+                                  "completedItemIds":[%d],
+                                  "reason":"USER_REQUEST"
+                                }
+                                """.formatted(
+                                reoptimizedItineraryId.longValue(),
+                                secondV2ItemId.longValue()
+                        )))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("INVALID_REOPTIMIZATION_STATE"));
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/reoptimize", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceItineraryId":%d,
+                                  "currentTime":"13:00",
+                                  "currentLatitude":34.665400,
+                                  "currentLongitude":135.501900,
+                                  "completedItemIds":[%d,%d],
+                                  "reason":"USER_REQUEST",
+                                  "reasonDetail":"모든 방문 완료"
+                                }
+                                """.formatted(
+                                reoptimizedItineraryId.longValue(),
+                                firstV2ItemId.longValue(),
+                                secondV2ItemId.longValue()
+                        )))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version").value(3))
+                .andExpect(jsonPath("$.parentItineraryId").value(reoptimizedItineraryId.longValue()))
+                .andExpect(jsonPath("$.items[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.items[1].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.returnArrivalTime").value("13:00:00"));
     }
 
     private long postAndReadId(String path, String body) throws Exception {
