@@ -3,6 +3,7 @@ package com.routeplan.itinerary.domain;
 import com.routeplan.place.domain.Place;
 import com.routeplan.optimization.domain.OptimizationAlgorithm;
 import com.routeplan.optimization.constraint.ExclusionReason;
+import com.routeplan.optimization.route.RouteDataType;
 import com.routeplan.trip.domain.Trip;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -81,6 +82,19 @@ public class Itinerary {
     @Column(name = "returned_to_accommodation", nullable = false)
     private boolean returnedToAccommodation;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "route_data_type", nullable = false, length = 40)
+    private RouteDataType routeDataType;
+
+    @Column(name = "route_provider_call_count", nullable = false)
+    private int routeProviderCallCount;
+
+    @Column(name = "route_matrix_element_count", nullable = false)
+    private int routeMatrixElementCount;
+
+    @Column(name = "route_matrix_build_millis", nullable = false)
+    private long routeMatrixBuildMillis;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -107,15 +121,24 @@ public class Itinerary {
             long returnTravelDistanceMeters,
             int returnTravelMinutes,
             LocalTime returnArrivalTime,
-            boolean returnedToAccommodation
+            boolean returnedToAccommodation,
+            RouteDataType routeDataType,
+            int routeProviderCallCount,
+            int routeMatrixElementCount,
+            long routeMatrixBuildMillis
     ) {
         if (trip == null || algorithm == null) {
             throw new IllegalArgumentException("여행과 알고리즘은 필수입니다.");
         }
         if (version <= 0 || totalDistanceMeters < 0 || estimatedTravelMinutes < 0
                 || optimizationScore < 0 || totalStayMinutes < 0 || totalWaitingMinutes < 0
-                || returnTravelDistanceMeters < 0 || returnTravelMinutes < 0) {
+                || returnTravelDistanceMeters < 0 || returnTravelMinutes < 0
+                || routeProviderCallCount < 0 || routeMatrixElementCount < 0
+                || routeMatrixBuildMillis < 0) {
             throw new IllegalArgumentException("일정 버전과 이동비용이 올바르지 않습니다.");
+        }
+        if (routeDataType == null) {
+            throw new IllegalArgumentException("경로 데이터 유형은 필수입니다.");
         }
         this.trip = trip;
         this.version = version;
@@ -129,6 +152,10 @@ public class Itinerary {
         this.returnTravelMinutes = returnTravelMinutes;
         this.returnArrivalTime = returnArrivalTime;
         this.returnedToAccommodation = returnedToAccommodation;
+        this.routeDataType = routeDataType;
+        this.routeProviderCallCount = routeProviderCallCount;
+        this.routeMatrixElementCount = routeMatrixElementCount;
+        this.routeMatrixBuildMillis = routeMatrixBuildMillis;
     }
 
     public static Itinerary create(
@@ -140,7 +167,8 @@ public class Itinerary {
     ) {
         return new Itinerary(
                 trip, version, algorithm, totalDistanceMeters, estimatedTravelMinutes,
-                0, 0, 0, 0, 0, null, false
+                0, 0, 0, 0, 0, null, false,
+                RouteDataType.STRAIGHT_LINE_ESTIMATE, 0, 0, 0
         );
     }
 
@@ -156,13 +184,18 @@ public class Itinerary {
             long returnTravelDistanceMeters,
             int returnTravelMinutes,
             LocalTime returnArrivalTime,
-            boolean returnedToAccommodation
+            boolean returnedToAccommodation,
+            RouteDataType routeDataType,
+            int routeProviderCallCount,
+            int routeMatrixElementCount,
+            long routeMatrixBuildMillis
     ) {
         return new Itinerary(
                 trip, version, algorithm, totalDistanceMeters, estimatedTravelMinutes,
                 optimizationScore, totalStayMinutes, totalWaitingMinutes,
                 returnTravelDistanceMeters, returnTravelMinutes, returnArrivalTime,
-                returnedToAccommodation
+                returnedToAccommodation, routeDataType, routeProviderCallCount,
+                routeMatrixElementCount, routeMatrixBuildMillis
         );
     }
 
@@ -256,6 +289,22 @@ public class Itinerary {
 
     public boolean isReturnedToAccommodation() {
         return returnedToAccommodation;
+    }
+
+    public RouteDataType getRouteDataType() {
+        return routeDataType;
+    }
+
+    public int getRouteProviderCallCount() {
+        return routeProviderCallCount;
+    }
+
+    public int getRouteMatrixElementCount() {
+        return routeMatrixElementCount;
+    }
+
+    public long getRouteMatrixBuildMillis() {
+        return routeMatrixBuildMillis;
     }
 
     public Instant getCreatedAt() {

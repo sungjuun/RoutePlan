@@ -5,6 +5,7 @@ import com.routeplan.itinerary.domain.ItineraryItem;
 import com.routeplan.itinerary.domain.ItineraryExclusion;
 import com.routeplan.optimization.constraint.ExclusionReason;
 import com.routeplan.optimization.domain.OptimizationAlgorithm;
+import com.routeplan.optimization.route.RouteDataType;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -26,7 +27,10 @@ public record ItineraryView(
         long returnTravelDistanceMeters,
         int returnTravelMinutes,
         LocalTime returnArrivalTime,
-        String routeDataType,
+        RouteDataType routeDataType,
+        int routeProviderCallCount,
+        int routeMatrixElementCount,
+        long routeMatrixBuildMillis,
         Instant createdAt,
         List<Item> items,
         List<Exclusion> exclusions
@@ -52,7 +56,10 @@ public record ItineraryView(
                 itinerary.getReturnTravelDistanceMeters(),
                 itinerary.getReturnTravelMinutes(),
                 itinerary.getReturnArrivalTime(),
-                "STRAIGHT_LINE_ESTIMATE",
+                itinerary.getRouteDataType(),
+                itinerary.getRouteProviderCallCount(),
+                itinerary.getRouteMatrixElementCount(),
+                itinerary.getRouteMatrixBuildMillis(),
                 itinerary.getCreatedAt(),
                 itinerary.getItems().stream().map(Item::from).toList(),
                 itinerary.getExclusions().stream()
