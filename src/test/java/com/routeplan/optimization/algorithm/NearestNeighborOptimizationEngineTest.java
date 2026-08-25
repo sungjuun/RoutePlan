@@ -9,9 +9,7 @@ import com.routeplan.optimization.domain.RouteResult;
 import com.routeplan.optimization.domain.VisitCandidate;
 import com.routeplan.optimization.route.RouteProvider;
 import com.routeplan.trip.domain.TransportMode;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class NearestNeighborOptimizationEngineTest {
@@ -68,25 +66,4 @@ class NearestNeighborOptimizationEngineTest {
                 .containsExactly(10L, 20L);
     }
 
-    private static final class MatrixRouteProvider implements RouteProvider {
-
-        private final Map<Leg, RouteResult> routes = new HashMap<>();
-
-        MatrixRouteProvider route(Location origin, Location destination, int cost) {
-            routes.put(new Leg(origin, destination), new RouteResult(cost, cost));
-            return this;
-        }
-
-        @Override
-        public RouteResult getRoute(Location origin, Location destination, TransportMode mode) {
-            RouteResult route = routes.get(new Leg(origin, destination));
-            if (route == null) {
-                throw new AssertionError("Unexpected route lookup: " + origin + " -> " + destination);
-            }
-            return route;
-        }
-    }
-
-    private record Leg(Location origin, Location destination) {
-    }
 }

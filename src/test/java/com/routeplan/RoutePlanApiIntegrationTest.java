@@ -86,9 +86,22 @@ class RoutePlanApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.version").value(2));
 
+        mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", tripId)
+                        .queryParam("algorithm", "EXACT_SEARCH"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version").value(3))
+                .andExpect(jsonPath("$.algorithm").value("EXACT_SEARCH"));
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", tripId)
+                        .queryParam("algorithm", "NEAREST_NEIGHBOR_2_OPT"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version").value(4))
+                .andExpect(jsonPath("$.algorithm").value("NEAREST_NEIGHBOR_2_OPT"));
+
         mockMvc.perform(get("/api/v1/trips/{tripId}/itineraries/latest", tripId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.version").value(4))
+                .andExpect(jsonPath("$.algorithm").value("NEAREST_NEIGHBOR_2_OPT"))
                 .andExpect(jsonPath("$.items.length()").value(2));
 
         mockMvc.perform(get("/api/v1/trips/{tripId}", tripId))
@@ -135,6 +148,42 @@ class RoutePlanApiIntegrationTest {
         mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", emptyTripId))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("TRIP_HAS_NO_PLACES"));
+    }
+
+    @Test
+    void rejectsExactSearchForMoreThanTenPlaces() throws Exception {
+        long userId = postAndReadId("/api/v1/users", """
+                {"nickname":"exact-limit-tester"}
+                """);
+        long tripId = postAndReadId("/api/v1/trips", """
+                {
+                  "userId":%d,
+                  "name":"Exact Search 제한 검증",
+                  "startDate":"2026-09-10",
+                  "endDate":"2026-09-10",
+                  "accommodationName":"서울 숙소",
+                  "accommodationLatitude":37.566500,
+                  "accommodationLongitude":126.978000,
+                  "transportMode":"WALKING"
+                }
+                """.formatted(userId));
+
+        for (int index = 1; index <= 11; index++) {
+            String latitude = "37.5" + String.format("%04d", index);
+            long placeId = postAndReadId("/api/v1/places", """
+                    {
+                      "name":"장소 %d",
+                      "latitude":%s,
+                      "longitude":126.978000
+                    }
+                    """.formatted(index, latitude));
+            addPlace(tripId, placeId);
+        }
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", tripId)
+                        .queryParam("algorithm", "EXACT_SEARCH"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("EXACT_SEARCH_LIMIT_EXCEEDED"));
     }
 
     private long postAndReadId(String path, String body) throws Exception {
