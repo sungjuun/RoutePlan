@@ -18,7 +18,11 @@ V5는 같은 여행을 다시 최적화할 때 확인된 외부 Matrix 반복 �
 
 > 방향별 Route를 Redis에 재사용하면 외부 호출량과 Matrix 생성시간이 실제로 얼마나 줄고, Redis 장애 시에도 일정을 계속 계산할 수 있는가?
 
-## 구현 범위 (V1–V5)
+V6는 여행 도중 지연되거나 장소가 바뀐 상황을 다룹니다.
+
+> 완료한 일정은 그대로 보존하면서 현재 위치·시각부터 남은 장소만 다시 계산하고, 변경 전후 버전을 추적할 수 있는가?
+
+## 구현 범위 (V1–V6)
 
 ### 지원
 
@@ -53,6 +57,9 @@ V5는 같은 여행을 다시 최적화할 때 확인된 외부 Matrix 반복 �
 - Cache 적용 전후 호출 수·Matrix 생성시간 Benchmark
 - 외부 요청과 DB Lock을 분리한 Snapshot 검증 트랜잭션
 - 매 최적화 결과를 새로운 Itinerary 버전으로 저장
+- 완료된 연속 일정 고정과 현재 위치·시각 기반 잔여 일정 재최적화
+- 재최적화 전 TripPlace 추가·삭제 반영
+- 부모 일정·변경 사유·재계산 시작점과 항목 상태를 포함한 버전 계보
 - 최신 또는 특정 Itinerary 조회
 - PostgreSQL, Flyway, OpenAPI, Docker Compose
 - JUnit 5, AssertJ, Testcontainers 테스트
@@ -100,7 +107,7 @@ com.routeplan
 
 ```mermaid
 flowchart LR
-    API[REST API] --> APP[ItineraryOptimizationService]
+    API[REST API] --> APP[Optimization / Reoptimization Service]
     APP --> DB[(PostgreSQL)]
     APP --> MATRIX[RouteMatrixProvider]
     MATRIX --> SIMPLE[Simple Distance]
@@ -126,6 +133,7 @@ erDiagram
     PLACES ||--o{ TRIP_PLACES : selected
     PLACES ||--o{ PLACE_OPENING_HOURS : opens
     TRIPS ||--o{ ITINERARIES : generates
+    ITINERARIES o|--o{ ITINERARIES : parent_of
     ITINERARIES ||--|{ ITINERARY_ITEMS : consists_of
     ITINERARIES ||--o{ ITINERARY_EXCLUSIONS : excludes
     PLACES ||--o{ ITINERARY_ITEMS : references
@@ -137,6 +145,8 @@ erDiagram
 - 같은 Trip에 같은 Place를 두 번 추가할 수 없음
 - 같은 Trip에 같은 Itinerary version을 저장할 수 없음
 - 같은 Itinerary에 같은 sequence를 저장할 수 없음
+- 재최적화 일정은 부모·변경 사유·현재 위치·시각이 필수이며 최초 일정에는 없어야 함
+- 일정 항목 상태는 `PLANNED` 또는 `COMPLETED`
 - 위도와 경도의 지구 좌표 범위 검증
 - 장소·요일별 영업시간 한 건만 허용
 - 영업일의 종료시간은 시작시간보다 늦어야 함
@@ -322,6 +332,7 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 | `PATCH` | `/api/v1/trips/{tripId}/places/{placeId}` | Must Visit·Priority·시간·체류 제약 교체 |
 | `DELETE` | `/api/v1/trips/{tripId}/places/{placeId}` | Trip에서 Place 제거 |
 | `POST` | `/api/v1/trips/{tripId}/optimize?algorithm=...` | 선택한 알고리즘으로 일정 생성 및 새 버전 저장 |
+| `POST` | `/api/v1/trips/{tripId}/reoptimize?algorithm=...` | 완료 구간을 고정하고 남은 일정만 새 버전으로 재계산 |
 | `GET` | `/api/v1/trips/{tripId}/itineraries/latest` | 최신 일정 조회 |
 | `GET` | `/api/v1/itineraries/{itineraryId}` | 특정 일정 조회 |
 
@@ -348,6 +359,32 @@ Trip 생성 시 `dailyStartTime`, `dailyEndTime`, `pace`를 생략하면 각각 
   "maximumStayMinutes": 90
 }
 ```
+
+### 남은 일정 재최적화
+
+재최적화 전 필요한 장소를 Trip에 추가하거나 미방문 장소를 삭제한 다음, 최신 Itinerary를 기준으로 요청합니다. `completedItemIds`는 기준 일정의 앞에서부터 끊김 없이 완료한 항목 ID를 순서대로 전달합니다.
+
+```json
+{
+  "sourceItineraryId": 12,
+  "currentTime": "11:30",
+  "currentLatitude": 37.566500,
+  "currentLongitude": 126.978000,
+  "completedItemIds": [101, 102],
+  "reason": "DELAY",
+  "reasonDetail": "점심 대기 때문에 35분 지연"
+}
+```
+
+변경 사유는 `DELAY`, `PLACE_ADDED`, `PLACE_REMOVED`, `USER_REQUEST`, `OTHER`를 지원합니다. 새 버전은 다음 규칙을 지킵니다.
+
+1. 완료한 앞부분은 장소·시각·이동비용까지 그대로 복사하고 `COMPLETED`로 저장합니다.
+2. 현재 Trip에 남아 있는 미완료 장소와 새로 추가한 장소만 현재 위치·시각부터 다시 계산합니다.
+3. 삭제된 미완료 장소는 새 일정에서 제외하지만 이전 Itinerary는 수정하지 않습니다.
+4. 마지막 방문 또는 잔여 장소가 없는 현재 위치에서 하루 종료 전 숙소로 돌아갈 수 있어야 합니다.
+5. 결과는 `parentItineraryId`, `generationType=REOPTIMIZATION`, 변경 사유와 시작점을 가진 다음 버전으로 저장됩니다.
+
+최신 버전이 아닌 기준 일정은 `409 REOPTIMIZATION_SOURCE_NOT_LATEST`, 다른 Trip의 일정은 `409 REOPTIMIZATION_SOURCE_MISMATCH`, 완료 항목이 연속된 앞부분이 아니거나 현재 시각이 완료 구간보다 빠르면 `422 INVALID_REOPTIMIZATION_STATE`를 반환합니다. 이전 버전과 새 응답의 `parentItineraryId`를 따라 각각 `/api/v1/itineraries/{itineraryId}`로 조회하면 변경 전후를 비교할 수 있습니다.
 
 ### 외부 Provider 설정
 
@@ -467,6 +504,10 @@ gradlew.bat routeCacheBenchmark
 - 실제 Redis TTL·이동수단별 key 분리·pipelined write
 - Redis 장애 시 외부 Provider fallback과 failure 측정
 - Cache 적용 전후 전용 Benchmark
+- 지연 후 현재 위치부터 잔여 일정만 재계산
+- 완료 구간 보존, 장소 추가·삭제 반영, 부모-자식 버전 비교
+- 오래된 기준 버전과 비연속 완료 목록 거부
+- 모든 장소 완료 후 현재 위치에서 숙소로 바로 복귀하는 경계값
 - 중복 장소, 빈 여행, 다일 여행 오류 응답
 
 통합 테스트는 H2 대신 PostgreSQL Testcontainers를 사용하므로 Docker가 실행 중이어야 합니다.
@@ -484,7 +525,7 @@ V4에서는 외부 Route API를 호출하는 동안 DB 트랜잭션이나 비관
 → 짧은 결과 저장 Transaction
 ```
 
-저장 직전에 Trip, TripPlace, Place 좌표·체류시간, 당일 영업시간을 다시 순수 입력 모델로 만들고 원래 Snapshot과 비교합니다. 달라졌다면 오래된 결과를 저장하지 않고 `409 OPTIMIZATION_INPUT_CHANGED`를 반환합니다. `(trip_id, version)` unique constraint도 동시성의 마지막 방어선으로 유지합니다.
+저장 직전에 Trip, TripPlace, Place 좌표·체류시간, 당일 영업시간을 다시 순수 입력 모델로 만들고 원래 Snapshot과 비교합니다. 재최적화는 최신 기준 버전도 다시 확인합니다. 달라졌다면 오래된 결과를 저장하지 않고 `409 OPTIMIZATION_INPUT_CHANGED` 또는 `409 REOPTIMIZATION_SOURCE_NOT_LATEST`를 반환합니다. `(trip_id, version)` unique constraint도 동시성의 마지막 방어선으로 유지합니다.
 
 ## Algorithm Roadmap
 
@@ -501,7 +542,9 @@ V4  실제 Place/Route API와 Route Matrix ✓
  ↓
 V5  외부 API 호출 측정·Redis Cache·Before/After 검증 ✓
  ↓
-V6  일정 지연·장소 변경 후 남은 일정 재최적화
+V6  일정 지연·장소 변경 후 남은 일정 재최적화 ✓
+ ↓
+V7  공유 Route·커뮤니티
 ```
 
 ## Performance Benchmark
@@ -566,6 +609,8 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 동시에 같은 miss가 발생하는 Cache Stampede를 막는 분산 Lock은 아직 없습니다.
 - 51개 위치의 Cold 전체 방향 Matrix는 이동수단에 따라 Google 요청이 최대 35회 필요합니다.
 - 외부 장소 가져오기는 클라이언트가 선택한 검색 결과 필드를 전달하므로 Place Details 재검증은 아직 없습니다.
+- 재최적화의 현재 위치·시각과 완료 항목은 클라이언트가 전달하며 GPS나 서버 이벤트로 검증하지 않습니다.
+- 완료 상태는 기준 일정의 연속된 앞부분만 지원하고 중간 장소 건너뛰기는 지원하지 않습니다.
 - 여전히 하루짜리 여행만 지원합니다.
 - 인증이 없어 `userId`는 소유 관계만 표현하며 권한을 보장하지 않습니다.
 
@@ -578,5 +623,7 @@ V2까지는 이동거리만 줄이면 되었지만 그 경로에 60분 체류시
 V3의 경로 엔진과 제약 계산기는 각각 요청 범위 캐시를 가지고 있어 실제 Route API를 단순 연결하면 같은 구간을 단계마다 다시 호출하는 문제가 있었습니다. V4에서는 최적화 전에 전체 방향 Matrix를 생성하고 두 단계가 공유하도록 변경했습니다. 장소가 50곳이면 Matrix가 2,601요소이므로 Google의 요청 제한에 맞춰 Chunk로 나누고 실제 요청 수를 Itinerary에 기록합니다.
 
 V4의 요청 단위 Matrix는 한 최적화가 끝나면 폐기되어 같은 Trip을 다시 최적화할 때 외부 요청 수가 줄지 않았습니다. V5에서는 방향·이동수단별 Redis key를 도입하고 동일 Matrix 재요청이 외부 호출 0회가 되는 것을 Benchmark로 재현했습니다. Redis는 원본 데이터가 아닌 파생 Cache이므로 장애 시 요청을 실패시키지 않고 외부 Provider로 fallback합니다.
+
+V5까지의 반복 최적화는 항상 숙소와 하루 시작시각부터 전체 일정을 새로 만들었기 때문에 여행 도중 완료한 방문까지 바뀌었습니다. V6에서는 기준 일정의 완료 구간을 불변 Snapshot으로 복사하고, 현재 위치·시각과 최신 TripPlace만 별도 최적화 입력으로 사용합니다. 원본 Itinerary는 갱신하지 않고 부모를 가리키는 다음 버전을 추가해 변경 이력을 보존합니다.
 
 외부 호출을 기존 최적화 Transaction 안에 두면 느린 네트워크 동안 Trip Lock을 점유하게 됩니다. 이를 입력 Snapshot 조회, 외부 계산, 입력 재검증과 저장의 세 구간으로 분리해 Lock 보유시간을 DB 저장 구간으로 제한했습니다.
