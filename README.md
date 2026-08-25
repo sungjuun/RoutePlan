@@ -61,8 +61,12 @@ V6는 여행 도중 지연되거나 장소가 바뀐 상황을 다룹니다.
 - 재최적화 전 TripPlace 추가·삭제 반영
 - 부모 일정·변경 사유·재계산 시작점과 항목 상태를 포함한 버전 계보
 - 최신 또는 특정 Itinerary 조회
+- React 기반 여행 생성·장소 관리·일정 타임라인·지도 화면
+- 현재 위치 기반 재최적화와 이전/현재 버전 비교 UI
+- 외부 검색 비활성 환경을 위한 수동 좌표 장소 등록
+- 브라우저 작업공간 복구와 반응형 모바일 UI
 - PostgreSQL, Flyway, OpenAPI, Docker Compose
-- JUnit 5, AssertJ, Testcontainers 테스트
+- JUnit 5, AssertJ, Testcontainers, Vitest 테스트
 
 ### 지원하지 않음
 
@@ -88,6 +92,10 @@ V6는 여행 도중 지연되거나 장소가 바뀐 상황을 다룹니다.
 - JUnit 5, AssertJ, Testcontainers
 - springdoc-openapi
 - Docker, Docker Compose
+- React 19, TypeScript 6, Vite 8
+- React Leaflet, OpenStreetMap
+- Vitest, Testing Library, ESLint
+- Nginx
 
 QueryDSL은 동적 검색 쿼리가 없는 현재 단계에서는 사용하지 않습니다. Redis는 동일 Route Matrix를 반복 최적화할 때 외부 호출이 그대로 재발하는 문제를 측정한 뒤 V5에서 도입했습니다. PostGIS는 실제 공간 검색 요구가 생기기 전까지 사용하지 않습니다.
 
@@ -107,7 +115,9 @@ com.routeplan
 
 ```mermaid
 flowchart LR
-    API[REST API] --> APP[Optimization / Reoptimization Service]
+    WEB[React Frontend] -->|Nginx /api proxy| API[REST API]
+    WEB --> OSM[OpenStreetMap Tiles]
+    API --> APP[Optimization / Reoptimization Service]
     APP --> DB[(PostgreSQL)]
     APP --> MATRIX[RouteMatrixProvider]
     MATRIX --> SIMPLE[Simple Distance]
@@ -123,6 +133,25 @@ flowchart LR
 ```
 
 `OptimizationEngine`과 `ConstraintSchedulePlanner`는 JPA Entity를 받지 않습니다. 애플리케이션 서비스가 Entity를 순수 입력 Snapshot으로 변환하고, Route Matrix를 한 번 만든 뒤 두 계산 계층에 같은 Matrix를 전달합니다. 경로 순서 탐색과 현실 제약 일정 계산을 분리해 V2 알고리즘 비교 기준도 유지했습니다.
+
+`frontend`는 백엔드와 분리된 React 애플리케이션입니다. 개발 환경에서는 Vite가 `/api`를 `localhost:8080`으로 전달하고, Docker에서는 Nginx가 `backend:8080`으로 전달합니다. 브라우저는 동일 출처 API만 호출하므로 별도 CORS 설정이 필요하지 않습니다. 현재 사용자와 Trip ID는 브라우저 작업공간에 저장하며 새로고침 시 서버의 Trip과 최신 Itinerary를 다시 조회합니다.
+
+## Frontend MVP
+
+프론트엔드는 다음 한 사이클을 화면에서 끝낼 수 있습니다.
+
+```text
+여행자·여행 조건 입력
+→ 장소 검색 또는 좌표 등록
+→ Must Visit·Priority·시간창·체류시간 편집
+→ 알고리즘 선택과 일정 생성
+→ 시간표·지도·제외 장소 확인
+→ 완료 구간과 현재 위치 입력
+→ 남은 일정 재최적화
+→ 부모/현재 버전 비교
+```
+
+일정 지도는 숙소와 방문 장소 Marker를 표시하고 방문 순서를 선으로 연결합니다. 선은 도로 Polyline이 아니라 순서 시각화이며, 실제 이동거리와 시간은 백엔드 Route Matrix 결과를 사용합니다. 기본 Place Provider가 `DISABLED`여도 좌표 등록 화면으로 전체 흐름을 실행할 수 있습니다.
 
 ## Domain Model
 
@@ -422,8 +451,8 @@ API 키는 요청 헤더에만 사용하며 오류 메시지나 응답에 포함
 docker compose up --build
 ```
 
-Backend는 `http://localhost:8080`, PostgreSQL은 `localhost:5432`, Redis는 `localhost:6379`에서 실행됩니다.
-이미 사용 중인 포트가 있다면 `.env`의 `BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`를 변경할 수 있습니다.
+Frontend는 `http://localhost:3000`, Backend는 `http://localhost:8080`, PostgreSQL은 `localhost:5432`, Redis는 `localhost:6379`에서 실행됩니다.
+이미 사용 중인 포트가 있다면 `.env`의 `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`를 변경할 수 있습니다.
 
 ### 애플리케이션 직접 실행
 
@@ -442,6 +471,16 @@ gradlew.bat bootRun
 # macOS/Linux
 ./gradlew bootRun
 ```
+
+별도 터미널에서 Frontend를 실행합니다.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+개발 서버는 `http://localhost:5173`에서 실행되고 `/api` 요청을 Backend로 전달합니다.
 
 기본 로컬 DB 설정은 다음과 같습니다.
 
@@ -473,6 +512,15 @@ gradlew.bat routeCacheBenchmark
 # macOS/Linux
 ./gradlew algorithmBenchmark
 ./gradlew routeCacheBenchmark
+```
+
+Frontend 검증은 다음 명령으로 실행합니다.
+
+```bash
+cd frontend
+npm test
+npm run lint
+npm run build
 ```
 
 테스트는 다음을 검증합니다.
@@ -508,6 +556,9 @@ gradlew.bat routeCacheBenchmark
 - 완료 구간 보존, 장소 추가·삭제 반영, 부모-자식 버전 비교
 - 오래된 기준 버전과 비연속 완료 목록 거부
 - 모든 장소 완료 후 현재 위치에서 숙소로 바로 복귀하는 경계값
+- 일정 버전 추가·삭제·시간 변경 비교와 완료된 연속 구간 계산
+- API 성공 응답과 구조화된 오류 전달
+- TypeScript 프로덕션 빌드와 ESLint
 - 중복 장소, 빈 여행, 다일 여행 오류 응답
 
 통합 테스트는 H2 대신 PostgreSQL Testcontainers를 사용하므로 Docker가 실행 중이어야 합니다.
@@ -611,6 +662,8 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 외부 장소 가져오기는 클라이언트가 선택한 검색 결과 필드를 전달하므로 Place Details 재검증은 아직 없습니다.
 - 재최적화의 현재 위치·시각과 완료 항목은 클라이언트가 전달하며 GPS나 서버 이벤트로 검증하지 않습니다.
 - 완료 상태는 기준 일정의 연속된 앞부분만 지원하고 중간 장소 건너뛰기는 지원하지 않습니다.
+- 프론트 지도 선은 실제 도로 Geometry가 아니라 방문 순서를 잇는 시각화입니다.
+- 서버에 사용자별 Trip 목록 API가 없어 현재 작업공간 한 건을 브라우저에 보존합니다.
 - 여전히 하루짜리 여행만 지원합니다.
 - 인증이 없어 `userId`는 소유 관계만 표현하며 권한을 보장하지 않습니다.
 
