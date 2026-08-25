@@ -15,6 +15,12 @@ spring:
           time_zone: UTC
   flyway:
     enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      connect-timeout: 500ms
+      timeout: 500ms
 
 springdoc:
   swagger-ui:
@@ -28,6 +34,12 @@ routeplan:
     provider: ${ROUTEPLAN_PLACE_PROVIDER:DISABLED}
   route:
     provider: ${ROUTEPLAN_ROUTE_PROVIDER:SIMPLE}
+    cache:
+      enabled: ${ROUTEPLAN_ROUTE_CACHE_ENABLED:false}
+      key-prefix: ${ROUTEPLAN_ROUTE_CACHE_KEY_PREFIX:routeplan:route:v1}
+      walking-ttl: ${ROUTEPLAN_ROUTE_CACHE_WALKING_TTL:7d}
+      driving-ttl: ${ROUTEPLAN_ROUTE_CACHE_DRIVING_TTL:15m}
+      transit-ttl: ${ROUTEPLAN_ROUTE_CACHE_TRANSIT_TTL:5m}
   google:
     api-key: ${GOOGLE_MAPS_API_KEY:}
     places-base-url: ${GOOGLE_PLACES_BASE_URL:https://places.googleapis.com}

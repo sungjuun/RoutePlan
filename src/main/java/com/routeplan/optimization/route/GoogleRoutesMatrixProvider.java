@@ -7,14 +7,20 @@ import com.routeplan.integration.google.GoogleMapsHttpClient;
 import com.routeplan.integration.google.GoogleMapsProperties;
 import com.routeplan.optimization.domain.Location;
 import com.routeplan.optimization.domain.RouteResult;
+import com.routeplan.optimization.route.cache.RouteCacheKey;
+import com.routeplan.optimization.route.cache.RouteCacheRead;
+import com.routeplan.optimization.route.cache.RouteLegCache;
 import com.routeplan.trip.domain.TransportMode;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -33,14 +39,17 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
 
     private final GoogleMapsHttpClient httpClient;
     private final URI endpoint;
+    private final RouteLegCache routeLegCache;
 
     public GoogleRoutesMatrixProvider(
             GoogleMapsHttpClient httpClient,
-            GoogleMapsProperties properties
+            GoogleMapsProperties properties,
+            RouteLegCache routeLegCache
     ) {
         this.httpClient = httpClient;
         this.endpoint = properties.getRoutesBaseUrl()
                 .resolve("/distanceMatrix/v2:computeRouteMatrix");
+        this.routeLegCache = routeLegCache;
     }
 
     @Override
@@ -52,21 +61,36 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
         int chunkSize = transportMode == TransportMode.PUBLIC_TRANSIT
                 ? (int) Math.sqrt(TRANSIT_MAX_ELEMENTS)
                 : (int) Math.sqrt(STANDARD_MAX_ELEMENTS);
+        long startedAt = System.nanoTime();
         List<List<Location>> chunks = partition(uniqueLocations, chunkSize);
         Map<RouteMatrix.Leg, RouteResult> routes = new LinkedHashMap<>();
+        addZeroDistanceRoutes(uniqueLocations, routes);
+        Set<RouteCacheKey> cacheKeys = cacheKeys(uniqueLocations, transportMode);
+        RouteCacheRead cacheRead = readCache(cacheKeys);
+        cacheRead.routes().forEach((key, route) -> routes.put(
+                new RouteMatrix.Leg(key.origin(), key.destination()),
+                route
+        ));
+        Map<RouteCacheKey, RouteResult> fetchedRoutes = new LinkedHashMap<>();
         int requestCount = 0;
-        long startedAt = System.nanoTime();
 
         for (List<Location> origins : chunks) {
             for (List<Location> destinations : chunks) {
+                if (containsAll(routes, origins, destinations)) {
+                    continue;
+                }
                 JsonNode response = httpClient.post(
                         endpoint,
                         FIELD_MASK,
                         requestBody(origins, destinations, transportMode)
                 );
                 requestCount++;
-                merge(response, origins, destinations, routes);
+                merge(response, origins, destinations, transportMode, routes, fetchedRoutes);
             }
+        }
+        int cacheFailures = cacheRead.failureCount();
+        if (routeLegCache.enabled()) {
+            cacheFailures += routeLegCache.putAll(fetchedRoutes);
         }
         verifyComplete(uniqueLocations, routes);
         return new RouteMatrix(
@@ -74,8 +98,48 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
                 RouteDataType.GOOGLE_ROUTES,
                 routes,
                 requestCount,
-                elapsedMillis(startedAt)
+                elapsedMillis(startedAt),
+                routeLegCache.enabled(),
+                cacheRead.routes().size(),
+                routeLegCache.enabled() ? cacheKeys.size() - cacheRead.routes().size() : 0,
+                cacheFailures
         );
+    }
+
+    private void addZeroDistanceRoutes(
+            List<Location> locations,
+            Map<RouteMatrix.Leg, RouteResult> routes
+    ) {
+        locations.forEach(location -> routes.put(
+                new RouteMatrix.Leg(location, location),
+                new RouteResult(0, 0)
+        ));
+    }
+
+    private Set<RouteCacheKey> cacheKeys(
+            List<Location> locations,
+            TransportMode transportMode
+    ) {
+        return locations.stream()
+                .flatMap(origin -> locations.stream()
+                        .filter(destination -> !origin.equals(destination))
+                        .map(destination -> new RouteCacheKey(origin, destination, transportMode)))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private RouteCacheRead readCache(Set<RouteCacheKey> cacheKeys) {
+        return routeLegCache.enabled()
+                ? routeLegCache.getAll(cacheKeys)
+                : RouteCacheRead.empty();
+    }
+
+    private boolean containsAll(
+            Map<RouteMatrix.Leg, RouteResult> routes,
+            List<Location> origins,
+            List<Location> destinations
+    ) {
+        return origins.stream().allMatch(origin -> destinations.stream()
+                .allMatch(destination -> routes.containsKey(new RouteMatrix.Leg(origin, destination))));
     }
 
     private Map<String, Object> requestBody(
@@ -117,7 +181,9 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
             JsonNode response,
             List<Location> origins,
             List<Location> destinations,
-            Map<RouteMatrix.Leg, RouteResult> routes
+            TransportMode transportMode,
+            Map<RouteMatrix.Leg, RouteResult> routes,
+            Map<RouteCacheKey, RouteResult> fetchedRoutes
     ) {
         if (!response.isArray()) {
             throw invalidResponse("Route Matrix 응답이 배열이 아닙니다.");
@@ -134,10 +200,12 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
             validateElementStatus(element, origin, destination);
             long distanceMeters = requiredNonNegativeLong(element, "distanceMeters");
             int travelMinutes = durationMinutes(requiredText(element, "duration"), distanceMeters);
+            RouteResult route = new RouteResult(distanceMeters, travelMinutes);
             routes.put(
                     new RouteMatrix.Leg(origin, destination),
-                    new RouteResult(distanceMeters, travelMinutes)
+                    route
             );
+            fetchedRoutes.put(new RouteCacheKey(origin, destination, transportMode), route);
         }
     }
 

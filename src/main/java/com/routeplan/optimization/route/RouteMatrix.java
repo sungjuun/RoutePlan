@@ -13,6 +13,10 @@ public final class RouteMatrix implements RouteProvider {
     private final Map<Leg, RouteResult> routes;
     private final int providerCallCount;
     private final long buildMillis;
+    private final boolean cacheEnabled;
+    private final int cacheHitCount;
+    private final int cacheMissCount;
+    private final int cacheFailureCount;
 
     public RouteMatrix(
             TransportMode transportMode,
@@ -21,15 +25,40 @@ public final class RouteMatrix implements RouteProvider {
             int providerCallCount,
             long buildMillis
     ) {
+        this(
+                transportMode, dataType, routes, providerCallCount, buildMillis,
+                false, 0, 0, 0
+        );
+    }
+
+    public RouteMatrix(
+            TransportMode transportMode,
+            RouteDataType dataType,
+            Map<Leg, RouteResult> routes,
+            int providerCallCount,
+            long buildMillis,
+            boolean cacheEnabled,
+            int cacheHitCount,
+            int cacheMissCount,
+            int cacheFailureCount
+    ) {
         this.transportMode = Objects.requireNonNull(transportMode, "이동수단은 필수입니다.");
         this.dataType = Objects.requireNonNull(dataType, "경로 데이터 유형은 필수입니다.");
         Objects.requireNonNull(routes, "경로 Matrix는 필수입니다.");
-        if (providerCallCount < 0 || buildMillis < 0) {
+        if (providerCallCount < 0 || buildMillis < 0
+                || cacheHitCount < 0 || cacheMissCount < 0 || cacheFailureCount < 0) {
             throw new IllegalArgumentException("경로 Provider 측정값은 0 이상이어야 합니다.");
+        }
+        if (!cacheEnabled && (cacheHitCount != 0 || cacheMissCount != 0 || cacheFailureCount != 0)) {
+            throw new IllegalArgumentException("비활성 Route Cache에는 측정값이 있을 수 없습니다.");
         }
         this.routes = Map.copyOf(routes);
         this.providerCallCount = providerCallCount;
         this.buildMillis = buildMillis;
+        this.cacheEnabled = cacheEnabled;
+        this.cacheHitCount = cacheHitCount;
+        this.cacheMissCount = cacheMissCount;
+        this.cacheFailureCount = cacheFailureCount;
     }
 
     @Override
@@ -58,6 +87,27 @@ public final class RouteMatrix implements RouteProvider {
 
     public long buildMillis() {
         return buildMillis;
+    }
+
+    public boolean cacheEnabled() {
+        return cacheEnabled;
+    }
+
+    public int cacheHitCount() {
+        return cacheHitCount;
+    }
+
+    public int cacheMissCount() {
+        return cacheMissCount;
+    }
+
+    public int cacheFailureCount() {
+        return cacheFailureCount;
+    }
+
+    public double cacheHitRatio() {
+        int lookups = cacheHitCount + cacheMissCount;
+        return lookups == 0 ? 0.0 : (double) cacheHitCount / lookups;
     }
 
     public record Leg(Location origin, Location destination) {

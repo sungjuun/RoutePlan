@@ -31,6 +31,11 @@ public record ItineraryView(
         int routeProviderCallCount,
         int routeMatrixElementCount,
         long routeMatrixBuildMillis,
+        boolean routeCacheEnabled,
+        int routeCacheHitCount,
+        int routeCacheMissCount,
+        int routeCacheFailureCount,
+        double routeCacheHitRatio,
         Instant createdAt,
         List<Item> items,
         List<Exclusion> exclusions
@@ -60,6 +65,11 @@ public record ItineraryView(
                 itinerary.getRouteProviderCallCount(),
                 itinerary.getRouteMatrixElementCount(),
                 itinerary.getRouteMatrixBuildMillis(),
+                itinerary.isRouteCacheEnabled(),
+                itinerary.getRouteCacheHitCount(),
+                itinerary.getRouteCacheMissCount(),
+                itinerary.getRouteCacheFailureCount(),
+                itinerary.getRouteCacheHitRatio(),
                 itinerary.getCreatedAt(),
                 itinerary.getItems().stream().map(Item::from).toList(),
                 itinerary.getExclusions().stream()

@@ -20,6 +20,7 @@ repositories {
 
 dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+	implementation("org.springframework.boot:spring-boot-starter-data-redis")
 	implementation("org.springframework.boot:spring-boot-starter-flyway")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
@@ -47,7 +48,7 @@ tasks.withType<Test> {
 
 tasks.named<Test>("test") {
 	useJUnitPlatform {
-		excludeTags("benchmark")
+		excludeTags("benchmark", "cache-benchmark")
 	}
 }
 
@@ -60,6 +61,19 @@ tasks.register<Test>("algorithmBenchmark") {
 		includeTags("benchmark")
 	}
 	maxHeapSize = "2g"
+	testLogging {
+		showStandardStreams = true
+	}
+}
+
+tasks.register<Test>("routeCacheBenchmark") {
+	description = "Runs the reproducible Redis route cache benchmark."
+	group = "verification"
+	testClassesDirs = sourceSets["test"].output.classesDirs
+	classpath = sourceSets["test"].runtimeClasspath
+	useJUnitPlatform {
+		includeTags("cache-benchmark")
+	}
 	testLogging {
 		showStandardStreams = true
 	}

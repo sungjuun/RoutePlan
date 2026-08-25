@@ -132,7 +132,11 @@ public class ItineraryOptimizationService {
                 routeMatrix.dataType(),
                 routeMatrix.providerCallCount(),
                 routeMatrix.elementCount(),
-                routeMatrix.buildMillis()
+                routeMatrix.buildMillis(),
+                routeMatrix.cacheEnabled(),
+                routeMatrix.cacheHitCount(),
+                routeMatrix.cacheMissCount(),
+                routeMatrix.cacheFailureCount()
         );
 
         Map<Long, Place> placesById = currentTripPlaces.stream()

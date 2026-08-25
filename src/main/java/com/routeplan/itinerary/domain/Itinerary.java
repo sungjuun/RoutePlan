@@ -95,6 +95,18 @@ public class Itinerary {
     @Column(name = "route_matrix_build_millis", nullable = false)
     private long routeMatrixBuildMillis;
 
+    @Column(name = "route_cache_enabled", nullable = false)
+    private boolean routeCacheEnabled;
+
+    @Column(name = "route_cache_hit_count", nullable = false)
+    private int routeCacheHitCount;
+
+    @Column(name = "route_cache_miss_count", nullable = false)
+    private int routeCacheMissCount;
+
+    @Column(name = "route_cache_failure_count", nullable = false)
+    private int routeCacheFailureCount;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -125,7 +137,11 @@ public class Itinerary {
             RouteDataType routeDataType,
             int routeProviderCallCount,
             int routeMatrixElementCount,
-            long routeMatrixBuildMillis
+            long routeMatrixBuildMillis,
+            boolean routeCacheEnabled,
+            int routeCacheHitCount,
+            int routeCacheMissCount,
+            int routeCacheFailureCount
     ) {
         if (trip == null || algorithm == null) {
             throw new IllegalArgumentException("여행과 알고리즘은 필수입니다.");
@@ -134,11 +150,17 @@ public class Itinerary {
                 || optimizationScore < 0 || totalStayMinutes < 0 || totalWaitingMinutes < 0
                 || returnTravelDistanceMeters < 0 || returnTravelMinutes < 0
                 || routeProviderCallCount < 0 || routeMatrixElementCount < 0
-                || routeMatrixBuildMillis < 0) {
+                || routeMatrixBuildMillis < 0 || routeCacheHitCount < 0
+                || routeCacheMissCount < 0 || routeCacheFailureCount < 0) {
             throw new IllegalArgumentException("일정 버전과 이동비용이 올바르지 않습니다.");
         }
         if (routeDataType == null) {
             throw new IllegalArgumentException("경로 데이터 유형은 필수입니다.");
+        }
+        if (!routeCacheEnabled
+                && (routeCacheHitCount != 0 || routeCacheMissCount != 0
+                || routeCacheFailureCount != 0)) {
+            throw new IllegalArgumentException("비활성 Route Cache에는 측정값이 있을 수 없습니다.");
         }
         this.trip = trip;
         this.version = version;
@@ -156,6 +178,10 @@ public class Itinerary {
         this.routeProviderCallCount = routeProviderCallCount;
         this.routeMatrixElementCount = routeMatrixElementCount;
         this.routeMatrixBuildMillis = routeMatrixBuildMillis;
+        this.routeCacheEnabled = routeCacheEnabled;
+        this.routeCacheHitCount = routeCacheHitCount;
+        this.routeCacheMissCount = routeCacheMissCount;
+        this.routeCacheFailureCount = routeCacheFailureCount;
     }
 
     public static Itinerary create(
@@ -168,7 +194,8 @@ public class Itinerary {
         return new Itinerary(
                 trip, version, algorithm, totalDistanceMeters, estimatedTravelMinutes,
                 0, 0, 0, 0, 0, null, false,
-                RouteDataType.STRAIGHT_LINE_ESTIMATE, 0, 0, 0
+                RouteDataType.STRAIGHT_LINE_ESTIMATE, 0, 0, 0,
+                false, 0, 0, 0
         );
     }
 
@@ -188,14 +215,19 @@ public class Itinerary {
             RouteDataType routeDataType,
             int routeProviderCallCount,
             int routeMatrixElementCount,
-            long routeMatrixBuildMillis
+            long routeMatrixBuildMillis,
+            boolean routeCacheEnabled,
+            int routeCacheHitCount,
+            int routeCacheMissCount,
+            int routeCacheFailureCount
     ) {
         return new Itinerary(
                 trip, version, algorithm, totalDistanceMeters, estimatedTravelMinutes,
                 optimizationScore, totalStayMinutes, totalWaitingMinutes,
                 returnTravelDistanceMeters, returnTravelMinutes, returnArrivalTime,
                 returnedToAccommodation, routeDataType, routeProviderCallCount,
-                routeMatrixElementCount, routeMatrixBuildMillis
+                routeMatrixElementCount, routeMatrixBuildMillis, routeCacheEnabled,
+                routeCacheHitCount, routeCacheMissCount, routeCacheFailureCount
         );
     }
 
@@ -305,6 +337,27 @@ public class Itinerary {
 
     public long getRouteMatrixBuildMillis() {
         return routeMatrixBuildMillis;
+    }
+
+    public boolean isRouteCacheEnabled() {
+        return routeCacheEnabled;
+    }
+
+    public int getRouteCacheHitCount() {
+        return routeCacheHitCount;
+    }
+
+    public int getRouteCacheMissCount() {
+        return routeCacheMissCount;
+    }
+
+    public int getRouteCacheFailureCount() {
+        return routeCacheFailureCount;
+    }
+
+    public double getRouteCacheHitRatio() {
+        int lookups = routeCacheHitCount + routeCacheMissCount;
+        return lookups == 0 ? 0.0 : (double) routeCacheHitCount / lookups;
     }
 
     public Instant getCreatedAt() {
