@@ -2,10 +2,12 @@ package com.routeplan.common.api;
 
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
+import com.routeplan.optimization.constraint.InfeasibleScheduleException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.time.Instant;
 import java.util.stream.Collectors;
+import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -23,6 +25,27 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         return response(exception.errorCode(), exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(InfeasibleScheduleException.class)
+    ResponseEntity<ErrorResponse> handleInfeasibleSchedule(
+            InfeasibleScheduleException exception,
+            HttpServletRequest request
+    ) {
+        List<ErrorResponse.Violation> violations = exception.violations().stream()
+                .map(violation -> new ErrorResponse.Violation(
+                        violation.placeId(),
+                        violation.placeName(),
+                        violation.reason().name(),
+                        violation.message()
+                ))
+                .toList();
+        return response(
+                ErrorCode.INFEASIBLE_MUST_VISIT,
+                exception.getMessage(),
+                request,
+                violations
+        );
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -74,11 +97,21 @@ public class GlobalExceptionHandler {
             String message,
             HttpServletRequest request
     ) {
+        return response(errorCode, message, request, List.of());
+    }
+
+    private ResponseEntity<ErrorResponse> response(
+            ErrorCode errorCode,
+            String message,
+            HttpServletRequest request,
+            List<ErrorResponse.Violation> violations
+    ) {
         ErrorResponse body = new ErrorResponse(
                 errorCode.name(),
                 message,
                 request.getRequestURI(),
-                Instant.now()
+                Instant.now(),
+                violations
         );
         return ResponseEntity.status(errorCode.status()).body(body);
     }

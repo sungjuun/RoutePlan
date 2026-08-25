@@ -12,11 +12,11 @@ public interface ItineraryRepository extends JpaRepository<Itinerary, Long> {
     @Query("select coalesce(max(itinerary.version), 0) from Itinerary itinerary where itinerary.trip.id = :tripId")
     int findMaxVersionByTripId(@Param("tripId") Long tripId);
 
-    @EntityGraph(attributePaths = {"trip", "items", "items.place"})
+    @EntityGraph(attributePaths = {"trip", "items", "items.place", "exclusions", "exclusions.place"})
     @Query("select itinerary from Itinerary itinerary where itinerary.id = :itineraryId")
     Optional<Itinerary> findDetailedById(@Param("itineraryId") Long itineraryId);
 
-    @EntityGraph(attributePaths = {"trip", "items", "items.place"})
+    @EntityGraph(attributePaths = {"trip", "items", "items.place", "exclusions", "exclusions.place"})
     @Query("""
             select itinerary
             from Itinerary itinerary

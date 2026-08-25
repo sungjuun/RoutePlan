@@ -11,6 +11,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDate;
+import java.time.LocalTime;
 
 @Entity
 @Table(
@@ -43,6 +45,30 @@ public class ItineraryItem {
     @Column(name = "estimated_travel_minutes", nullable = false)
     private int estimatedTravelMinutes;
 
+    @Column(name = "visit_date")
+    private LocalDate visitDate;
+
+    @Column(name = "arrival_time")
+    private LocalTime arrivalTime;
+
+    @Column(name = "start_time")
+    private LocalTime startTime;
+
+    @Column(name = "end_time")
+    private LocalTime endTime;
+
+    @Column(name = "waiting_minutes")
+    private Integer waitingMinutes;
+
+    @Column(name = "stay_minutes")
+    private Integer stayMinutes;
+
+    @Column
+    private Integer priority;
+
+    @Column(name = "must_visit")
+    private Boolean mustVisit;
+
     protected ItineraryItem() {
     }
 
@@ -66,6 +92,41 @@ public class ItineraryItem {
         this.estimatedTravelMinutes = estimatedTravelMinutes;
     }
 
+    ItineraryItem(
+            Itinerary itinerary,
+            Place place,
+            int sequence,
+            long travelDistanceMeters,
+            int estimatedTravelMinutes,
+            LocalDate visitDate,
+            LocalTime arrivalTime,
+            LocalTime startTime,
+            LocalTime endTime,
+            int waitingMinutes,
+            int stayMinutes,
+            int priority,
+            boolean mustVisit
+    ) {
+        this(itinerary, place, sequence, travelDistanceMeters, estimatedTravelMinutes);
+        if (visitDate == null || arrivalTime == null || startTime == null || endTime == null) {
+            throw new IllegalArgumentException("방문일과 방문 시각은 필수입니다.");
+        }
+        if (waitingMinutes < 0 || stayMinutes <= 0 || priority < 1 || priority > 100) {
+            throw new IllegalArgumentException("일정 상세 제약값이 올바르지 않습니다.");
+        }
+        if (startTime.isBefore(arrivalTime) || !endTime.isAfter(startTime)) {
+            throw new IllegalArgumentException("도착·시작·종료시각 순서가 올바르지 않습니다.");
+        }
+        this.visitDate = visitDate;
+        this.arrivalTime = arrivalTime;
+        this.startTime = startTime;
+        this.endTime = endTime;
+        this.waitingMinutes = waitingMinutes;
+        this.stayMinutes = stayMinutes;
+        this.priority = priority;
+        this.mustVisit = mustVisit;
+    }
+
     public Long getId() {
         return id;
     }
@@ -84,5 +145,37 @@ public class ItineraryItem {
 
     public int getEstimatedTravelMinutes() {
         return estimatedTravelMinutes;
+    }
+
+    public LocalDate getVisitDate() {
+        return visitDate;
+    }
+
+    public LocalTime getArrivalTime() {
+        return arrivalTime;
+    }
+
+    public LocalTime getStartTime() {
+        return startTime;
+    }
+
+    public LocalTime getEndTime() {
+        return endTime;
+    }
+
+    public Integer getWaitingMinutes() {
+        return waitingMinutes;
+    }
+
+    public Integer getStayMinutes() {
+        return stayMinutes;
+    }
+
+    public Integer getPriority() {
+        return priority;
+    }
+
+    public Boolean getMustVisit() {
+        return mustVisit;
     }
 }

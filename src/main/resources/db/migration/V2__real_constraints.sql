@@ -59,6 +59,7 @@ ALTER TABLE itineraries
     ADD COLUMN total_waiting_minutes INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN return_travel_distance_meters BIGINT NOT NULL DEFAULT 0,
     ADD COLUMN return_travel_minutes INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN return_arrival_time TIME,
     ADD COLUMN returned_to_accommodation BOOLEAN NOT NULL DEFAULT FALSE,
     ADD CONSTRAINT ck_itineraries_score CHECK (optimization_score >= 0),
     ADD CONSTRAINT ck_itineraries_stay_minutes CHECK (total_stay_minutes >= 0),

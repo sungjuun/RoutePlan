@@ -13,6 +13,7 @@ public enum ErrorCode {
     TRIP_PLACE_LIMIT_EXCEEDED(HttpStatus.UNPROCESSABLE_CONTENT, "한 여행에는 장소를 최대 50개까지 추가할 수 있습니다."),
     TRIP_HAS_NO_PLACES(HttpStatus.UNPROCESSABLE_CONTENT, "최적화할 장소가 없습니다."),
     EXACT_SEARCH_LIMIT_EXCEEDED(HttpStatus.UNPROCESSABLE_CONTENT, "Exact Search는 장소를 최대 10개까지 지원합니다."),
+    INFEASIBLE_MUST_VISIT(HttpStatus.UNPROCESSABLE_CONTENT, "현재 조건으로는 모든 MUST_VISIT 장소를 방문할 수 없습니다."),
     ITINERARY_NOT_FOUND(HttpStatus.NOT_FOUND, "일정을 찾을 수 없습니다."),
     CONFLICT(HttpStatus.CONFLICT, "요청이 현재 데이터 상태와 충돌합니다.");
 
