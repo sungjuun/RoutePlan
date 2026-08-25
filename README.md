@@ -6,11 +6,15 @@ V1과 V2는 복잡한 제약조건을 추가하기 전에 다음 질문부터 �
 
 > 숙소와 방문 장소의 좌표가 주어졌을 때, 재현 가능한 방문 순서를 계산하고 휴리스틱 결과가 최적해와 얼마나 다른지 측정할 수 있는가?
 
-V3는 그 경로를 실제 하루 일정으로 바꾸기 위해 다음 질문을 다룹니다.
+V3는 그 경로를 실제 하루 일정으로 바꾸기 위해 다음 질문을 다뤘습니다.
 
 > 영업시간과 체류시간을 지키고, 중요한 장소를 우선하면서 하루 종료 전 숙소로 돌아오는 실행 가능한 일정을 만들 수 있는가?
 
-## 구현 범위 (V1–V3)
+V4는 추정 좌표 데이터를 실제 외부 데이터로 교체할 수 있는 경계를 추가합니다.
+
+> 장소 검색 결과의 고유 ID와 실제 도로·대중교통 이동시간을 사용하면서 외부 API 호출을 Matrix 단위로 통제할 수 있는가?
+
+## 구현 범위 (V1–V4)
 
 ### 지원
 
@@ -33,6 +37,13 @@ V3는 그 경로를 실제 하루 일정으로 바꾸기 위해 다음 질문을
 - `ACTIVE`, `STANDARD`, `RELAXED` 여행 강도
 - 도착·대기·방문 시작·종료 시각 계산
 - 선택 장소 제외 사유와 Must Visit 충돌 상세 응답
+- Google Places API (New) Text Search Adapter
+- Google 검색 장소의 `externalPlaceId` 기반 멱등 가져오기
+- Google Routes API Compute Route Matrix Adapter
+- 이동수단별 Route Matrix 요청 분할
+- 경로 엔진과 제약 일정 계산기가 공유하는 요청 단위 Matrix
+- 일정별 Route 데이터 출처·Provider 호출 수·Matrix 요소 수·생성시간 저장
+- 외부 요청과 DB Lock을 분리한 Snapshot 검증 트랜잭션
 - 매 최적화 결과를 새로운 Itinerary 버전으로 저장
 - 최신 또는 특정 Itinerary 조회
 - PostgreSQL, Flyway, OpenAPI, Docker Compose
@@ -43,11 +54,11 @@ V3는 그 경로를 실제 하루 일정으로 바꾸기 위해 다음 질문을
 - 실제 도로·대중교통 경로 및 실제 이동시간
 - 여러 날짜에 장소 배분
 - 영속 Route Matrix와 외부 경로 캐시
-- 외부 Places/Route API
+- Google Places 영업시간 자동 가져오기
 - Redis, QueryDSL, PostGIS
 - 인증, 공유 Route, 커뮤니티, LLM
 
-API의 `estimatedTravelMinutes`는 실제 지도 이동시간이 아니라 직선거리와 고정 평균속도로 계산한 추정치입니다.
+기본 `SIMPLE` 모드의 `estimatedTravelMinutes`는 직선거리와 고정 평균속도로 계산한 추정치입니다. `GOOGLE` Route Provider를 활성화하면 Google Routes API가 반환한 실제 경로 거리와 이동시간을 사용합니다.
 
 ## 기술 스택
 
@@ -82,15 +93,18 @@ com.routeplan
 flowchart LR
     API[REST API] --> APP[ItineraryOptimizationService]
     APP --> DB[(PostgreSQL)]
+    APP --> MATRIX[RouteMatrixProvider]
+    MATRIX --> SIMPLE[Simple Distance]
+    MATRIX --> GOOGLE[Google Routes API]
     APP --> REGISTRY[OptimizationEngineRegistry]
     REGISTRY --> ENGINE[OptimizationEngine]
-    ENGINE --> ROUTE[RouteProvider]
-    ROUTE --> DISTANCE[Haversine Distance]
+    MATRIX --> ROUTE[Request RouteMatrix]
+    ROUTE --> ENGINE
     APP --> PLANNER[ConstraintSchedulePlanner]
-    PLANNER --> ROUTE
+    ROUTE --> PLANNER
 ```
 
-`OptimizationEngine`과 `ConstraintSchedulePlanner`는 JPA Entity를 받지 않습니다. 애플리케이션 서비스가 Entity를 순수 입력 모델로 변환하고 결과를 다시 Itinerary로 저장합니다. 경로 순서 탐색과 현실 제약 일정 계산을 분리해 V2 알고리즘 비교 기준을 유지했습니다.
+`OptimizationEngine`과 `ConstraintSchedulePlanner`는 JPA Entity를 받지 않습니다. 애플리케이션 서비스가 Entity를 순수 입력 Snapshot으로 변환하고, Route Matrix를 한 번 만든 뒤 두 계산 계층에 같은 Matrix를 전달합니다. 경로 순서 탐색과 현실 제약 일정 계산을 분리해 V2 알고리즘 비교 기준도 유지했습니다.
 
 ## Domain Model
 
@@ -164,7 +178,7 @@ Nearest Neighbor는 전체 최적해를 보장하지 않습니다. 이 결과를
 
 Nearest Neighbor 경로에서 구간 `[i, k]`를 뒤집은 모든 후보를 비교하고, 가장 좋은 후보로 교체하는 과정을 더 이상 개선되지 않을 때까지 반복합니다. 대칭 거리를 가정한 delta 공식 대신 전체 경로를 재평가하므로 향후 방향별 이동시간이 다른 RouteProvider에서도 정확하게 비교할 수 있습니다.
 
-경로 엔진의 한 계산 단계 안에서는 동일 구간의 RouteProvider 결과를 메모이즈합니다. V3 제약 일정 계산기도 자체 요청 범위 캐시를 사용하지만 두 단계가 아직 하나의 Matrix를 공유하지는 않습니다. 이는 Redis나 영속 Route Matrix가 아니며, V4 실제 Route API 연동 전에 호출 중복을 다시 측정할 예정입니다. 2-opt는 국소 최적화이므로 Exact와 같은 결과를 보장하지 않습니다.
+V4부터 숙소와 모든 후보 장소의 방향별 Route Matrix를 최적화 전에 한 번 생성합니다. 경로 엔진과 제약 일정 계산기가 같은 Matrix를 조회하므로 단계 사이의 중복 외부 호출이 없습니다. Matrix는 요청이 끝나면 폐기되며 Redis나 영속 Cache는 아닙니다. 2-opt는 국소 최적화이므로 Exact와 같은 결과를 보장하지 않습니다.
 
 ## Constraint 처리
 
@@ -172,7 +186,7 @@ Nearest Neighbor 경로에서 구간 `[i, k]`를 뒤집은 모든 후보를 비�
 
 장소의 요일별 영업시간, TripPlace의 선호시간, Trip의 하루 시작·종료시간의 교집합을 실제 방문 가능 시간창으로 사용합니다. 도착이 시작 가능시간보다 빠르면 기다리고, `방문 종료시각 <= 시간창 종료시각`을 만족할 때만 장소를 포함합니다.
 
-영업시간 정보가 없는 장소는 아직 실제 Places API가 없는 점을 고려해 하루 운영시간 전체에 방문할 수 있는 것으로 취급합니다. 명시적으로 `closed=true`인 날은 방문할 수 없습니다. V3에서는 한 장소에 요일별 영업 구간 하나만 지원하며 자정을 넘는 영업시간은 지원하지 않습니다.
+영업시간 정보가 없는 장소는 하루 운영시간 전체에 방문할 수 있는 것으로 취급합니다. 명시적으로 `closed=true`인 날은 방문할 수 없습니다. Google 검색 결과 가져오기는 아직 영업시간을 자동 저장하지 않으므로 V3 영업시간 API로 별도 설정해야 합니다. 한 장소에 요일별 영업 구간 하나만 지원하며 자정을 넘는 영업시간은 지원하지 않습니다.
 
 여행 강도는 체류시간을 다음처럼 결정합니다.
 
@@ -205,6 +219,57 @@ Priority가 핵심 선택 기준이고, 같은 방문 집합에서는 이동·�
 
 `EXACT_SEARCH`는 제약이 없는 V2 이동 경로에서는 전역 최적해를 보장합니다. 시간창 때문에 장소가 제외되거나 재배치되면 현재 V3의 우선순위 삽입 휴리스틱이 최종 결정을 내리므로 전체 제약 최적화 문제의 전역 최적해까지 보장하지는 않습니다.
 
+## 외부 지도 API와 Route Matrix
+
+### Google Places Text Search
+
+장소 검색은 [Google Places API (New) Text Search](https://developers.google.com/maps/documentation/places/web-service/text-search)의 `POST /v1/places:searchText` 계약을 사용합니다. 비용과 응답 크기를 제한하기 위해 다음 필드만 요청합니다.
+
+```text
+places.id
+places.displayName
+places.formattedAddress
+places.location
+places.primaryType
+```
+
+검색 결과는 바로 DB에 저장하지 않습니다. 사용자가 선택한 결과만 `/api/v1/places/import`로 가져오며, Google Place ID를 `externalPlaceId` unique key로 사용해 같은 장소의 반복 가져오기를 멱등 처리합니다. 검색 중심 좌표와 1–50,000m 반경을 선택적으로 전달할 수 있고 결과는 요청당 최대 20개로 제한합니다.
+
+### Google Routes Compute Route Matrix
+
+[Google Routes API Compute Route Matrix](https://developers.google.com/maps/documentation/routes/compute_route_matrix)의 `POST /distanceMatrix/v2:computeRouteMatrix`를 사용합니다. 응답 순서를 신뢰하지 않고 각 element의 `originIndex`, `destinationIndex`, `status`, `condition`, `distanceMeters`, `duration`을 검증합니다.
+
+Google 제한에 맞춰 Matrix를 다음 크기로 분할합니다.
+
+| 이동수단 | Google travelMode | 요청당 Chunk | 최대 요소 |
+|---|---|---:|---:|
+| `WALKING` | `WALK` | 25 × 25 | 625 |
+| `DRIVING` | `DRIVE` | 25 × 25 | 625 |
+| `PUBLIC_TRANSIT` | `TRANSIT` | 10 × 10 | 100 |
+
+Trip 장소 수에 따른 전체 Matrix와 계획된 외부 요청 수는 다음과 같습니다. 위치 수에는 숙소 한 곳이 포함됩니다.
+
+| 장소 | 위치 | Matrix 요소 | WALK/DRIVE 요청 | TRANSIT 요청 |
+|---:|---:|---:|---:|---:|
+| 5 | 6 | 36 | 1 | 1 |
+| 8 | 9 | 81 | 1 | 1 |
+| 10 | 11 | 121 | 1 | 4 |
+| 15 | 16 | 256 | 1 | 4 |
+| 20 | 21 | 441 | 1 | 9 |
+| 30 | 31 | 961 | 4 | 16 |
+| 50 | 51 | 2,601 | 9 | 36 |
+
+분할 개수와 100요소 제한은 로컬 HTTP Stub 계약 테스트로 검증했습니다. 실제 Google API 키가 이 개발 환경에 없어 과금이 발생하는 실호출 latency는 기록하지 않았습니다. 대신 모든 Itinerary에 다음 값을 저장해 실제 환경의 측정값이 자동으로 남도록 했습니다.
+
+```text
+routeDataType
+routeProviderCallCount
+routeMatrixElementCount
+routeMatrixBuildMillis
+```
+
+`SIMPLE`은 외부 호출 수가 0이고, `GOOGLE`은 실제 HTTP 요청 수와 전체 Matrix 생성시간을 기록합니다.
+
 ## API
 
 | Method | Endpoint | 기능 |
@@ -215,6 +280,8 @@ Priority가 핵심 선택 기준이고, 같은 방문 집합에서는 이동·�
 | `PATCH` | `/api/v1/trips/{tripId}` | Trip 수정 |
 | `POST` | `/api/v1/places` | Place 등록 |
 | `GET` | `/api/v1/places/{placeId}` | Place 조회 |
+| `GET` | `/api/v1/places/search?query=...` | 외부 장소 텍스트 검색 |
+| `POST` | `/api/v1/places/import` | 선택한 외부 장소를 Place로 멱등 가져오기 |
 | `PUT` | `/api/v1/places/{placeId}/opening-hours/{dayOfWeek}` | 요일별 영업시간·휴무 설정 |
 | `GET` | `/api/v1/places/{placeId}/opening-hours` | 장소 영업시간 조회 |
 | `POST` | `/api/v1/trips/{tripId}/places` | Trip에 Place 추가 |
@@ -247,6 +314,25 @@ Trip 생성 시 `dailyStartTime`, `dailyEndTime`, `pace`를 생략하면 각각 
   "maximumStayMinutes": 90
 }
 ```
+
+### 외부 Provider 설정
+
+기본값은 API 키 없이 실행 가능한 다음 조합입니다.
+
+```text
+ROUTEPLAN_PLACE_PROVIDER=DISABLED
+ROUTEPLAN_ROUTE_PROVIDER=SIMPLE
+```
+
+Google Cloud 프로젝트에서 Places API (New)와 Routes API를 활성화하고 제한된 API 키를 발급한 뒤 `.env`를 다음처럼 설정하면 실제 Provider를 사용합니다.
+
+```dotenv
+ROUTEPLAN_PLACE_PROVIDER=GOOGLE
+ROUTEPLAN_ROUTE_PROVIDER=GOOGLE
+GOOGLE_MAPS_API_KEY=your-restricted-key
+```
+
+API 키는 요청 헤더에만 사용하며 오류 메시지나 응답에 포함하지 않습니다. 키가 없거나 장소 검색 Provider가 비활성화된 경우 검색은 `503 EXTERNAL_PROVIDER_NOT_CONFIGURED`를 반환합니다. Google의 429는 `EXTERNAL_PROVIDER_RATE_LIMITED`, 연결·5xx는 `EXTERNAL_PROVIDER_UNAVAILABLE`, 잘못된 element는 `EXTERNAL_PROVIDER_INVALID_RESPONSE`로 구분합니다. V4에서는 자동 Retry를 적용하지 않습니다.
 
 ## Local Run
 
@@ -326,19 +412,30 @@ gradlew.bat algorithmBenchmark
 - 여행 강도별 체류시간
 - 높은 Priority 장소 보존과 낮은 Priority 장소 제외
 - 휴무일 Must Visit의 구조화된 422 충돌 응답
+- Google Places 요청 body·API key·Field Mask 계약
+- Google Routes Matrix element index·duration 파싱
+- 대중교통 Matrix 100요소 요청 분할
+- 외부 429 오류 매핑과 API key 비노출
+- 외부 Place ID의 멱등 가져오기
+- 일정별 Matrix 요소 수·Provider 호출 수 저장
 - 중복 장소, 빈 여행, 다일 여행 오류 응답
 
 통합 테스트는 H2 대신 PostgreSQL Testcontainers를 사용하므로 Docker가 실행 중이어야 합니다.
 
 ## Transaction
 
-현재 RouteProvider는 네트워크 요청 없이 CPU 계산만 수행합니다. 최적화 중 Trip을 비관적 Lock으로 조회하고, 최신 version을 확인한 뒤 결과를 하나의 트랜잭션으로 저장합니다. `(trip_id, version)` unique constraint도 동시성의 마지막 방어선으로 사용합니다.
-
-실제 Route API를 연동하는 단계에서는 외부 요청 중 DB Lock을 유지하지 않도록 다음 구조로 변경해야 합니다.
+V4에서는 외부 Route API를 호출하는 동안 DB 트랜잭션이나 비관적 Lock을 유지하지 않습니다.
 
 ```text
-입력 Snapshot 조회 → 외부 Route 계산 → 짧은 결과 저장 트랜잭션
+짧은 읽기 Transaction
+→ 입력 Snapshot
+→ Transaction 밖에서 Route Matrix·최적화
+→ Trip 비관적 Lock
+→ 현재 입력과 Snapshot 재비교
+→ 짧은 결과 저장 Transaction
 ```
+
+저장 직전에 Trip, TripPlace, Place 좌표·체류시간, 당일 영업시간을 다시 순수 입력 모델로 만들고 원래 Snapshot과 비교합니다. 달라졌다면 오래된 결과를 저장하지 않고 `409 OPTIMIZATION_INPUT_CHANGED`를 반환합니다. `(trip_id, version)` unique constraint도 동시성의 마지막 방어선으로 유지합니다.
 
 ## Algorithm Roadmap
 
@@ -351,14 +448,16 @@ V2  Nearest Neighbor + 2-opt ✓
  ↓
 V3  영업시간·체류시간·Must Visit·Priority·하루 시간·여행 강도 ✓
  ↓
-V4  실제 Place/Route API와 Route Matrix
+V4  실제 Place/Route API와 Route Matrix ✓
+ ↓
+V5  외부 API 호출 측정·Cache 필요성 검증
 ```
 
 ## Performance Benchmark
 
 측정 환경은 Windows 11, Java 21.0.12.1, Intel Core i5-12500 6코어/12스레드, 메모리 15.8GB입니다. 오사카 주변에 고정 seed `20260825`로 생성한 좌표를 사용했습니다. 각 알고리즘을 1회 예열한 뒤 Exact는 3~5회, Nearest Neighbor는 15회, 2-opt는 10회 실행한 중앙값입니다.
 
-이 측정은 애플리케이션 수준의 경량 Benchmark이며 JMH 결과가 아닙니다. 실행시간은 머신과 JVM 상태에 따라 달라질 수 있습니다. 원시 결과는 [`docs/benchmarks/v2-algorithm-benchmark.csv`](docs/benchmarks/v2-algorithm-benchmark.csv)에 보존합니다. 표는 V2의 제약 없는 열린 경로 엔진 기준이므로 V3의 체류·대기·숙소 복귀가 포함된 일정 생성시간과 직접 비교하지 않습니다.
+이 측정은 애플리케이션 수준의 경량 Benchmark이며 JMH 결과가 아닙니다. 실행시간은 머신과 JVM 상태에 따라 달라질 수 있습니다. 원시 결과는 [`docs/benchmarks/v2-algorithm-benchmark.csv`](docs/benchmarks/v2-algorithm-benchmark.csv)에 보존합니다. 표는 V2의 제약 없는 열린 경로 엔진 기준이므로 V3 제약 계산 및 V4 Matrix 생성시간과 직접 비교하지 않습니다. V4의 실제 Matrix 시간은 각 Itinerary의 `routeMatrixBuildMillis`로 별도 측정합니다.
 
 | 장소 | Algorithm | 중앙시간(ms) | 예상 이동시간(분) | 거리(m) | Exact 거리 오차 |
 |---:|---|---:|---:|---:|---:|
@@ -380,7 +479,7 @@ V4  실제 Place/Route API와 Route Matrix
 | 50 | Nearest Neighbor | 0.165 | 4,107 | 305,993 | - |
 | 50 | Nearest + 2-opt | 14.980 | 3,481 | 259,165 | - |
 
-이 데이터에서는 2-opt가 5·8·10곳에서 Exact와 같은 결과를 찾았지만 일반적인 최적해 보장은 아닙니다. 50곳에서는 Nearest Neighbor보다 거리를 약 15.3% 줄였고 중앙 실행시간은 약 90배 증가했습니다. 절대 실행시간은 여전히 15ms 미만이지만 실제 Route API가 연결되면 요청 범위 메모이즈와 Matrix 생성 비용을 별도로 측정해야 합니다.
+이 데이터에서는 2-opt가 5·8·10곳에서 Exact와 같은 결과를 찾았지만 일반적인 최적해 보장은 아닙니다. 50곳에서는 Nearest Neighbor보다 거리를 약 15.3% 줄였고 중앙 실행시간은 약 90배 증가했습니다. 절대 실행시간은 여전히 15ms 미만이지만 실제 환경에서는 V4 Matrix 생성시간이 전체 latency의 대부분을 차지할 수 있으므로 별도 필드로 분리했습니다.
 
 10곳 Exact Search가 7.925ms에 끝난 것은 이 입력에서 누적비용 기반 분기 중단이 효과적이었기 때문입니다. `O(N!)` 최악 복잡도가 사라진 것은 아니므로 10곳 제한을 유지합니다.
 
@@ -396,7 +495,12 @@ V4  실제 Place/Route API와 Route Matrix
 - 영업시간 미등록은 실제 영업 여부를 알 수 없으므로 방문 가능으로 취급합니다.
 - 하루에 여러 영업 구간, 자정을 넘는 영업, 공휴일 예외는 지원하지 않습니다.
 - V2 Benchmark는 제약 없는 경로 기준이며 V3 제약 일정 성능 Benchmark는 아직 분리하지 않았습니다.
-- V2 경로 엔진과 V3 제약 일정 계산기는 아직 요청 전체 Route Matrix를 공유하지 않습니다.
+- Google Places 검색 결과의 영업시간은 아직 자동으로 가져오지 않습니다.
+- Google Transit Matrix는 Trip 날짜·지역 시간대가 아니라 API 요청시각을 기본 출발시각으로 사용합니다.
+- 실제 Google API 키가 없어 실 API latency·비용·quota 동작은 아직 검증하지 못했습니다.
+- V4는 Timeout과 오류 분류만 제공하며 Retry, Circuit Breaker, 영속 Cache는 적용하지 않습니다.
+- 51개 위치의 전체 방향 Matrix는 이동수단에 따라 Google 요청이 최대 36회 필요합니다.
+- 외부 장소 가져오기는 클라이언트가 선택한 검색 결과 필드를 전달하므로 Place Details 재검증은 아직 없습니다.
 - 여전히 하루짜리 여행만 지원합니다.
 - 인증이 없어 `userId`는 소유 관계만 표현하며 권한을 보장하지 않습니다.
 
@@ -405,3 +509,7 @@ V4  실제 Place/Route API와 Route Matrix
 V2까지는 이동거리만 줄이면 되었지만 그 경로에 60분 체류시간을 추가하자 하루 종료시각을 넘고 영업시간도 만족하지 못하는 문제가 생겼습니다. V3에서는 경로 엔진 자체에 모든 제약을 섞지 않고 별도 제약 일정 계산기를 추가했습니다.
 
 또한 마지막 장소에서 계산을 끝내면 화면상 일정은 가능해 보여도 숙소 복귀가 하루 종료 이후가 될 수 있었습니다. 최종 일정은 닫힌 경로로 평가하고 복귀 구간을 별도 필드로 저장하도록 변경했습니다. 이 때문에 같은 좌표에서도 V2의 열린 경로와 V3의 최종 방문 순서가 달라질 수 있습니다.
+
+V3의 경로 엔진과 제약 계산기는 각각 요청 범위 캐시를 가지고 있어 실제 Route API를 단순 연결하면 같은 구간을 단계마다 다시 호출하는 문제가 있었습니다. V4에서는 최적화 전에 전체 방향 Matrix를 생성하고 두 단계가 공유하도록 변경했습니다. 장소가 50곳이면 Matrix가 2,601요소이므로 Google의 요청 제한에 맞춰 Chunk로 나누고 실제 요청 수를 Itinerary에 기록합니다.
+
+외부 호출을 기존 최적화 Transaction 안에 두면 느린 네트워크 동안 Trip Lock을 점유하게 됩니다. 이를 입력 Snapshot 조회, 외부 계산, 입력 재검증과 저장의 세 구간으로 분리해 Lock 보유시간을 DB 저장 구간으로 제한했습니다.
