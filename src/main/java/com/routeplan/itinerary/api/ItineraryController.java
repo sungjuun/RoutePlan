@@ -3,12 +3,14 @@ package com.routeplan.itinerary.api;
 import com.routeplan.itinerary.application.ItineraryOptimizationService;
 import com.routeplan.itinerary.application.ItineraryQueryService;
 import com.routeplan.itinerary.application.ItineraryView;
+import com.routeplan.optimization.domain.OptimizationAlgorithm;
 import java.net.URI;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -27,8 +29,11 @@ public class ItineraryController {
     }
 
     @PostMapping("/trips/{tripId}/optimize")
-    public ResponseEntity<ItineraryView> optimize(@PathVariable Long tripId) {
-        ItineraryView result = optimizationService.optimize(tripId);
+    public ResponseEntity<ItineraryView> optimize(
+            @PathVariable Long tripId,
+            @RequestParam(defaultValue = "NEAREST_NEIGHBOR") OptimizationAlgorithm algorithm
+    ) {
+        ItineraryView result = optimizationService.optimize(tripId, algorithm);
         return ResponseEntity.created(
                 URI.create("/api/v1/itineraries/" + result.itineraryId())
         ).body(result);

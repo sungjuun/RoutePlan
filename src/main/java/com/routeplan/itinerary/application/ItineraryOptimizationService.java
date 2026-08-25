@@ -4,8 +4,10 @@ import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
 import com.routeplan.itinerary.domain.Itinerary;
 import com.routeplan.itinerary.persistence.ItineraryRepository;
-import com.routeplan.optimization.algorithm.OptimizationEngine;
+import com.routeplan.optimization.algorithm.ExactSearchOptimizationEngine;
+import com.routeplan.optimization.algorithm.OptimizationEngineRegistry;
 import com.routeplan.optimization.domain.Location;
+import com.routeplan.optimization.domain.OptimizationAlgorithm;
 import com.routeplan.optimization.domain.OptimizationRequest;
 import com.routeplan.optimization.domain.OptimizationResult;
 import com.routeplan.optimization.domain.VisitCandidate;
@@ -27,31 +29,35 @@ public class ItineraryOptimizationService {
     private final TripRepository tripRepository;
     private final TripPlaceRepository tripPlaceRepository;
     private final ItineraryRepository itineraryRepository;
-    private final OptimizationEngine optimizationEngine;
+    private final OptimizationEngineRegistry optimizationEngineRegistry;
 
     public ItineraryOptimizationService(
             TripRepository tripRepository,
             TripPlaceRepository tripPlaceRepository,
             ItineraryRepository itineraryRepository,
-            OptimizationEngine optimizationEngine
+            OptimizationEngineRegistry optimizationEngineRegistry
     ) {
         this.tripRepository = tripRepository;
         this.tripPlaceRepository = tripPlaceRepository;
         this.itineraryRepository = itineraryRepository;
-        this.optimizationEngine = optimizationEngine;
+        this.optimizationEngineRegistry = optimizationEngineRegistry;
     }
 
     @Transactional
-    public ItineraryView optimize(Long tripId) {
+    public ItineraryView optimize(Long tripId, OptimizationAlgorithm algorithm) {
         Trip trip = tripRepository.findByIdForUpdate(tripId)
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_NOT_FOUND));
         List<TripPlace> tripPlaces = tripPlaceRepository.findAllByTripIdOrderByIdAsc(tripId);
         if (tripPlaces.isEmpty()) {
             throw new RoutePlanException(ErrorCode.TRIP_HAS_NO_PLACES);
         }
+        if (algorithm == OptimizationAlgorithm.EXACT_SEARCH
+                && tripPlaces.size() > ExactSearchOptimizationEngine.MAX_CANDIDATES) {
+            throw new RoutePlanException(ErrorCode.EXACT_SEARCH_LIMIT_EXCEEDED);
+        }
 
         OptimizationRequest request = toRequest(trip, tripPlaces);
-        OptimizationResult result = optimizationEngine.optimize(request);
+        OptimizationResult result = optimizationEngineRegistry.get(algorithm).optimize(request);
         Itinerary itinerary = Itinerary.create(
                 trip,
                 itineraryRepository.findMaxVersionByTripId(tripId) + 1,
