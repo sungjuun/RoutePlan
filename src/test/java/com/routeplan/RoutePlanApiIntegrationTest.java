@@ -85,6 +85,11 @@ class RoutePlanApiIntegrationTest {
                 .andExpect(jsonPath("$.routeProviderCallCount").value(0))
                 .andExpect(jsonPath("$.routeMatrixElementCount").value(9))
                 .andExpect(jsonPath("$.routeMatrixBuildMillis").isNumber())
+                .andExpect(jsonPath("$.routeCacheEnabled").value(false))
+                .andExpect(jsonPath("$.routeCacheHitCount").value(0))
+                .andExpect(jsonPath("$.routeCacheMissCount").value(0))
+                .andExpect(jsonPath("$.routeCacheFailureCount").value(0))
+                .andExpect(jsonPath("$.routeCacheHitRatio").value(0.0))
                 .andExpect(jsonPath("$.items[0].placeId").value(osakaCastleId))
                 .andExpect(jsonPath("$.items[1].placeId").value(dotonboriId));
 

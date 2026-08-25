@@ -1,0 +1,2 @@
+measured_at,os,java,locations,matrix_elements,mode,runs,uncached_provider_calls,cold_cache_provider_calls,warm_cache_provider_calls,warm_cache_hit_ratio,uncached_median_ms,warm_cache_median_ms
+2026-08-25,Windows 11,21.0.12.1,21,441,WALKING,15,15,1,0,1.00,4.214,3.115
