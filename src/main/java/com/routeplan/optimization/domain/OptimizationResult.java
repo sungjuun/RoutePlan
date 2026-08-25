@@ -1,6 +1,5 @@
 package com.routeplan.optimization.domain;
 
-import com.routeplan.itinerary.domain.OptimizationAlgorithm;
 import java.util.List;
 import java.util.Objects;
 

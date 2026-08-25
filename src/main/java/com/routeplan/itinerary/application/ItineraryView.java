@@ -2,7 +2,7 @@ package com.routeplan.itinerary.application;
 
 import com.routeplan.itinerary.domain.Itinerary;
 import com.routeplan.itinerary.domain.ItineraryItem;
-import com.routeplan.itinerary.domain.OptimizationAlgorithm;
+import com.routeplan.optimization.domain.OptimizationAlgorithm;
 import java.time.Instant;
 import java.util.List;
 

@@ -1,6 +1,7 @@
 package com.routeplan.itinerary.domain;
 
 import com.routeplan.place.domain.Place;
+import com.routeplan.optimization.domain.OptimizationAlgorithm;
 import com.routeplan.trip.domain.Trip;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
