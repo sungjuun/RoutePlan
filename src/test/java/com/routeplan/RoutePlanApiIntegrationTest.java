@@ -3,6 +3,7 @@ package com.routeplan;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -77,10 +78,12 @@ class RoutePlanApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.version").value(1))
                 .andExpect(jsonPath("$.algorithm").value("NEAREST_NEIGHBOR"))
-                .andExpect(jsonPath("$.closedTour").value(false))
+                .andExpect(jsonPath("$.closedTour").value(true))
+                .andExpect(jsonPath("$.returnArrivalTime").exists())
+                .andExpect(jsonPath("$.totalStayMinutes").value(120))
                 .andExpect(jsonPath("$.routeDataType").value("STRAIGHT_LINE_ESTIMATE"))
-                .andExpect(jsonPath("$.items[0].placeId").value(dotonboriId))
-                .andExpect(jsonPath("$.items[1].placeId").value(osakaCastleId));
+                .andExpect(jsonPath("$.items[0].placeId").value(osakaCastleId))
+                .andExpect(jsonPath("$.items[1].placeId").value(dotonboriId));
 
         mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", tripId))
                 .andExpect(status().isCreated())
@@ -186,6 +189,129 @@ class RoutePlanApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value("EXACT_SEARCH_LIMIT_EXCEEDED"));
     }
 
+    @Test
+    void appliesTimeWindowPriorityAndMustVisitConstraints() throws Exception {
+        long userId = postAndReadId("/api/v1/users", """
+                {"nickname":"constraint-tester"}
+                """);
+        long highPriorityId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"예약 전시",
+                  "latitude":34.665400,
+                  "longitude":135.501900,
+                  "averageStayMinutes":90
+                }
+                """);
+        long lowPriorityId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"선택 카페",
+                  "latitude":34.665400,
+                  "longitude":135.501900,
+                  "averageStayMinutes":90
+                }
+                """);
+        setOpeningHour(highPriorityId, "THURSDAY", """
+                {"closed":false,"openTime":"09:30","closeTime":"11:00"}
+                """);
+        long tripId = postAndReadId("/api/v1/trips", """
+                {
+                  "userId":%d,
+                  "name":"제약 일정",
+                  "startDate":"2026-09-10",
+                  "endDate":"2026-09-10",
+                  "dailyStartTime":"09:00",
+                  "dailyEndTime":"11:00",
+                  "accommodationName":"난바 숙소",
+                  "accommodationLatitude":34.665400,
+                  "accommodationLongitude":135.501900,
+                  "transportMode":"WALKING",
+                  "pace":"STANDARD"
+                }
+                """.formatted(userId));
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/places", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "placeId":%d,
+                                  "priority":100,
+                                  "mustVisit":true,
+                                  "minimumStayMinutes":90,
+                                  "maximumStayMinutes":90
+                                }
+                                """.formatted(highPriorityId)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/v1/trips/{tripId}/places", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "placeId":%d,
+                                  "priority":10,
+                                  "mustVisit":false,
+                                  "minimumStayMinutes":90,
+                                  "maximumStayMinutes":90
+                                }
+                                """.formatted(lowPriorityId)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", tripId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].placeId").value(highPriorityId))
+                .andExpect(jsonPath("$.items[0].arrivalTime").value("09:00:00"))
+                .andExpect(jsonPath("$.items[0].startTime").value("09:30:00"))
+                .andExpect(jsonPath("$.items[0].endTime").value("11:00:00"))
+                .andExpect(jsonPath("$.items[0].waitingMinutes").value(30))
+                .andExpect(jsonPath("$.visitedPriorityScore").value(100))
+                .andExpect(jsonPath("$.exclusions[0].placeId").value(lowPriorityId))
+                .andExpect(jsonPath("$.exclusions[0].reason").value("DAILY_LIMIT"));
+    }
+
+    @Test
+    void explainsClosedMustVisitConflict() throws Exception {
+        long userId = postAndReadId("/api/v1/users", """
+                {"nickname":"must-visit-tester"}
+                """);
+        long closedPlaceId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"목요일 휴무 박물관",
+                  "latitude":34.665400,
+                  "longitude":135.501900,
+                  "averageStayMinutes":60
+                }
+                """);
+        setOpeningHour(closedPlaceId, "THURSDAY", """
+                {"closed":true}
+                """);
+        long tripId = postAndReadId("/api/v1/trips", """
+                {
+                  "userId":%d,
+                  "name":"Must Visit 충돌",
+                  "startDate":"2026-09-10",
+                  "endDate":"2026-09-10",
+                  "dailyStartTime":"09:00",
+                  "dailyEndTime":"20:00",
+                  "accommodationName":"난바 숙소",
+                  "accommodationLatitude":34.665400,
+                  "accommodationLongitude":135.501900,
+                  "transportMode":"WALKING"
+                }
+                """.formatted(userId));
+        mockMvc.perform(post("/api/v1/trips/{tripId}/places", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"placeId":%d,"priority":100,"mustVisit":true}
+                                """.formatted(closedPlaceId)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", tripId))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("INFEASIBLE_MUST_VISIT"))
+                .andExpect(jsonPath("$.violations[0].placeId").value(closedPlaceId))
+                .andExpect(jsonPath("$.violations[0].reason").value("CLOSED"))
+                .andExpect(jsonPath("$.violations[0].message").value("목요일 휴무 박물관은 여행일에 휴무입니다."));
+    }
+
     private long postAndReadId(String path, String body) throws Exception {
         MvcResult result = mockMvc.perform(post(path)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -201,5 +327,12 @@ class RoutePlanApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"placeId\":" + placeId + "}"))
                 .andExpect(status().isCreated());
+    }
+
+    private void setOpeningHour(long placeId, String dayOfWeek, String body) throws Exception {
+        mockMvc.perform(put("/api/v1/places/{placeId}/opening-hours/{dayOfWeek}", placeId, dayOfWeek)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
     }
 }
