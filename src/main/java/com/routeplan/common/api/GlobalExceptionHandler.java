@@ -3,6 +3,7 @@ package com.routeplan.common.api;
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
 import com.routeplan.optimization.constraint.InfeasibleScheduleException;
+import com.routeplan.integration.google.ExternalProviderException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.time.Instant;
@@ -46,6 +47,21 @@ public class GlobalExceptionHandler {
                 request,
                 violations
         );
+    }
+
+    @ExceptionHandler(ExternalProviderException.class)
+    ResponseEntity<ErrorResponse> handleExternalProvider(
+            ExternalProviderException exception,
+            HttpServletRequest request
+    ) {
+        ErrorCode errorCode = switch (exception.failure()) {
+            case NOT_CONFIGURED -> ErrorCode.EXTERNAL_PROVIDER_NOT_CONFIGURED;
+            case RATE_LIMITED -> ErrorCode.EXTERNAL_PROVIDER_RATE_LIMITED;
+            case UNAVAILABLE -> ErrorCode.EXTERNAL_PROVIDER_UNAVAILABLE;
+            case INVALID_RESPONSE -> ErrorCode.EXTERNAL_PROVIDER_INVALID_RESPONSE;
+            case ROUTE_NOT_FOUND -> ErrorCode.ROUTE_NOT_FOUND;
+        };
+        return response(errorCode, exception.getMessage(), request);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

@@ -79,6 +79,19 @@ public class Place {
         return new Place(name, latitude, longitude, category, averageStayMinutes);
     }
 
+    public static Place createExternal(
+            String externalPlaceId,
+            String name,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            String category,
+            int averageStayMinutes
+    ) {
+        Place place = new Place(name, latitude, longitude, category, averageStayMinutes);
+        place.externalPlaceId = requireText(externalPlaceId, "외부 장소 ID", 200);
+        return place;
+    }
+
     private static String requireText(String value, String field, int maxLength) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(field + "은 필수입니다.");

@@ -14,6 +14,12 @@ public enum ErrorCode {
     TRIP_HAS_NO_PLACES(HttpStatus.UNPROCESSABLE_CONTENT, "최적화할 장소가 없습니다."),
     EXACT_SEARCH_LIMIT_EXCEEDED(HttpStatus.UNPROCESSABLE_CONTENT, "Exact Search는 장소를 최대 10개까지 지원합니다."),
     INFEASIBLE_MUST_VISIT(HttpStatus.UNPROCESSABLE_CONTENT, "현재 조건으로는 모든 MUST_VISIT 장소를 방문할 수 없습니다."),
+    EXTERNAL_PROVIDER_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "외부 데이터 Provider가 설정되지 않았습니다."),
+    EXTERNAL_PROVIDER_RATE_LIMITED(HttpStatus.SERVICE_UNAVAILABLE, "외부 데이터 Provider의 요청 한도를 초과했습니다."),
+    EXTERNAL_PROVIDER_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "외부 데이터 Provider를 사용할 수 없습니다."),
+    EXTERNAL_PROVIDER_INVALID_RESPONSE(HttpStatus.BAD_GATEWAY, "외부 데이터 Provider 응답이 올바르지 않습니다."),
+    ROUTE_NOT_FOUND(HttpStatus.UNPROCESSABLE_CONTENT, "이동 가능한 경로를 찾을 수 없습니다."),
+    OPTIMIZATION_INPUT_CHANGED(HttpStatus.CONFLICT, "최적화 중 여행 조건이 변경됐습니다. 다시 시도해 주세요."),
     ITINERARY_NOT_FOUND(HttpStatus.NOT_FOUND, "일정을 찾을 수 없습니다."),
     CONFLICT(HttpStatus.CONFLICT, "요청이 현재 데이터 상태와 충돌합니다.");
 
