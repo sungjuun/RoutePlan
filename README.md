@@ -2,11 +2,15 @@
 
 RoutePlan은 사용자가 선택한 장소와 여행 조건을 바탕으로 방문 순서를 계산하고, 이후 실제 제약조건과 일정 재최적화, 공유 Route 재사용까지 확장하는 여행 경로 최적화 프로젝트입니다.
 
-V1과 V2는 복잡한 제약조건을 추가하기 전에 다음 질문부터 검증합니다.
+V1과 V2는 복잡한 제약조건을 추가하기 전에 다음 질문부터 검증했습니다.
 
 > 숙소와 방문 장소의 좌표가 주어졌을 때, 재현 가능한 방문 순서를 계산하고 휴리스틱 결과가 최적해와 얼마나 다른지 측정할 수 있는가?
 
-## 구현 범위 (V1–V2)
+V3는 그 경로를 실제 하루 일정으로 바꾸기 위해 다음 질문을 다룹니다.
+
+> 영업시간과 체류시간을 지키고, 중요한 장소를 우선하면서 하루 종료 전 숙소로 돌아오는 실행 가능한 일정을 만들 수 있는가?
+
+## 구현 범위 (V1–V3)
 
 ### 지원
 
@@ -21,6 +25,14 @@ V1과 V2는 복잡한 제약조건을 추가하기 전에 다음 질문부터 �
 - Nearest Neighbor 결과를 개선하는 2-opt
 - 알고리즘별 일정 생성과 Itinerary version 저장
 - 고정 seed 기반 재현 가능한 Algorithm Benchmark
+- 요일별 영업시간과 휴무일
+- 장소별 평균 체류시간과 여행별 최소·최대 체류시간
+- Must Visit과 1–100 Priority
+- 선호 방문 시간창
+- 하루 시작·종료시간과 숙소 복귀
+- `ACTIVE`, `STANDARD`, `RELAXED` 여행 강도
+- 도착·대기·방문 시작·종료 시각 계산
+- 선택 장소 제외 사유와 Must Visit 충돌 상세 응답
 - 매 최적화 결과를 새로운 Itinerary 버전으로 저장
 - 최신 또는 특정 Itinerary 조회
 - PostgreSQL, Flyway, OpenAPI, Docker Compose
@@ -30,8 +42,6 @@ V1과 V2는 복잡한 제약조건을 추가하기 전에 다음 질문부터 �
 
 - 실제 도로·대중교통 경로 및 실제 이동시간
 - 여러 날짜에 장소 배분
-- 마지막 장소에서 숙소로 돌아오는 경로
-- 영업시간, 체류시간, Must Visit, Priority, 하루 종료시간
 - 영속 Route Matrix와 외부 경로 캐시
 - 외부 Places/Route API
 - Redis, QueryDSL, PostGIS
@@ -64,7 +74,7 @@ com.routeplan
 ├─ user            최소 사용자
 ├─ trip            Trip과 TripPlace
 ├─ place           장소 정보
-├─ optimization    Spring/JPA와 분리된 경로 계산
+├─ optimization    Spring/JPA와 분리된 경로·제약 일정 계산
 └─ itinerary       최적화 orchestration과 결과 저장
 ```
 
@@ -76,10 +86,11 @@ flowchart LR
     REGISTRY --> ENGINE[OptimizationEngine]
     ENGINE --> ROUTE[RouteProvider]
     ROUTE --> DISTANCE[Haversine Distance]
-    ENGINE --> APP
+    APP --> PLANNER[ConstraintSchedulePlanner]
+    PLANNER --> ROUTE
 ```
 
-`OptimizationEngine`은 JPA Entity를 받지 않습니다. 애플리케이션 서비스가 Entity를 순수 입력 모델로 변환하고 알고리즘 결과를 다시 Itinerary로 저장합니다.
+`OptimizationEngine`과 `ConstraintSchedulePlanner`는 JPA Entity를 받지 않습니다. 애플리케이션 서비스가 Entity를 순수 입력 모델로 변환하고 결과를 다시 Itinerary로 저장합니다. 경로 순서 탐색과 현실 제약 일정 계산을 분리해 V2 알고리즘 비교 기준을 유지했습니다.
 
 ## Domain Model
 
@@ -88,9 +99,12 @@ erDiagram
     USERS ||--o{ TRIPS : owns
     TRIPS ||--o{ TRIP_PLACES : contains
     PLACES ||--o{ TRIP_PLACES : selected
+    PLACES ||--o{ PLACE_OPENING_HOURS : opens
     TRIPS ||--o{ ITINERARIES : generates
     ITINERARIES ||--|{ ITINERARY_ITEMS : consists_of
+    ITINERARIES ||--o{ ITINERARY_EXCLUSIONS : excludes
     PLACES ||--o{ ITINERARY_ITEMS : references
+    PLACES ||--o{ ITINERARY_EXCLUSIONS : references
 ```
 
 주요 DB 제약조건은 다음과 같습니다.
@@ -99,11 +113,15 @@ erDiagram
 - 같은 Trip에 같은 Itinerary version을 저장할 수 없음
 - 같은 Itinerary에 같은 sequence를 저장할 수 없음
 - 위도와 경도의 지구 좌표 범위 검증
+- 장소·요일별 영업시간 한 건만 허용
+- 영업일의 종료시간은 시작시간보다 늦어야 함
+- Priority는 1–100, 체류시간은 1–1,440분
+- Trip의 하루 종료시간은 시작시간보다 늦어야 함
 - V1 Trip은 `start_date = end_date`
 
 ## Optimization Engine
 
-현재 엔진은 숙소에서 출발하는 열린 경로를 계산합니다. 마지막 장소에서 숙소로 돌아오는 비용은 포함하지 않습니다. 목적함수는 `예상 이동시간 → 이동거리 → TripPlace ID 순서`의 사전식 비교를 사용합니다.
+V2 경로 엔진은 숙소에서 출발하는 열린 경로 후보를 계산합니다. 목적함수는 `예상 이동시간 → 이동거리 → TripPlace ID 순서`의 사전식 비교를 사용합니다. V3 제약 일정 계산기는 이 후보를 입력으로 받아 방문 가능성을 검증하고 마지막 장소에서 숙소로 돌아오는 구간까지 최종 합계에 포함합니다.
 
 ```java
 public interface OptimizationEngine {
@@ -146,7 +164,46 @@ Nearest Neighbor는 전체 최적해를 보장하지 않습니다. 이 결과를
 
 Nearest Neighbor 경로에서 구간 `[i, k]`를 뒤집은 모든 후보를 비교하고, 가장 좋은 후보로 교체하는 과정을 더 이상 개선되지 않을 때까지 반복합니다. 대칭 거리를 가정한 delta 공식 대신 전체 경로를 재평가하므로 향후 방향별 이동시간이 다른 RouteProvider에서도 정확하게 비교할 수 있습니다.
 
-하나의 최적화 요청 안에서는 동일 구간의 RouteProvider 결과를 메모이즈합니다. 이는 요청 범위를 벗어나지 않으며 Redis나 영속 Route Matrix가 아닙니다. 2-opt는 국소 최적화이므로 Exact와 같은 결과를 보장하지 않습니다.
+경로 엔진의 한 계산 단계 안에서는 동일 구간의 RouteProvider 결과를 메모이즈합니다. V3 제약 일정 계산기도 자체 요청 범위 캐시를 사용하지만 두 단계가 아직 하나의 Matrix를 공유하지는 않습니다. 이는 Redis나 영속 Route Matrix가 아니며, V4 실제 Route API 연동 전에 호출 중복을 다시 측정할 예정입니다. 2-opt는 국소 최적화이므로 Exact와 같은 결과를 보장하지 않습니다.
+
+## Constraint 처리
+
+### Time Window와 체류시간
+
+장소의 요일별 영업시간, TripPlace의 선호시간, Trip의 하루 시작·종료시간의 교집합을 실제 방문 가능 시간창으로 사용합니다. 도착이 시작 가능시간보다 빠르면 기다리고, `방문 종료시각 <= 시간창 종료시각`을 만족할 때만 장소를 포함합니다.
+
+영업시간 정보가 없는 장소는 아직 실제 Places API가 없는 점을 고려해 하루 운영시간 전체에 방문할 수 있는 것으로 취급합니다. 명시적으로 `closed=true`인 날은 방문할 수 없습니다. V3에서는 한 장소에 요일별 영업 구간 하나만 지원하며 자정을 넘는 영업시간은 지원하지 않습니다.
+
+여행 강도는 체류시간을 다음처럼 결정합니다.
+
+| Pace | 체류시간 |
+|---|---|
+| `ACTIVE` | 설정된 최소시간, 미설정 시 평균의 75% |
+| `STANDARD` | 평균시간을 최소·최대 범위 안으로 보정 |
+| `RELAXED` | 설정된 최대시간, 미설정 시 평균의 125% |
+
+기본 최소 체류시간은 15분보다 짧아지지 않습니다.
+
+### Must Visit, Priority와 숙소 복귀
+
+1. Must Visit 후보를 먼저 일정에 삽입합니다.
+2. 나머지 후보는 Priority 내림차순으로 처리합니다.
+3. 현재 경로의 모든 삽입 위치를 평가하고 실행 가능한 위치 중 Score가 가장 높은 위치를 선택합니다.
+4. 선택 장소를 넣을 수 없으면 `CLOSED`, `TIME_WINDOW`, `DAILY_LIMIT` 사유와 함께 제외 내역을 저장합니다.
+5. Must Visit을 넣을 수 없으면 10곳 이하에서 순열 복구를 시도한 뒤, 실패 시 `422 INFEASIBLE_MUST_VISIT`와 장소별 충돌 원인을 반환합니다.
+6. 마지막 방문 후 숙소 복귀시각이 하루 종료시각을 넘는 일정은 허용하지 않습니다.
+
+현재 일정 Score는 테스트 가능한 정수식으로 계산합니다.
+
+```text
+score = 방문 Priority 합 × 10,000
+        - 총 이동시간 × 5
+        - 총 대기시간 × 2
+```
+
+Priority가 핵심 선택 기준이고, 같은 방문 집합에서는 이동·대기 비용이 작은 경로를 선택합니다. 모든 값과 제외 내역은 Itinerary 버전에 Snapshot으로 저장됩니다.
+
+`EXACT_SEARCH`는 제약이 없는 V2 이동 경로에서는 전역 최적해를 보장합니다. 시간창 때문에 장소가 제외되거나 재배치되면 현재 V3의 우선순위 삽입 휴리스틱이 최종 결정을 내리므로 전체 제약 최적화 문제의 전역 최적해까지 보장하지는 않습니다.
 
 ## API
 
@@ -158,7 +215,10 @@ Nearest Neighbor 경로에서 구간 `[i, k]`를 뒤집은 모든 후보를 비�
 | `PATCH` | `/api/v1/trips/{tripId}` | Trip 수정 |
 | `POST` | `/api/v1/places` | Place 등록 |
 | `GET` | `/api/v1/places/{placeId}` | Place 조회 |
+| `PUT` | `/api/v1/places/{placeId}/opening-hours/{dayOfWeek}` | 요일별 영업시간·휴무 설정 |
+| `GET` | `/api/v1/places/{placeId}/opening-hours` | 장소 영업시간 조회 |
 | `POST` | `/api/v1/trips/{tripId}/places` | Trip에 Place 추가 |
+| `PATCH` | `/api/v1/trips/{tripId}/places/{placeId}` | Must Visit·Priority·시간·체류 제약 교체 |
 | `DELETE` | `/api/v1/trips/{tripId}/places/{placeId}` | Trip에서 Place 제거 |
 | `POST` | `/api/v1/trips/{tripId}/optimize?algorithm=...` | 선택한 알고리즘으로 일정 생성 및 새 버전 저장 |
 | `GET` | `/api/v1/trips/{tripId}/itineraries/latest` | 최신 일정 조회 |
@@ -172,6 +232,20 @@ Nearest Neighbor 경로에서 구간 `[i, k]`를 뒤집은 모든 후보를 비�
 NEAREST_NEIGHBOR
 EXACT_SEARCH
 NEAREST_NEIGHBOR_2_OPT
+```
+
+Trip 생성 시 `dailyStartTime`, `dailyEndTime`, `pace`를 생략하면 각각 `09:00`, `20:00`, `STANDARD`를 사용합니다. Place의 `averageStayMinutes` 기본값은 60분이고, TripPlace의 Priority 기본값은 50입니다.
+
+```json
+{
+  "placeId": 1,
+  "priority": 100,
+  "mustVisit": true,
+  "preferredStartTime": "10:00",
+  "preferredEndTime": "12:00",
+  "minimumStayMinutes": 60,
+  "maximumStayMinutes": 90
+}
 ```
 
 ## Local Run
@@ -247,6 +321,11 @@ gradlew.bat algorithmBenchmark
 - 사용자 → 여행 → 장소 → 최적화 전체 API 흐름
 - 반복 최적화 시 version 증가
 - 알고리즘별 결과와 version 증가
+- 영업 시작 전 대기와 방문 시작·종료 시각
+- 하루 종료 전 숙소 복귀
+- 여행 강도별 체류시간
+- 높은 Priority 장소 보존과 낮은 Priority 장소 제외
+- 휴무일 Must Visit의 구조화된 422 충돌 응답
 - 중복 장소, 빈 여행, 다일 여행 오류 응답
 
 통합 테스트는 H2 대신 PostgreSQL Testcontainers를 사용하므로 Docker가 실행 중이어야 합니다.
@@ -270,7 +349,7 @@ V2  Exact Search로 품질 측정 ✓
  ↓
 V2  Nearest Neighbor + 2-opt ✓
  ↓
-V3  영업시간·체류시간·Must Visit·Priority
+V3  영업시간·체류시간·Must Visit·Priority·하루 시간·여행 강도 ✓
  ↓
 V4  실제 Place/Route API와 Route Matrix
 ```
@@ -279,7 +358,7 @@ V4  실제 Place/Route API와 Route Matrix
 
 측정 환경은 Windows 11, Java 21.0.12.1, Intel Core i5-12500 6코어/12스레드, 메모리 15.8GB입니다. 오사카 주변에 고정 seed `20260825`로 생성한 좌표를 사용했습니다. 각 알고리즘을 1회 예열한 뒤 Exact는 3~5회, Nearest Neighbor는 15회, 2-opt는 10회 실행한 중앙값입니다.
 
-이 측정은 애플리케이션 수준의 경량 Benchmark이며 JMH 결과가 아닙니다. 실행시간은 머신과 JVM 상태에 따라 달라질 수 있습니다. 원시 결과는 [`docs/benchmarks/v2-algorithm-benchmark.csv`](docs/benchmarks/v2-algorithm-benchmark.csv)에 보존합니다.
+이 측정은 애플리케이션 수준의 경량 Benchmark이며 JMH 결과가 아닙니다. 실행시간은 머신과 JVM 상태에 따라 달라질 수 있습니다. 원시 결과는 [`docs/benchmarks/v2-algorithm-benchmark.csv`](docs/benchmarks/v2-algorithm-benchmark.csv)에 보존합니다. 표는 V2의 제약 없는 열린 경로 엔진 기준이므로 V3의 체류·대기·숙소 복귀가 포함된 일정 생성시간과 직접 비교하지 않습니다.
 
 | 장소 | Algorithm | 중앙시간(ms) | 예상 이동시간(분) | 거리(m) | Exact 거리 오차 |
 |---:|---|---:|---:|---:|---:|
@@ -312,6 +391,17 @@ V4  실제 Place/Route API와 Route Matrix
 - Nearest Neighbor가 만든 경로는 최적해가 아닐 수 있습니다.
 - 2-opt는 국소 최적해이며 Exact와 같은 결과를 보장하지 않습니다.
 - Exact Search는 조합 폭증 때문에 10곳까지만 허용합니다.
-- 모든 장소를 방문하므로 시간이 부족한 상황을 처리하지 못합니다.
-- 방문 시각과 영업시간을 계산하지 않습니다.
+- V3 Priority 삽입은 결정적 휴리스틱이며 선택 장소 조합의 전역 최대 Score를 보장하지 않습니다.
+- Must Visit 순열 복구는 10곳까지만 수행하며, 더 큰 입력에서는 실행 가능한 다른 순서가 있어도 실패로 판단할 수 있습니다.
+- 영업시간 미등록은 실제 영업 여부를 알 수 없으므로 방문 가능으로 취급합니다.
+- 하루에 여러 영업 구간, 자정을 넘는 영업, 공휴일 예외는 지원하지 않습니다.
+- V2 Benchmark는 제약 없는 경로 기준이며 V3 제약 일정 성능 Benchmark는 아직 분리하지 않았습니다.
+- V2 경로 엔진과 V3 제약 일정 계산기는 아직 요청 전체 Route Matrix를 공유하지 않습니다.
+- 여전히 하루짜리 여행만 지원합니다.
 - 인증이 없어 `userId`는 소유 관계만 표현하며 권한을 보장하지 않습니다.
+
+## Troubleshooting
+
+V2까지는 이동거리만 줄이면 되었지만 그 경로에 60분 체류시간을 추가하자 하루 종료시각을 넘고 영업시간도 만족하지 못하는 문제가 생겼습니다. V3에서는 경로 엔진 자체에 모든 제약을 섞지 않고 별도 제약 일정 계산기를 추가했습니다.
+
+또한 마지막 장소에서 계산을 끝내면 화면상 일정은 가능해 보여도 숙소 복귀가 하루 종료 이후가 될 수 있었습니다. 최종 일정은 닫힌 경로로 평가하고 복귀 구간을 별도 필드로 저장하도록 변경했습니다. 이 때문에 같은 좌표에서도 V2의 열린 경로와 V3의 최종 방문 순서가 달라질 수 있습니다.
