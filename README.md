@@ -451,7 +451,7 @@ API 키는 요청 헤더에만 사용하며 오류 메시지나 응답에 포함
 docker compose up --build
 ```
 
-Frontend는 `http://localhost:3000`, Backend는 `http://localhost:8080`, PostgreSQL은 `localhost:5432`, Redis는 `localhost:6379`에서 실행됩니다.
+Frontend는 `http://localhost:3100`, Backend는 `http://localhost:8080`, PostgreSQL은 `localhost:5432`, Redis는 `localhost:6379`에서 실행됩니다.
 이미 사용 중인 포트가 있다면 `.env`의 `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`를 변경할 수 있습니다.
 
 ### 애플리케이션 직접 실행
