@@ -3,12 +3,16 @@ package com.routeplan.itinerary.application;
 import com.routeplan.itinerary.domain.Itinerary;
 import com.routeplan.itinerary.domain.ItineraryItem;
 import com.routeplan.itinerary.domain.ItineraryExclusion;
+import com.routeplan.itinerary.domain.ItineraryChangeReason;
+import com.routeplan.itinerary.domain.ItineraryGenerationType;
+import com.routeplan.itinerary.domain.ItineraryItemStatus;
 import com.routeplan.optimization.constraint.ExclusionReason;
 import com.routeplan.optimization.domain.OptimizationAlgorithm;
 import com.routeplan.optimization.route.RouteDataType;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 
@@ -16,6 +20,13 @@ public record ItineraryView(
         Long itineraryId,
         Long tripId,
         int version,
+        ItineraryGenerationType generationType,
+        Long parentItineraryId,
+        ItineraryChangeReason changeReason,
+        String changeReasonDetail,
+        LocalTime reoptimizationStartTime,
+        BigDecimal reoptimizationStartLatitude,
+        BigDecimal reoptimizationStartLongitude,
         OptimizationAlgorithm algorithm,
         long totalDistanceMeters,
         int estimatedTravelMinutes,
@@ -46,6 +57,14 @@ public record ItineraryView(
                 itinerary.getId(),
                 itinerary.getTrip().getId(),
                 itinerary.getVersion(),
+                itinerary.getGenerationType(),
+                itinerary.getParentItinerary() == null
+                        ? null : itinerary.getParentItinerary().getId(),
+                itinerary.getChangeReason(),
+                itinerary.getChangeReasonDetail(),
+                itinerary.getReoptimizationStartTime(),
+                itinerary.getReoptimizationStartLatitude(),
+                itinerary.getReoptimizationStartLongitude(),
                 itinerary.getAlgorithm(),
                 itinerary.getTotalDistanceMeters(),
                 itinerary.getEstimatedTravelMinutes(),
@@ -82,6 +101,7 @@ public record ItineraryView(
     }
 
     public record Item(
+            Long itineraryItemId,
             int sequence,
             Long placeId,
             String placeName,
@@ -94,11 +114,13 @@ public record ItineraryView(
             Integer waitingMinutes,
             Integer stayMinutes,
             Integer priority,
-            Boolean mustVisit
+            Boolean mustVisit,
+            ItineraryItemStatus status
     ) {
 
         static Item from(ItineraryItem item) {
             return new Item(
+                    item.getId(),
                     item.getSequence(),
                     item.getPlace().getId(),
                     item.getPlace().getName(),
@@ -111,7 +133,8 @@ public record ItineraryView(
                     item.getWaitingMinutes(),
                     item.getStayMinutes(),
                     item.getPriority(),
-                    item.getMustVisit()
+                    item.getMustVisit(),
+                    item.getStatus()
             );
         }
     }

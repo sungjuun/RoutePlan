@@ -12,6 +12,7 @@ public record ScheduleRequest(
         LocalDate visitDate,
         LocalTime dailyStartTime,
         LocalTime dailyEndTime,
+        Location startLocation,
         Location accommodation,
         TransportMode transportMode,
         OptimizationAlgorithm algorithm,
@@ -23,6 +24,7 @@ public record ScheduleRequest(
         Objects.requireNonNull(visitDate, "방문일은 필수입니다.");
         Objects.requireNonNull(dailyStartTime, "하루 시작시간은 필수입니다.");
         Objects.requireNonNull(dailyEndTime, "하루 종료시간은 필수입니다.");
+        Objects.requireNonNull(startLocation, "일정 시작 좌표는 필수입니다.");
         Objects.requireNonNull(accommodation, "숙소 좌표는 필수입니다.");
         Objects.requireNonNull(transportMode, "이동수단은 필수입니다.");
         Objects.requireNonNull(algorithm, "최적화 알고리즘은 필수입니다.");

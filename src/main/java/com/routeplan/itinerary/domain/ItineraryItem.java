@@ -3,6 +3,8 @@ package com.routeplan.itinerary.domain;
 import com.routeplan.place.domain.Place;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -69,6 +71,10 @@ public class ItineraryItem {
     @Column(name = "must_visit")
     private Boolean mustVisit;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private ItineraryItemStatus status;
+
     protected ItineraryItem() {
     }
 
@@ -90,6 +96,7 @@ public class ItineraryItem {
         this.sequence = sequence;
         this.travelDistanceMeters = travelDistanceMeters;
         this.estimatedTravelMinutes = estimatedTravelMinutes;
+        this.status = ItineraryItemStatus.PLANNED;
     }
 
     ItineraryItem(
@@ -107,6 +114,29 @@ public class ItineraryItem {
             int priority,
             boolean mustVisit
     ) {
+        this(
+                itinerary, place, sequence, travelDistanceMeters, estimatedTravelMinutes,
+                visitDate, arrivalTime, startTime, endTime, waitingMinutes, stayMinutes,
+                priority, mustVisit, ItineraryItemStatus.PLANNED
+        );
+    }
+
+    ItineraryItem(
+            Itinerary itinerary,
+            Place place,
+            int sequence,
+            long travelDistanceMeters,
+            int estimatedTravelMinutes,
+            LocalDate visitDate,
+            LocalTime arrivalTime,
+            LocalTime startTime,
+            LocalTime endTime,
+            int waitingMinutes,
+            int stayMinutes,
+            int priority,
+            boolean mustVisit,
+            ItineraryItemStatus status
+    ) {
         this(itinerary, place, sequence, travelDistanceMeters, estimatedTravelMinutes);
         if (visitDate == null || arrivalTime == null || startTime == null || endTime == null) {
             throw new IllegalArgumentException("방문일과 방문 시각은 필수입니다.");
@@ -117,6 +147,9 @@ public class ItineraryItem {
         if (startTime.isBefore(arrivalTime) || !endTime.isAfter(startTime)) {
             throw new IllegalArgumentException("도착·시작·종료시각 순서가 올바르지 않습니다.");
         }
+        if (status == null) {
+            throw new IllegalArgumentException("일정 항목 상태는 필수입니다.");
+        }
         this.visitDate = visitDate;
         this.arrivalTime = arrivalTime;
         this.startTime = startTime;
@@ -125,6 +158,7 @@ public class ItineraryItem {
         this.stayMinutes = stayMinutes;
         this.priority = priority;
         this.mustVisit = mustVisit;
+        this.status = status;
     }
 
     public Long getId() {
@@ -177,5 +211,9 @@ public class ItineraryItem {
 
     public Boolean getMustVisit() {
         return mustVisit;
+    }
+
+    public ItineraryItemStatus getStatus() {
+        return status;
     }
 }

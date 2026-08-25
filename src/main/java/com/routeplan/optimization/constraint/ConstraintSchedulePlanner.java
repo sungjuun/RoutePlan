@@ -197,7 +197,7 @@ public class ConstraintSchedulePlanner {
             RouteCache routes
     ) {
         int currentMinute = minuteOfDay(request.dailyStartTime());
-        Location currentLocation = request.accommodation();
+        Location currentLocation = request.startLocation();
         long totalDistance = 0;
         int totalTravel = 0;
         int totalStay = 0;
@@ -251,11 +251,12 @@ public class ConstraintSchedulePlanner {
             currentLocation = candidate.location();
         }
 
-        RouteResult returnLeg = order.isEmpty()
-                ? new RouteResult(0, 0)
-                : routes.route(currentLocation, request.accommodation());
+        RouteResult returnLeg = routes.route(currentLocation, request.accommodation());
         int returnMinute = currentMinute + returnLeg.estimatedTravelMinutes();
         if (returnMinute > minuteOfDay(request.dailyEndTime())) {
+            if (order.isEmpty()) {
+                throw new InfeasibleReturnException();
+            }
             ScheduleCandidate culprit = order.getLast();
             return Attempt.failure(culprit, ExclusionReason.DAILY_LIMIT);
         }

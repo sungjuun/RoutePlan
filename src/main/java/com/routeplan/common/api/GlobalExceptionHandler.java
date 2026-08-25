@@ -3,6 +3,7 @@ package com.routeplan.common.api;
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
 import com.routeplan.optimization.constraint.InfeasibleScheduleException;
+import com.routeplan.optimization.constraint.InfeasibleReturnException;
 import com.routeplan.integration.google.ExternalProviderException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -26,6 +27,14 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         return response(exception.errorCode(), exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(InfeasibleReturnException.class)
+    ResponseEntity<ErrorResponse> handleInfeasibleReturn(
+            InfeasibleReturnException exception,
+            HttpServletRequest request
+    ) {
+        return response(ErrorCode.INFEASIBLE_RETURN, exception.getMessage(), request);
     }
 
     @ExceptionHandler(InfeasibleScheduleException.class)

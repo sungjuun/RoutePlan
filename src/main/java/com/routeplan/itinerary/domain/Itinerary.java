@@ -2,6 +2,7 @@ package com.routeplan.itinerary.domain;
 
 import com.routeplan.place.domain.Place;
 import com.routeplan.optimization.domain.OptimizationAlgorithm;
+import com.routeplan.optimization.domain.Location;
 import com.routeplan.optimization.constraint.ExclusionReason;
 import com.routeplan.optimization.route.RouteDataType;
 import com.routeplan.trip.domain.Trip;
@@ -23,6 +24,7 @@ import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -50,6 +52,30 @@ public class Itinerary {
 
     @Column(nullable = false)
     private int version;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "generation_type", nullable = false, length = 30)
+    private ItineraryGenerationType generationType;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_itinerary_id")
+    private Itinerary parentItinerary;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "change_reason", length = 30)
+    private ItineraryChangeReason changeReason;
+
+    @Column(name = "change_reason_detail", length = 500)
+    private String changeReasonDetail;
+
+    @Column(name = "reoptimization_start_time")
+    private LocalTime reoptimizationStartTime;
+
+    @Column(name = "reoptimization_start_latitude", precision = 9, scale = 6)
+    private BigDecimal reoptimizationStartLatitude;
+
+    @Column(name = "reoptimization_start_longitude", precision = 10, scale = 6)
+    private BigDecimal reoptimizationStartLongitude;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 40)
@@ -164,6 +190,7 @@ public class Itinerary {
         }
         this.trip = trip;
         this.version = version;
+        this.generationType = ItineraryGenerationType.INITIAL_OPTIMIZATION;
         this.algorithm = algorithm;
         this.totalDistanceMeters = totalDistanceMeters;
         this.estimatedTravelMinutes = estimatedTravelMinutes;
@@ -242,6 +269,67 @@ public class Itinerary {
         ));
     }
 
+    public void addCompletedItem(
+            Place place,
+            int sequence,
+            long travelDistanceMeters,
+            int estimatedTravelMinutes,
+            LocalDate visitDate,
+            LocalTime arrivalTime,
+            LocalTime startTime,
+            LocalTime endTime,
+            int waitingMinutes,
+            int stayMinutes,
+            int priority,
+            boolean mustVisit
+    ) {
+        items.add(new ItineraryItem(
+                this, place, sequence, travelDistanceMeters, estimatedTravelMinutes,
+                visitDate, arrivalTime, startTime, endTime,
+                waitingMinutes, stayMinutes, priority, mustVisit,
+                ItineraryItemStatus.COMPLETED
+        ));
+    }
+
+    public void markReoptimized(
+            Itinerary parentItinerary,
+            ItineraryChangeReason changeReason,
+            String changeReasonDetail,
+            LocalTime reoptimizationStartTime,
+            BigDecimal reoptimizationStartLatitude,
+            BigDecimal reoptimizationStartLongitude
+    ) {
+        if (parentItinerary == null || changeReason == null || reoptimizationStartTime == null
+                || reoptimizationStartLatitude == null || reoptimizationStartLongitude == null) {
+            throw new IllegalArgumentException("재최적화 계보와 현재 위치·시각은 필수입니다.");
+        }
+        if (!parentItinerary.getTrip().getId().equals(trip.getId())) {
+            throw new IllegalArgumentException("부모 일정은 같은 여행에 속해야 합니다.");
+        }
+        if (parentItinerary.getVersion() + 1 != version) {
+            throw new IllegalArgumentException("재최적화 버전은 부모 일정의 다음 버전이어야 합니다.");
+        }
+        Location.of(reoptimizationStartLatitude, reoptimizationStartLongitude);
+        this.generationType = ItineraryGenerationType.REOPTIMIZATION;
+        this.parentItinerary = parentItinerary;
+        this.changeReason = changeReason;
+        this.changeReasonDetail = normalizeDetail(changeReasonDetail);
+        this.reoptimizationStartTime = reoptimizationStartTime;
+        this.reoptimizationStartLatitude = reoptimizationStartLatitude;
+        this.reoptimizationStartLongitude = reoptimizationStartLongitude;
+    }
+
+    private String normalizeDetail(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.strip();
+        if (normalized.length() > 500) {
+            throw new IllegalArgumentException("일정 변경 상세 사유는 500자를 초과할 수 없습니다.");
+        }
+        return normalized;
+    }
+
     public void addItem(
             Place place,
             int sequence,
@@ -281,6 +369,34 @@ public class Itinerary {
 
     public int getVersion() {
         return version;
+    }
+
+    public ItineraryGenerationType getGenerationType() {
+        return generationType;
+    }
+
+    public Itinerary getParentItinerary() {
+        return parentItinerary;
+    }
+
+    public ItineraryChangeReason getChangeReason() {
+        return changeReason;
+    }
+
+    public String getChangeReasonDetail() {
+        return changeReasonDetail;
+    }
+
+    public LocalTime getReoptimizationStartTime() {
+        return reoptimizationStartTime;
+    }
+
+    public BigDecimal getReoptimizationStartLatitude() {
+        return reoptimizationStartLatitude;
+    }
+
+    public BigDecimal getReoptimizationStartLongitude() {
+        return reoptimizationStartLongitude;
     }
 
     public OptimizationAlgorithm getAlgorithm() {

@@ -275,6 +275,7 @@ public class ItineraryOptimizationService {
                     dailyStartTime,
                     dailyEndTime,
                     optimizationRequest.startLocation(),
+                    optimizationRequest.startLocation(),
                     optimizationRequest.transportMode(),
                     result.algorithm(),
                     scheduleCandidates,
