@@ -56,7 +56,14 @@ public class GoogleMapsHttpClient {
                     HttpResponse.BodyHandlers.ofString()
             );
             validateStatus(response.statusCode());
-            return objectMapper.readTree(response.body());
+            JsonNode responseBody = objectMapper.readTree(response.body());
+            if (responseBody == null) {
+                throw new ExternalProviderException(
+                        ExternalProviderFailure.INVALID_RESPONSE,
+                        "Google Maps API가 빈 JSON 응답을 반환했습니다."
+                );
+            }
+            return responseBody;
         } catch (JsonProcessingException exception) {
             throw new ExternalProviderException(
                     ExternalProviderFailure.INVALID_RESPONSE,

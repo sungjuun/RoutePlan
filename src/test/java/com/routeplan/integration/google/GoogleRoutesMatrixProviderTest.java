@@ -98,13 +98,20 @@ class GoogleRoutesMatrixProviderTest {
             ArrayNode response = objectMapper.createArrayNode();
             for (int origin = 0; origin < originCount; origin++) {
                 for (int destination = 0; destination < destinationCount; destination++) {
+                    JsonNode originLatLng = request.path("origins").path(origin)
+                            .path("waypoint").path("location").path("latLng");
+                    JsonNode destinationLatLng = request.path("destinations").path(destination)
+                            .path("waypoint").path("location").path("latLng");
+                    boolean sameLocation = originLatLng.equals(destinationLatLng);
                     ObjectNode element = response.addObject();
                     element.put("originIndex", origin);
                     element.put("destinationIndex", destination);
                     element.putObject("status").put("code", 0);
                     element.put("condition", "ROUTE_EXISTS");
-                    element.put("distanceMeters", origin == destination ? 0 : 100);
-                    element.put("duration", origin == destination ? "0s" : "90s");
+                    if (!sameLocation) {
+                        element.put("distanceMeters", 100);
+                        element.put("duration", "90s");
+                    }
                 }
             }
             return objectMapper.writeValueAsString(response);

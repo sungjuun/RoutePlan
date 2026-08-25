@@ -125,11 +125,17 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
         for (JsonNode element : response) {
             int originIndex = requiredIndex(element, "originIndex", origins.size());
             int destinationIndex = requiredIndex(element, "destinationIndex", destinations.size());
-            validateElementStatus(element, origins.get(originIndex), destinations.get(destinationIndex));
+            Location origin = origins.get(originIndex);
+            Location destination = destinations.get(destinationIndex);
+            if (origin.equals(destination)) {
+                routes.put(new RouteMatrix.Leg(origin, destination), new RouteResult(0, 0));
+                continue;
+            }
+            validateElementStatus(element, origin, destination);
             long distanceMeters = requiredNonNegativeLong(element, "distanceMeters");
             int travelMinutes = durationMinutes(requiredText(element, "duration"), distanceMeters);
             routes.put(
-                    new RouteMatrix.Leg(origins.get(originIndex), destinations.get(destinationIndex)),
+                    new RouteMatrix.Leg(origin, destination),
                     new RouteResult(distanceMeters, travelMinutes)
             );
         }
