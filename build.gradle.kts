@@ -44,3 +44,23 @@ tasks.withType<JavaCompile> {
 tasks.withType<Test> {
 	useJUnitPlatform()
 }
+
+tasks.named<Test>("test") {
+	useJUnitPlatform {
+		excludeTags("benchmark")
+	}
+}
+
+tasks.register<Test>("algorithmBenchmark") {
+	description = "Runs the reproducible RoutePlan algorithm benchmark."
+	group = "verification"
+	testClassesDirs = sourceSets["test"].output.classesDirs
+	classpath = sourceSets["test"].runtimeClasspath
+	useJUnitPlatform {
+		includeTags("benchmark")
+	}
+	maxHeapSize = "2g"
+	testLogging {
+		showStandardStreams = true
+	}
+}
