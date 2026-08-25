@@ -2,6 +2,7 @@ package com.routeplan.trip.persistence;
 
 import com.routeplan.trip.domain.TripPlace;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -15,4 +16,7 @@ public interface TripPlaceRepository extends JpaRepository<TripPlace, Long> {
     long countByTripId(Long tripId);
 
     long deleteByTripIdAndPlaceId(Long tripId, Long placeId);
+
+    @EntityGraph(attributePaths = "place")
+    Optional<TripPlace> findByTripIdAndPlaceId(Long tripId, Long placeId);
 }

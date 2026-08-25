@@ -34,6 +34,9 @@ public class Place {
     @Column(length = 50)
     private String category;
 
+    @Column(name = "average_stay_minutes", nullable = false)
+    private int averageStayMinutes;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -45,15 +48,35 @@ public class Place {
     protected Place() {
     }
 
-    private Place(String name, BigDecimal latitude, BigDecimal longitude, String category) {
+    private Place(
+            String name,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            String category,
+            int averageStayMinutes
+    ) {
         this.name = requireText(name, "장소 이름", 150);
         this.latitude = requireCoordinate(latitude, "위도", new BigDecimal("-90"), new BigDecimal("90"));
         this.longitude = requireCoordinate(longitude, "경도", new BigDecimal("-180"), new BigDecimal("180"));
         this.category = normalizeNullable(category, 50);
+        if (averageStayMinutes <= 0 || averageStayMinutes > 1_440) {
+            throw new IllegalArgumentException("평균 체류시간은 1분 이상 1,440분 이하여야 합니다.");
+        }
+        this.averageStayMinutes = averageStayMinutes;
     }
 
     public static Place create(String name, BigDecimal latitude, BigDecimal longitude, String category) {
-        return new Place(name, latitude, longitude, category);
+        return create(name, latitude, longitude, category, 60);
+    }
+
+    public static Place create(
+            String name,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            String category,
+            int averageStayMinutes
+    ) {
+        return new Place(name, latitude, longitude, category, averageStayMinutes);
     }
 
     private static String requireText(String value, String field, int maxLength) {
@@ -112,6 +135,10 @@ public class Place {
 
     public String getCategory() {
         return category;
+    }
+
+    public int getAverageStayMinutes() {
+        return averageStayMinutes;
     }
 
     public Instant getCreatedAt() {

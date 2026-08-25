@@ -7,6 +7,7 @@ import com.routeplan.place.persistence.PlaceRepository;
 import com.routeplan.trip.domain.TransportMode;
 import com.routeplan.trip.domain.Trip;
 import com.routeplan.trip.domain.TripPlace;
+import com.routeplan.trip.domain.TripPace;
 import com.routeplan.trip.domain.TripStatus;
 import com.routeplan.trip.persistence.TripPlaceRepository;
 import com.routeplan.trip.persistence.TripRepository;
@@ -15,6 +16,7 @@ import com.routeplan.user.persistence.UserRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,7 +55,10 @@ public class TripService {
                 command.accommodationName(),
                 command.accommodationLatitude(),
                 command.accommodationLongitude(),
-                command.transportMode()
+                command.transportMode(),
+                command.dailyStartTime() == null ? LocalTime.of(9, 0) : command.dailyStartTime(),
+                command.dailyEndTime() == null ? LocalTime.of(20, 0) : command.dailyEndTime(),
+                command.pace() == null ? TripPace.STANDARD : command.pace()
         );
         return toResult(tripRepository.save(trip), List.of());
     }
@@ -79,23 +84,59 @@ public class TripService {
                 command.accommodationName() == null ? trip.getAccommodationName() : command.accommodationName(),
                 latitude,
                 longitude,
-                command.transportMode() == null ? trip.getTransportMode() : command.transportMode()
+                command.transportMode() == null ? trip.getTransportMode() : command.transportMode(),
+                command.dailyStartTime() == null ? trip.getDailyStartTime() : command.dailyStartTime(),
+                command.dailyEndTime() == null ? trip.getDailyEndTime() : command.dailyEndTime(),
+                command.pace() == null ? trip.getPace() : command.pace()
         );
         return toResult(trip, tripPlaceRepository.findAllByTripIdOrderByIdAsc(tripId));
     }
 
     @Transactional
     public TripResult addPlace(Long tripId, Long placeId) {
+        return addPlace(tripId, new AddTripPlaceCommand(
+                placeId, 50, false, null, null, null, null
+        ));
+    }
+
+    @Transactional
+    public TripResult addPlace(Long tripId, AddTripPlaceCommand command) {
         Trip trip = getTripForUpdate(tripId);
-        if (tripPlaceRepository.existsByTripIdAndPlaceId(tripId, placeId)) {
+        if (tripPlaceRepository.existsByTripIdAndPlaceId(tripId, command.placeId())) {
             throw new RoutePlanException(ErrorCode.DUPLICATE_TRIP_PLACE);
         }
         if (tripPlaceRepository.countByTripId(tripId) >= MAX_PLACES_PER_TRIP) {
             throw new RoutePlanException(ErrorCode.TRIP_PLACE_LIMIT_EXCEEDED);
         }
-        Place place = placeRepository.findById(placeId)
+        Place place = placeRepository.findById(command.placeId())
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.PLACE_NOT_FOUND));
-        tripPlaceRepository.save(new TripPlace(trip, place));
+        tripPlaceRepository.save(new TripPlace(
+                trip,
+                place,
+                command.priority(),
+                command.mustVisit(),
+                command.preferredStartTime(),
+                command.preferredEndTime(),
+                command.minimumStayMinutes(),
+                command.maximumStayMinutes()
+        ));
+        trip.markDraft();
+        return toResult(trip, tripPlaceRepository.findAllByTripIdOrderByIdAsc(tripId));
+    }
+
+    @Transactional
+    public TripResult updatePlaceConstraints(Long tripId, Long placeId, UpdateTripPlaceCommand command) {
+        Trip trip = getTripForUpdate(tripId);
+        TripPlace tripPlace = tripPlaceRepository.findByTripIdAndPlaceId(tripId, placeId)
+                .orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_PLACE_NOT_FOUND));
+        tripPlace.updateConstraints(
+                command.priority(),
+                command.mustVisit(),
+                command.preferredStartTime(),
+                command.preferredEndTime(),
+                command.minimumStayMinutes(),
+                command.maximumStayMinutes()
+        );
         trip.markDraft();
         return toResult(trip, tripPlaceRepository.findAllByTripIdOrderByIdAsc(tripId));
     }
@@ -128,7 +169,14 @@ public class TripService {
                             place.getName(),
                             place.getLatitude(),
                             place.getLongitude(),
-                            place.getCategory()
+                            place.getCategory(),
+                            place.getAverageStayMinutes(),
+                            tripPlace.getPriority(),
+                            tripPlace.isMustVisit(),
+                            tripPlace.getPreferredStartTime(),
+                            tripPlace.getPreferredEndTime(),
+                            tripPlace.getMinimumStayMinutes(),
+                            tripPlace.getMaximumStayMinutes()
                     );
                 })
                 .toList();
@@ -139,10 +187,13 @@ public class TripService {
                 trip.getName(),
                 trip.getStartDate(),
                 trip.getEndDate(),
+                trip.getDailyStartTime(),
+                trip.getDailyEndTime(),
                 trip.getAccommodationName(),
                 trip.getAccommodationLatitude(),
                 trip.getAccommodationLongitude(),
                 trip.getTransportMode(),
+                trip.getPace(),
                 trip.getStatus(),
                 trip.getCreatedAt(),
                 trip.getUpdatedAt(),
@@ -158,7 +209,10 @@ public class TripService {
             String accommodationName,
             BigDecimal accommodationLatitude,
             BigDecimal accommodationLongitude,
-            TransportMode transportMode
+            TransportMode transportMode,
+            LocalTime dailyStartTime,
+            LocalTime dailyEndTime,
+            TripPace pace
     ) {
     }
 
@@ -169,7 +223,31 @@ public class TripService {
             String accommodationName,
             BigDecimal accommodationLatitude,
             BigDecimal accommodationLongitude,
-            TransportMode transportMode
+            TransportMode transportMode,
+            LocalTime dailyStartTime,
+            LocalTime dailyEndTime,
+            TripPace pace
+    ) {
+    }
+
+    public record AddTripPlaceCommand(
+            Long placeId,
+            int priority,
+            boolean mustVisit,
+            LocalTime preferredStartTime,
+            LocalTime preferredEndTime,
+            Integer minimumStayMinutes,
+            Integer maximumStayMinutes
+    ) {
+    }
+
+    public record UpdateTripPlaceCommand(
+            int priority,
+            boolean mustVisit,
+            LocalTime preferredStartTime,
+            LocalTime preferredEndTime,
+            Integer minimumStayMinutes,
+            Integer maximumStayMinutes
     ) {
     }
 
@@ -179,10 +257,13 @@ public class TripService {
             String name,
             LocalDate startDate,
             LocalDate endDate,
+            LocalTime dailyStartTime,
+            LocalTime dailyEndTime,
             String accommodationName,
             BigDecimal accommodationLatitude,
             BigDecimal accommodationLongitude,
             TransportMode transportMode,
+            TripPace pace,
             TripStatus status,
             Instant createdAt,
             Instant updatedAt,
@@ -195,7 +276,14 @@ public class TripService {
             String name,
             BigDecimal latitude,
             BigDecimal longitude,
-            String category
+            String category,
+            int averageStayMinutes,
+            int priority,
+            boolean mustVisit,
+            LocalTime preferredStartTime,
+            LocalTime preferredEndTime,
+            Integer minimumStayMinutes,
+            Integer maximumStayMinutes
     ) {
     }
 }

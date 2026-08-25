@@ -15,6 +15,7 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -39,6 +40,12 @@ public class Trip {
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 
+    @Column(name = "daily_start_time", nullable = false)
+    private LocalTime dailyStartTime;
+
+    @Column(name = "daily_end_time", nullable = false)
+    private LocalTime dailyEndTime;
+
     @Column(name = "accommodation_name", nullable = false, length = 100)
     private String accommodationName;
 
@@ -51,6 +58,10 @@ public class Trip {
     @Enumerated(EnumType.STRING)
     @Column(name = "transport_mode", nullable = false, length = 30)
     private TransportMode transportMode;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private TripPace pace;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -75,11 +86,15 @@ public class Trip {
             String accommodationName,
             BigDecimal accommodationLatitude,
             BigDecimal accommodationLongitude,
-            TransportMode transportMode
+            TransportMode transportMode,
+            LocalTime dailyStartTime,
+            LocalTime dailyEndTime,
+            TripPace pace
     ) {
         this.user = requireUser(user);
         applyPlan(name, startDate, endDate, accommodationName,
-                accommodationLatitude, accommodationLongitude, transportMode);
+                accommodationLatitude, accommodationLongitude, transportMode,
+                dailyStartTime, dailyEndTime, pace);
         this.status = TripStatus.DRAFT;
     }
 
@@ -93,8 +108,29 @@ public class Trip {
             BigDecimal accommodationLongitude,
             TransportMode transportMode
     ) {
+        return create(
+                user, name, startDate, endDate, accommodationName,
+                accommodationLatitude, accommodationLongitude, transportMode,
+                LocalTime.of(9, 0), LocalTime.of(20, 0), TripPace.STANDARD
+        );
+    }
+
+    public static Trip create(
+            User user,
+            String name,
+            LocalDate startDate,
+            LocalDate endDate,
+            String accommodationName,
+            BigDecimal accommodationLatitude,
+            BigDecimal accommodationLongitude,
+            TransportMode transportMode,
+            LocalTime dailyStartTime,
+            LocalTime dailyEndTime,
+            TripPace pace
+    ) {
         return new Trip(user, name, startDate, endDate, accommodationName,
-                accommodationLatitude, accommodationLongitude, transportMode);
+                accommodationLatitude, accommodationLongitude, transportMode,
+                dailyStartTime, dailyEndTime, pace);
     }
 
     public void update(
@@ -106,8 +142,28 @@ public class Trip {
             BigDecimal accommodationLongitude,
             TransportMode transportMode
     ) {
+        update(
+                name, startDate, endDate, accommodationName,
+                accommodationLatitude, accommodationLongitude, transportMode,
+                dailyStartTime, dailyEndTime, pace
+        );
+    }
+
+    public void update(
+            String name,
+            LocalDate startDate,
+            LocalDate endDate,
+            String accommodationName,
+            BigDecimal accommodationLatitude,
+            BigDecimal accommodationLongitude,
+            TransportMode transportMode,
+            LocalTime dailyStartTime,
+            LocalTime dailyEndTime,
+            TripPace pace
+    ) {
         applyPlan(name, startDate, endDate, accommodationName,
-                accommodationLatitude, accommodationLongitude, transportMode);
+                accommodationLatitude, accommodationLongitude, transportMode,
+                dailyStartTime, dailyEndTime, pace);
         markDraft();
     }
 
@@ -118,7 +174,10 @@ public class Trip {
             String accommodationName,
             BigDecimal accommodationLatitude,
             BigDecimal accommodationLongitude,
-            TransportMode transportMode
+            TransportMode transportMode,
+            LocalTime dailyStartTime,
+            LocalTime dailyEndTime,
+            TripPace pace
     ) {
         this.name = requireText(name, "여행 이름", 100);
         validateSingleDay(startDate, endDate);
@@ -135,6 +194,15 @@ public class Trip {
             throw new IllegalArgumentException("이동수단은 필수입니다.");
         }
         this.transportMode = transportMode;
+        if (dailyStartTime == null || dailyEndTime == null || !dailyEndTime.isAfter(dailyStartTime)) {
+            throw new IllegalArgumentException("하루 종료시간은 시작시간보다 늦어야 합니다.");
+        }
+        if (pace == null) {
+            throw new IllegalArgumentException("여행 강도는 필수입니다.");
+        }
+        this.dailyStartTime = dailyStartTime;
+        this.dailyEndTime = dailyEndTime;
+        this.pace = pace;
     }
 
     public void markDraft() {
@@ -204,6 +272,14 @@ public class Trip {
         return endDate;
     }
 
+    public LocalTime getDailyStartTime() {
+        return dailyStartTime;
+    }
+
+    public LocalTime getDailyEndTime() {
+        return dailyEndTime;
+    }
+
     public String getAccommodationName() {
         return accommodationName;
     }
@@ -218,6 +294,10 @@ public class Trip {
 
     public TransportMode getTransportMode() {
         return transportMode;
+    }
+
+    public TripPace getPace() {
+        return pace;
     }
 
     public TripStatus getStatus() {
