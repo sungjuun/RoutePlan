@@ -14,7 +14,11 @@ V4는 추정 좌표 데이터를 실제 외부 데이터로 교체할 수 있는
 
 > 장소 검색 결과의 고유 ID와 실제 도로·대중교통 이동시간을 사용하면서 외부 API 호출을 Matrix 단위로 통제할 수 있는가?
 
-## 구현 범위 (V1–V4)
+V5는 같은 여행을 다시 최적화할 때 확인된 외부 Matrix 반복 호출을 다룹니다.
+
+> 방향별 Route를 Redis에 재사용하면 외부 호출량과 Matrix 생성시간이 실제로 얼마나 줄고, Redis 장애 시에도 일정을 계속 계산할 수 있는가?
+
+## 구현 범위 (V1–V5)
 
 ### 지원
 
@@ -43,6 +47,10 @@ V4는 추정 좌표 데이터를 실제 외부 데이터로 교체할 수 있는
 - 이동수단별 Route Matrix 요청 분할
 - 경로 엔진과 제약 일정 계산기가 공유하는 요청 단위 Matrix
 - 일정별 Route 데이터 출처·Provider 호출 수·Matrix 요소 수·생성시간 저장
+- Redis 방향별 Route Cache와 이동수단별 TTL
+- Cache MGET·pipelined SET과 Redis 장애 시 외부 Provider fallback
+- 일정별 Cache hit·miss·failure·hit ratio 저장
+- Cache 적용 전후 호출 수·Matrix 생성시간 Benchmark
 - 외부 요청과 DB Lock을 분리한 Snapshot 검증 트랜잭션
 - 매 최적화 결과를 새로운 Itinerary 버전으로 저장
 - 최신 또는 특정 Itinerary 조회
@@ -51,11 +59,10 @@ V4는 추정 좌표 데이터를 실제 외부 데이터로 교체할 수 있는
 
 ### 지원하지 않음
 
-- 실제 도로·대중교통 경로 및 실제 이동시간
 - 여러 날짜에 장소 배분
-- 영속 Route Matrix와 외부 경로 캐시
+- DB 영속 Route Matrix
 - Google Places 영업시간 자동 가져오기
-- Redis, QueryDSL, PostGIS
+- QueryDSL, PostGIS
 - 인증, 공유 Route, 커뮤니티, LLM
 
 기본 `SIMPLE` 모드의 `estimatedTravelMinutes`는 직선거리와 고정 평균속도로 계산한 추정치입니다. `GOOGLE` Route Provider를 활성화하면 Google Routes API가 반환한 실제 경로 거리와 이동시간을 사용합니다.
@@ -66,14 +73,16 @@ V4는 추정 좌표 데이터를 실제 외부 데이터로 교체할 수 있는
 - Spring Boot 4.1.0
 - Spring Web MVC
 - Spring Data JPA
+- Spring Data Redis
 - PostgreSQL 16
+- Redis 7.4
 - Flyway
 - Gradle Wrapper
 - JUnit 5, AssertJ, Testcontainers
 - springdoc-openapi
 - Docker, Docker Compose
 
-QueryDSL은 동적 검색 쿼리가 없는 현재 단계에서는 사용하지 않습니다. Redis와 PostGIS도 해결해야 할 실제 문제가 확인된 이후 도입합니다.
+QueryDSL은 동적 검색 쿼리가 없는 현재 단계에서는 사용하지 않습니다. Redis는 동일 Route Matrix를 반복 최적화할 때 외부 호출이 그대로 재발하는 문제를 측정한 뒤 V5에서 도입했습니다. PostGIS는 실제 공간 검색 요구가 생기기 전까지 사용하지 않습니다.
 
 ## Architecture
 
@@ -96,6 +105,8 @@ flowchart LR
     APP --> MATRIX[RouteMatrixProvider]
     MATRIX --> SIMPLE[Simple Distance]
     MATRIX --> GOOGLE[Google Routes API]
+    MATRIX --> CACHE[(Redis Route Leg Cache)]
+    CACHE --> MATRIX
     APP --> REGISTRY[OptimizationEngineRegistry]
     REGISTRY --> ENGINE[OptimizationEngine]
     MATRIX --> ROUTE[Request RouteMatrix]
@@ -178,7 +189,7 @@ Nearest Neighbor는 전체 최적해를 보장하지 않습니다. 이 결과를
 
 Nearest Neighbor 경로에서 구간 `[i, k]`를 뒤집은 모든 후보를 비교하고, 가장 좋은 후보로 교체하는 과정을 더 이상 개선되지 않을 때까지 반복합니다. 대칭 거리를 가정한 delta 공식 대신 전체 경로를 재평가하므로 향후 방향별 이동시간이 다른 RouteProvider에서도 정확하게 비교할 수 있습니다.
 
-V4부터 숙소와 모든 후보 장소의 방향별 Route Matrix를 최적화 전에 한 번 생성합니다. 경로 엔진과 제약 일정 계산기가 같은 Matrix를 조회하므로 단계 사이의 중복 외부 호출이 없습니다. Matrix는 요청이 끝나면 폐기되며 Redis나 영속 Cache는 아닙니다. 2-opt는 국소 최적화이므로 Exact와 같은 결과를 보장하지 않습니다.
+V4부터 숙소와 모든 후보 장소의 방향별 Route Matrix를 최적화 전에 한 번 생성합니다. 경로 엔진과 제약 일정 계산기가 같은 Matrix를 조회하므로 단계 사이의 중복 외부 호출이 없습니다. 요청 단위 Matrix 자체는 계산 후 폐기되지만, V5에서 Google Route leg를 Redis에 TTL 동안 재사용합니다. 2-opt는 국소 최적화이므로 Exact와 같은 결과를 보장하지 않습니다.
 
 ## Constraint 처리
 
@@ -253,22 +264,45 @@ Trip 장소 수에 따른 전체 Matrix와 계획된 외부 요청 수는 다음
 |---:|---:|---:|---:|---:|
 | 5 | 6 | 36 | 1 | 1 |
 | 8 | 9 | 81 | 1 | 1 |
-| 10 | 11 | 121 | 1 | 4 |
+| 10 | 11 | 121 | 1 | 3 |
 | 15 | 16 | 256 | 1 | 4 |
-| 20 | 21 | 441 | 1 | 9 |
-| 30 | 31 | 961 | 4 | 16 |
-| 50 | 51 | 2,601 | 9 | 36 |
+| 20 | 21 | 441 | 1 | 8 |
+| 30 | 31 | 961 | 4 | 15 |
+| 50 | 51 | 2,601 | 8 | 35 |
 
-분할 개수와 100요소 제한은 로컬 HTTP Stub 계약 테스트로 검증했습니다. 실제 Google API 키가 이 개발 환경에 없어 과금이 발생하는 실호출 latency는 기록하지 않았습니다. 대신 모든 Itinerary에 다음 값을 저장해 실제 환경의 측정값이 자동으로 남도록 했습니다.
+동일 좌표 구간은 외부 응답 없이 `0m / 0분`으로 만들기 때문에 마지막 Chunk가 1 × 1 대각 원소뿐이면 호출하지 않습니다. 분할 개수와 100요소 제한은 로컬 HTTP Stub 계약 테스트로 검증했습니다. 실제 Google API 키가 이 개발 환경에 없어 과금이 발생하는 실호출 latency는 기록하지 않았습니다. 대신 모든 Itinerary에 다음 값을 저장해 실제 환경의 측정값이 자동으로 남도록 했습니다.
 
 ```text
 routeDataType
 routeProviderCallCount
 routeMatrixElementCount
 routeMatrixBuildMillis
+routeCacheEnabled
+routeCacheHitCount
+routeCacheMissCount
+routeCacheFailureCount
+routeCacheHitRatio
 ```
 
 `SIMPLE`은 외부 호출 수가 0이고, `GOOGLE`은 실제 HTTP 요청 수와 전체 Matrix 생성시간을 기록합니다.
+
+## Redis Route Cache
+
+V4에서는 요청 안의 중복 호출만 제거했습니다. 같은 Trip을 다시 최적화하면 전체 Matrix를 Google에 다시 요청하는 문제가 남아 있었기 때문에 V5에서 방향별 leg cache를 추가했습니다.
+
+```text
+routeplan:route:v1:google-routes:{transportMode}:{origin}:{destination}
+```
+
+출발·도착 순서를 key에 각각 포함하므로 A→B와 B→A를 구분하고, 좌표는 DB 정밀도와 같은 소수점 6자리로 정규화합니다. 한 Matrix의 후보 key는 Redis `MGET` 한 번으로 읽고, Google에서 새로 받은 결과는 pipeline으로 TTL과 함께 저장합니다. 완전히 Cache로 채워진 Google Chunk만 생략하므로 부분 적중 때문에 Matrix 요청 수가 작은 요청 여러 개로 폭증하지 않습니다.
+
+| 이동수단 | 기본 TTL | 이유 |
+|---|---:|---|
+| WALKING | 7일 | 도보 경로의 낮은 시간 변동성 |
+| DRIVING | 15분 | 도로 교통 변화 |
+| PUBLIC_TRANSIT | 5분 | 요청시각 기준 대중교통 결과 변화 |
+
+Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하고, Redis 저장 실패는 계산된 일정을 버리지 않습니다. 각 실패는 `routeCacheFailureCount`에 남습니다. Redis가 복구되면 다음 요청부터 다시 채워지며, V5에서는 분산 Lock이나 Cache Stampede 방지는 적용하지 않습니다.
 
 ## API
 
@@ -329,10 +363,19 @@ Google Cloud 프로젝트에서 Places API (New)와 Routes API를 활성화하�
 ```dotenv
 ROUTEPLAN_PLACE_PROVIDER=GOOGLE
 ROUTEPLAN_ROUTE_PROVIDER=GOOGLE
+ROUTEPLAN_ROUTE_CACHE_ENABLED=true
 GOOGLE_MAPS_API_KEY=your-restricted-key
 ```
 
-API 키는 요청 헤더에만 사용하며 오류 메시지나 응답에 포함하지 않습니다. 키가 없거나 장소 검색 Provider가 비활성화된 경우 검색은 `503 EXTERNAL_PROVIDER_NOT_CONFIGURED`를 반환합니다. Google의 429는 `EXTERNAL_PROVIDER_RATE_LIMITED`, 연결·5xx는 `EXTERNAL_PROVIDER_UNAVAILABLE`, 잘못된 element는 `EXTERNAL_PROVIDER_INVALID_RESPONSE`로 구분합니다. V4에서는 자동 Retry를 적용하지 않습니다.
+필요하면 이동수단별 TTL을 변경할 수 있습니다.
+
+```dotenv
+ROUTEPLAN_ROUTE_CACHE_WALKING_TTL=7d
+ROUTEPLAN_ROUTE_CACHE_DRIVING_TTL=15m
+ROUTEPLAN_ROUTE_CACHE_TRANSIT_TTL=5m
+```
+
+API 키는 요청 헤더에만 사용하며 오류 메시지나 응답에 포함하지 않습니다. 키가 없거나 장소 검색 Provider가 비활성화된 경우 검색은 `503 EXTERNAL_PROVIDER_NOT_CONFIGURED`를 반환합니다. Google의 429는 `EXTERNAL_PROVIDER_RATE_LIMITED`, 연결·5xx는 `EXTERNAL_PROVIDER_UNAVAILABLE`, 잘못된 element는 `EXTERNAL_PROVIDER_INVALID_RESPONSE`로 구분합니다. 현재 자동 Retry는 적용하지 않습니다.
 
 ## Local Run
 
@@ -342,15 +385,15 @@ API 키는 요청 헤더에만 사용하며 오류 메시지나 응답에 포함
 docker compose up --build
 ```
 
-Backend는 `http://localhost:8080`, PostgreSQL은 `localhost:5432`에서 실행됩니다.
-이미 사용 중인 포트가 있다면 `.env`의 `BACKEND_PORT` 또는 `POSTGRES_PORT`를 변경할 수 있습니다.
+Backend는 `http://localhost:8080`, PostgreSQL은 `localhost:5432`, Redis는 `localhost:6379`에서 실행됩니다.
+이미 사용 중인 포트가 있다면 `.env`의 `BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`를 변경할 수 있습니다.
 
 ### 애플리케이션 직접 실행
 
-PostgreSQL만 실행합니다.
+PostgreSQL과 Redis를 실행합니다.
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres redis
 ```
 
 그다음 Gradle Wrapper를 실행합니다.
@@ -388,9 +431,11 @@ Benchmark는 일반 테스트와 분리해서 실행합니다.
 ```bash
 # Windows
 gradlew.bat algorithmBenchmark
+gradlew.bat routeCacheBenchmark
 
 # macOS/Linux
 ./gradlew algorithmBenchmark
+./gradlew routeCacheBenchmark
 ```
 
 테스트는 다음을 검증합니다.
@@ -418,6 +463,10 @@ gradlew.bat algorithmBenchmark
 - 외부 429 오류 매핑과 API key 비노출
 - 외부 Place ID의 멱등 가져오기
 - 일정별 Matrix 요소 수·Provider 호출 수 저장
+- 동일 Matrix 재요청의 100% Cache hit와 외부 호출 0회
+- 실제 Redis TTL·이동수단별 key 분리·pipelined write
+- Redis 장애 시 외부 Provider fallback과 failure 측정
+- Cache 적용 전후 전용 Benchmark
 - 중복 장소, 빈 여행, 다일 여행 오류 응답
 
 통합 테스트는 H2 대신 PostgreSQL Testcontainers를 사용하므로 Docker가 실행 중이어야 합니다.
@@ -450,7 +499,9 @@ V3  영업시간·체류시간·Must Visit·Priority·하루 시간·여행 강�
  ↓
 V4  실제 Place/Route API와 Route Matrix ✓
  ↓
-V5  외부 API 호출 측정·Cache 필요성 검증
+V5  외부 API 호출 측정·Redis Cache·Before/After 검증 ✓
+ ↓
+V6  일정 지연·장소 변경 후 남은 일정 재최적화
 ```
 
 ## Performance Benchmark
@@ -483,6 +534,18 @@ V5  외부 API 호출 측정·Cache 필요성 검증
 
 10곳 Exact Search가 7.925ms에 끝난 것은 이 입력에서 누적비용 기반 분기 중단이 효과적이었기 때문입니다. `O(N!)` 최악 복잡도가 사라진 것은 아니므로 10곳 제한을 유지합니다.
 
+### Route Cache Benchmark
+
+동일 머신에서 실제 Redis 7.4 Testcontainer와 로컬 Google HTTP Stub을 사용해 21개 위치의 441요소 WALKING Matrix를 15회 반복했습니다. 원시 결과는 [`docs/benchmarks/v5-route-cache-benchmark.csv`](docs/benchmarks/v5-route-cache-benchmark.csv)에 보존합니다.
+
+| 상태 | 반복 외부 호출 | Cache Hit Ratio | 중앙 Matrix 시간 |
+|---|---:|---:|---:|
+| Cache 비활성 | 15회 | 0% | 4.214ms |
+| Redis 최초 요청 | 1회 | 0% | 측정 제외 |
+| Redis Warm | 0회 | 100% | 3.115ms |
+
+Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 기준 중앙 Matrix 시간은 약 26.1% 감소했습니다. 짧은 로컬 측정은 JVM과 Docker 상태에 따라 흔들리며 실제 Google 네트워크 latency가 포함되면 절감 폭도 달라지므로, 이 수치를 운영 latency로 해석하지 않습니다. 실환경 값은 각 Itinerary의 Provider 호출 수·Cache 적중률·Matrix 생성시간으로 계속 수집합니다.
+
 ## Known Limitations
 
 - 직선거리는 강, 철도, 도로망과 환승을 반영하지 않습니다.
@@ -498,8 +561,10 @@ V5  외부 API 호출 측정·Cache 필요성 검증
 - Google Places 검색 결과의 영업시간은 아직 자동으로 가져오지 않습니다.
 - Google Transit Matrix는 Trip 날짜·지역 시간대가 아니라 API 요청시각을 기본 출발시각으로 사용합니다.
 - 실제 Google API 키가 없어 실 API latency·비용·quota 동작은 아직 검증하지 못했습니다.
-- V4는 Timeout과 오류 분류만 제공하며 Retry, Circuit Breaker, 영속 Cache는 적용하지 않습니다.
-- 51개 위치의 전체 방향 Matrix는 이동수단에 따라 Google 요청이 최대 36회 필요합니다.
+- 외부 API는 Timeout과 오류 분류를 제공하지만 Retry와 Circuit Breaker는 아직 적용하지 않습니다.
+- Redis Cache는 TTL 기반이며 재시작 후 보존을 요구하지 않는 파생 데이터입니다.
+- 동시에 같은 miss가 발생하는 Cache Stampede를 막는 분산 Lock은 아직 없습니다.
+- 51개 위치의 Cold 전체 방향 Matrix는 이동수단에 따라 Google 요청이 최대 35회 필요합니다.
 - 외부 장소 가져오기는 클라이언트가 선택한 검색 결과 필드를 전달하므로 Place Details 재검증은 아직 없습니다.
 - 여전히 하루짜리 여행만 지원합니다.
 - 인증이 없어 `userId`는 소유 관계만 표현하며 권한을 보장하지 않습니다.
@@ -511,5 +576,7 @@ V2까지는 이동거리만 줄이면 되었지만 그 경로에 60분 체류시
 또한 마지막 장소에서 계산을 끝내면 화면상 일정은 가능해 보여도 숙소 복귀가 하루 종료 이후가 될 수 있었습니다. 최종 일정은 닫힌 경로로 평가하고 복귀 구간을 별도 필드로 저장하도록 변경했습니다. 이 때문에 같은 좌표에서도 V2의 열린 경로와 V3의 최종 방문 순서가 달라질 수 있습니다.
 
 V3의 경로 엔진과 제약 계산기는 각각 요청 범위 캐시를 가지고 있어 실제 Route API를 단순 연결하면 같은 구간을 단계마다 다시 호출하는 문제가 있었습니다. V4에서는 최적화 전에 전체 방향 Matrix를 생성하고 두 단계가 공유하도록 변경했습니다. 장소가 50곳이면 Matrix가 2,601요소이므로 Google의 요청 제한에 맞춰 Chunk로 나누고 실제 요청 수를 Itinerary에 기록합니다.
+
+V4의 요청 단위 Matrix는 한 최적화가 끝나면 폐기되어 같은 Trip을 다시 최적화할 때 외부 요청 수가 줄지 않았습니다. V5에서는 방향·이동수단별 Redis key를 도입하고 동일 Matrix 재요청이 외부 호출 0회가 되는 것을 Benchmark로 재현했습니다. Redis는 원본 데이터가 아닌 파생 Cache이므로 장애 시 요청을 실패시키지 않고 외부 Provider로 fallback합니다.
 
 외부 호출을 기존 최적화 Transaction 안에 두면 느린 네트워크 동안 Trip Lock을 점유하게 됩니다. 이를 입력 Snapshot 조회, 외부 계산, 입력 재검증과 저장의 세 구간으로 분리해 Lock 보유시간을 DB 저장 구간으로 제한했습니다.

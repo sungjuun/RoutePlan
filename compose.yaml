@@ -15,6 +15,16 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build:
       context: .
@@ -24,7 +34,14 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-routeplan-local}
       ROUTEPLAN_PLACE_PROVIDER: ${ROUTEPLAN_PLACE_PROVIDER:-DISABLED}
       ROUTEPLAN_ROUTE_PROVIDER: ${ROUTEPLAN_ROUTE_PROVIDER:-SIMPLE}
+      ROUTEPLAN_ROUTE_CACHE_ENABLED: ${ROUTEPLAN_ROUTE_CACHE_ENABLED:-false}
+      ROUTEPLAN_ROUTE_CACHE_KEY_PREFIX: ${ROUTEPLAN_ROUTE_CACHE_KEY_PREFIX:-routeplan:route:v1}
+      ROUTEPLAN_ROUTE_CACHE_WALKING_TTL: ${ROUTEPLAN_ROUTE_CACHE_WALKING_TTL:-7d}
+      ROUTEPLAN_ROUTE_CACHE_DRIVING_TTL: ${ROUTEPLAN_ROUTE_CACHE_DRIVING_TTL:-15m}
+      ROUTEPLAN_ROUTE_CACHE_TRANSIT_TTL: ${ROUTEPLAN_ROUTE_CACHE_TRANSIT_TTL:-5m}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
