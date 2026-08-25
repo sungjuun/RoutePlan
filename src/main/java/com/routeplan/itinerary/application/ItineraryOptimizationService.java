@@ -15,6 +15,8 @@ import com.routeplan.optimization.constraint.ConstraintSchedule;
 import com.routeplan.optimization.constraint.ConstraintSchedulePlanner;
 import com.routeplan.optimization.constraint.ScheduleCandidate;
 import com.routeplan.optimization.constraint.ScheduleRequest;
+import com.routeplan.optimization.route.RouteMatrix;
+import com.routeplan.optimization.route.RouteMatrixProvider;
 import com.routeplan.place.domain.Place;
 import com.routeplan.place.domain.PlaceOpeningHour;
 import com.routeplan.place.persistence.PlaceOpeningHourRepository;
@@ -38,6 +40,7 @@ public class ItineraryOptimizationService {
     private final OptimizationEngineRegistry optimizationEngineRegistry;
     private final PlaceOpeningHourRepository openingHourRepository;
     private final ConstraintSchedulePlanner schedulePlanner;
+    private final RouteMatrixProvider routeMatrixProvider;
 
     public ItineraryOptimizationService(
             TripRepository tripRepository,
@@ -45,7 +48,8 @@ public class ItineraryOptimizationService {
             ItineraryRepository itineraryRepository,
             OptimizationEngineRegistry optimizationEngineRegistry,
             PlaceOpeningHourRepository openingHourRepository,
-            ConstraintSchedulePlanner schedulePlanner
+            ConstraintSchedulePlanner schedulePlanner,
+            RouteMatrixProvider routeMatrixProvider
     ) {
         this.tripRepository = tripRepository;
         this.tripPlaceRepository = tripPlaceRepository;
@@ -53,6 +57,7 @@ public class ItineraryOptimizationService {
         this.optimizationEngineRegistry = optimizationEngineRegistry;
         this.openingHourRepository = openingHourRepository;
         this.schedulePlanner = schedulePlanner;
+        this.routeMatrixProvider = routeMatrixProvider;
     }
 
     @Transactional
@@ -69,8 +74,16 @@ public class ItineraryOptimizationService {
         }
 
         OptimizationRequest request = toRequest(trip, tripPlaces);
-        OptimizationResult result = optimizationEngineRegistry.get(algorithm).optimize(request);
-        ConstraintSchedule schedule = schedulePlanner.plan(toScheduleRequest(trip, tripPlaces, result));
+        RouteMatrix routeMatrix = routeMatrixProvider.build(
+                locations(request),
+                request.transportMode()
+        );
+        OptimizationResult result = optimizationEngineRegistry.get(algorithm)
+                .optimize(request, routeMatrix);
+        ConstraintSchedule schedule = schedulePlanner.plan(
+                toScheduleRequest(trip, tripPlaces, result),
+                routeMatrix
+        );
         Itinerary itinerary = Itinerary.create(
                 trip,
                 itineraryRepository.findMaxVersionByTripId(tripId) + 1,
@@ -130,6 +143,15 @@ public class ItineraryOptimizationService {
                 ))
                 .toList();
         return new OptimizationRequest(start, candidates, trip.getTransportMode());
+    }
+
+    private List<Location> locations(OptimizationRequest request) {
+        return java.util.stream.Stream.concat(
+                        java.util.stream.Stream.of(request.startLocation()),
+                        request.candidates().stream().map(VisitCandidate::location)
+                )
+                .distinct()
+                .toList();
     }
 
     private ScheduleRequest toScheduleRequest(

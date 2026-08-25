@@ -24,6 +24,11 @@ public class NearestNeighborOptimizationEngine implements OptimizationEngine {
 
     @Override
     public OptimizationResult optimize(OptimizationRequest request) {
+        return optimize(request, routeProvider);
+    }
+
+    @Override
+    public OptimizationResult optimize(OptimizationRequest request, RouteProvider routeProvider) {
         RouteCostEvaluator evaluator = new RouteCostEvaluator(routeProvider, request.transportMode());
         List<VisitCandidate> order = NearestNeighborRouteBuilder.build(
                 request.startLocation(), request.candidates(), evaluator

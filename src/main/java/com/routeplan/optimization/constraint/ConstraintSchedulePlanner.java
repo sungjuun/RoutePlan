@@ -25,6 +25,10 @@ public class ConstraintSchedulePlanner {
     }
 
     public ConstraintSchedule plan(ScheduleRequest request) {
+        return plan(request, routeProvider);
+    }
+
+    public ConstraintSchedule plan(ScheduleRequest request, RouteProvider routeProvider) {
         RouteCache routes = new RouteCache(routeProvider, request.transportMode());
         Map<Long, Integer> proposedRank = proposedRank(request.proposedTripPlaceOrder());
         List<ScheduleCandidate> candidates = request.candidates().stream()

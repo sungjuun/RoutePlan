@@ -30,6 +30,11 @@ public class ExactSearchOptimizationEngine implements OptimizationEngine {
 
     @Override
     public OptimizationResult optimize(OptimizationRequest request) {
+        return optimize(request, routeProvider);
+    }
+
+    @Override
+    public OptimizationResult optimize(OptimizationRequest request, RouteProvider routeProvider) {
         if (request.candidates().size() > MAX_CANDIDATES) {
             throw new IllegalArgumentException(
                     "Exact Search는 장소를 최대 " + MAX_CANDIDATES + "개까지 지원합니다."
