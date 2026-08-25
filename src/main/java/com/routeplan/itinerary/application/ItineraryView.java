@@ -8,6 +8,7 @@ import com.routeplan.optimization.domain.OptimizationAlgorithm;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Comparator;
 import java.util.List;
 
 public record ItineraryView(
@@ -54,7 +55,12 @@ public record ItineraryView(
                 "STRAIGHT_LINE_ESTIMATE",
                 itinerary.getCreatedAt(),
                 itinerary.getItems().stream().map(Item::from).toList(),
-                itinerary.getExclusions().stream().map(Exclusion::from).toList()
+                itinerary.getExclusions().stream()
+                        .sorted(Comparator
+                                .comparingInt(ItineraryExclusion::getPriority).reversed()
+                                .thenComparing(exclusion -> exclusion.getPlace().getId()))
+                        .map(Exclusion::from)
+                        .toList()
         );
     }
 
