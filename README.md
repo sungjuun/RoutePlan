@@ -38,7 +38,11 @@ V10은 다일 여행 도중의 일정 변경을 다룹니다.
 
 > 지난 날짜와 오늘 완료한 방문은 그대로 보존하면서, 현재 날짜·위치·시각부터 오늘의 남은 장소와 이후 날짜만 다시 배분할 수 있는가?
 
-## 구현 범위 (V1–V10)
+V11은 계산 기능을 운영 환경에서 진단할 수 있는 기반을 다룹니다.
+
+> 일정 생성 실패와 외부 Route 장애를 낮은 카디널리티 지표로 구분하고, 한 요청의 로그와 오류 응답을 같은 ID로 추적할 수 있는가?
+
+## 구현 범위 (V1–V11)
 
 ### 지원
 
@@ -97,6 +101,10 @@ V10은 다일 여행 도중의 일정 변경을 다룹니다.
 - 현재 날짜 기준 다일 잔여 일정 재최적화와 지난 날짜 Snapshot 고정
 - 오늘 완료 구간 보존, 이후 날짜 장소 재배분과 재계산 시작 날짜 계보 저장
 - 재최적화 날짜 선택·날짜별 잠금·버전 간 방문 날짜 이동 비교 UI
+- Actuator liveness·readiness와 Prometheus 메트릭 endpoint
+- 최적화·재최적화 시간/성공/실패, Route API·Matrix·Cache 지표
+- 요청 Correlation ID 응답 헤더·오류 JSON·MDC 완료 로그 연계
+- Backend Testcontainers와 Frontend 테스트·Lint·Build GitHub Actions CI
 - PostgreSQL, Flyway, OpenAPI, Docker Compose
 - JUnit 5, AssertJ, Testcontainers, Vitest 테스트
 
@@ -122,7 +130,9 @@ V10은 다일 여행 도중의 일정 변경을 다룹니다.
 - Gradle Wrapper
 - JUnit 5, AssertJ, Testcontainers
 - springdoc-openapi
+- Spring Boot Actuator, Micrometer, Prometheus Registry
 - Docker, Docker Compose
+- GitHub Actions
 - React 19, TypeScript 6, Vite 8
 - React Leaflet, OpenStreetMap
 - Vitest, Testing Library, ESLint
@@ -137,7 +147,7 @@ QueryDSL은 동적 검색 쿼리가 없는 현재 단계에서는 사용하지 �
 
 ```text
 com.routeplan
-├─ common          공통 오류 응답
+├─ common          공통 오류 응답·관측성
 ├─ user            최소 사용자
 ├─ trip            Trip과 TripPlace
 ├─ place           장소 정보
@@ -431,6 +441,30 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 
 Swagger UI는 Docker Compose 실행 시 `http://localhost:8180/swagger-ui.html`, 애플리케이션 직접 실행 시 `http://localhost:8080/swagger-ui.html`에서 확인할 수 있습니다.
 
+### 운영 상태와 메트릭
+
+Docker Compose 기준 운영 endpoint는 다음과 같습니다.
+
+| Endpoint | 용도 |
+|---|---|
+| `GET /actuator/health/liveness` | JVM과 애플리케이션 생존 확인 |
+| `GET /actuator/health/readiness` | 애플리케이션·PostgreSQL 요청 수신 준비 확인 |
+| `GET /actuator/info` | 애플리케이션 식별 정보 |
+| `GET /actuator/prometheus` | Prometheus scrape 형식 메트릭 |
+
+Redis Route Cache는 장애 시 외부 Provider로 fallback하는 파생 데이터이므로 readiness 조건에 넣지 않습니다. 요청은 `X-Correlation-ID` 헤더를 선택적으로 전달할 수 있습니다. 영문·숫자·점·밑줄·하이픈으로 구성된 1–64자 값만 재사용하며, 없거나 안전하지 않은 값은 서버가 UUID로 교체합니다. 같은 값은 응답 헤더, 오류 응답의 `correlationId`, 완료 로그의 `cid`에 남습니다.
+
+RoutePlan이 추가하는 Micrometer 지표는 다음과 같습니다. 태그에는 Trip/User/Place ID를 넣지 않고 `type`, `algorithm`, `outcome`처럼 값의 종류가 제한된 항목만 사용합니다.
+
+| Metric | 의미 |
+|---|---|
+| `routeplan.itinerary.generation.duration` | 전체 최적화·재최적화 소요시간 |
+| `routeplan.itinerary.generation.total` | 알고리즘별 성공·실패 시도 수 |
+| `routeplan.itinerary.reoptimization.total` | 재최적화 성공·실패 시도 수 |
+| `routeplan.route.matrix.build.duration` | 데이터 유형·이동수단별 Matrix 생성시간 |
+| `routeplan.route.api.calls`, `routeplan.route.api.failures` | 외부 Route 호출·실패 수 |
+| `routeplan.route.cache.hits/misses/failures` | Route Cache 결과 수 |
+
 지원 알고리즘은 다음과 같습니다. 쿼리 파라미터를 생략하면 기존과 동일하게 `NEAREST_NEIGHBOR`를 사용합니다.
 
 ```text
@@ -571,6 +605,7 @@ docker compose up --build
 
 Frontend는 `http://localhost:3100`, Backend는 `http://localhost:8180`, PostgreSQL은 `localhost:5432`, Redis는 `localhost:6379`에서 실행됩니다.
 이미 사용 중인 포트가 있다면 `.env`의 `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`를 변경할 수 있습니다.
+Backend 컨테이너 healthcheck는 Swagger 문서가 아니라 `/actuator/health/readiness`를 사용합니다.
 
 ### 애플리케이션 직접 실행
 
@@ -641,6 +676,8 @@ npm run lint
 npm run build
 ```
 
+`.github/workflows/ci.yml`은 push와 pull request마다 Backend와 Frontend Job을 병렬 실행합니다. Backend는 Java 21과 Testcontainers PostgreSQL로 전체 테스트를 수행하고, Frontend는 Node.js 22에서 고정된 lockfile로 설치한 뒤 단위 테스트, ESLint, 프로덕션 빌드를 모두 통과해야 합니다. Benchmark는 실행시간 변동과 비용 때문에 일반 CI에서 분리합니다.
+
 테스트는 다음을 검증합니다.
 
 - 좌표 범위
@@ -692,6 +729,9 @@ npm run build
 - 자연어 변경 비교와 적용 프론트엔드 흐름
 - TypeScript 프로덕션 빌드와 ESLint
 - 중복 장소, 빈 여행, 잘못된 여행 기간 오류 응답
+- readiness 상태와 Correlation ID의 응답 헤더·오류 JSON 전파
+- 최적화·재최적화·Route Matrix·외부 장애 Micrometer 지표
+- Prometheus endpoint의 RoutePlan 메트릭 노출
 
 통합 테스트는 H2 대신 PostgreSQL Testcontainers를 사용하므로 Docker가 실행 중이어야 합니다.
 
@@ -736,6 +776,8 @@ V8  자연어 요구사항 Structured Output·검증·적용 ✓
 V9  여러 날짜 장소 배분과 일자별 제약 최적화 ✓
  ↓
 V10 현재 날짜 기준 다일 잔여 일정 재최적화 ✓
+ ↓
+V11 Actuator·Micrometer·Correlation ID·GitHub Actions 운영 기반 ✓
 ```
 
 ## Performance Benchmark
@@ -817,6 +859,8 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 자연어 장소 조건은 현재 Trip에 이미 담긴 장소만 매칭하며 장소 검색·자동 추가는 하지 않습니다.
 - `walkingPreference`는 Structured Output에 포함되지만 세부 도보량 목적함수가 없어 현재 최적화에는 직접 반영되지 않습니다.
 - 자연어 미리보기는 서버에 저장하지 않으므로 새로고침하면 다시 해석해야 합니다.
+- 현재 운영 지표는 단일 인스턴스 Micrometer 값이며 Prometheus 서버·Grafana Dashboard·Alert Rule은 아직 배포하지 않았습니다.
+- 분산 Trace export와 OpenTelemetry Collector, 운영 로그 중앙 수집, AWS 배포는 대상 계정과 환경이 정해진 뒤 적용해야 합니다.
 
 ## Troubleshooting
 
@@ -839,3 +883,5 @@ V8에서 모델 출력의 Place ID를 그대로 신뢰하면 다른 Trip의 장�
 V9에서 첫날 계산의 제외 결과를 즉시 확정하면 다음 날 영업하는 장소까지 잃게 됩니다. 일자별 계산은 Must Visit 우선순위를 유지하되 실패를 임시 이월 사유로 모으고, 방문에 성공한 장소만 남은 후보에서 제거합니다. 마지막 날 이후에도 남은 후보에 대해서만 제외 또는 Must Visit 충돌을 확정합니다. 일자별 복귀 구간은 조회 때 다시 계산하지 않고 별도 Snapshot으로 저장해 공유와 재조회에서도 같은 합계를 유지합니다.
 
 V10에서 현재 시각만 받아 다일 일정을 다시 계산하면 이미 끝난 날짜의 장소까지 새 날짜로 이동하고 과거 일자 합계가 바뀔 수 있습니다. 요청에 `currentDate`를 추가하고 이전 날짜의 모든 항목과 `ItineraryDay` Snapshot을 고정했습니다. 현재 날짜는 완료한 연속 구간 뒤에서 시작하고, 미완료 장소만 남은 오늘과 이후 날짜에 다시 배분합니다. 새 버전에는 재계산 시작 날짜를 저장해 날짜가 이동한 방문도 이전 버전과 비교할 수 있습니다.
+
+V11 이전에는 Itinerary에 Matrix 측정값이 저장되어도 실패한 요청은 DB에 결과가 없어 원인을 집계할 수 없었고, 여러 로그가 같은 요청인지 연결할 ID도 없었습니다. 성공 결과의 Snapshot 측정은 그대로 유지하면서 Micrometer Timer/Counter를 orchestration 경계에 추가해 실패도 기록합니다. 요청별 Correlation ID는 검증된 헤더 또는 서버 UUID 하나를 응답·오류·MDC에 공유합니다. Trip ID처럼 값이 계속 늘어나는 정보는 메트릭 태그에서 제외해 Prometheus 시계열 폭증을 막습니다.
