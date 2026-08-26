@@ -134,6 +134,12 @@ class SharedRouteApiIntegrationTest {
                 .andExpect(jsonPath("$.content[0].placePreview").value("오사카성 · 도톤보리"))
                 .andExpect(jsonPath("$.totalElements").value(1));
 
+        mockMvc.perform(get("/api/v1/routes")
+                        .queryParam("sort", "POPULAR"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].routeId").value(routeId.longValue()));
+
         mockMvc.perform(get("/api/v1/routes/{routeId}", routeId.longValue())
                         .queryParam("viewerUserId", String.valueOf(travelerId)))
                 .andExpect(status().isOk())

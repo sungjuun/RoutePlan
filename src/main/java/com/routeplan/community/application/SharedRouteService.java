@@ -107,7 +107,7 @@ public class SharedRouteService {
                     Sort.Order.desc("id")
             );
         };
-        String regionFilter = region == null || region.isBlank() ? null : region.strip();
+        String regionFilter = region == null || region.isBlank() ? "" : region.strip();
         Page<SharedRouteSummaryView> routes = sharedRouteRepository.findDiscoverable(
                         SharedRouteVisibility.PUBLIC,
                         regionFilter,

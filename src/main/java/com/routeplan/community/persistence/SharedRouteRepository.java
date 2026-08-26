@@ -30,14 +30,14 @@ public interface SharedRouteRepository extends JpaRepository<SharedRoute, Long> 
                     from SharedRoute route
                     join fetch route.owner
                     where route.visibility = :visibility
-                      and (:region is null or lower(route.region) like lower(concat('%', :region, '%')))
+                      and (:region = '' or lower(route.region) like lower(concat('%', :region, '%')))
                       and (:travelDays is null or route.travelDays = :travelDays)
                     """,
             countQuery = """
                     select count(route)
                     from SharedRoute route
                     where route.visibility = :visibility
-                      and (:region is null or lower(route.region) like lower(concat('%', :region, '%')))
+                      and (:region = '' or lower(route.region) like lower(concat('%', :region, '%')))
                       and (:travelDays is null or route.travelDays = :travelDays)
                     """
     )
