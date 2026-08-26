@@ -323,9 +323,11 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; letter-spacing: -.03
 /* Reoptimization */
 .reoptimize-layout { display: grid; grid-template-columns: minmax(480px, 1.35fr) minmax(300px, .65fr); gap: 18px; align-items: start; }
 .reoptimize-main { padding: 24px; }
+.reopt-date-field { max-width: 280px; margin: 0 0 16px; }
 .completion-list { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-bottom: 22px; }
 .completion-list button { width: 100%; min-height: 58px; border: 0; border-bottom: 1px solid #e8e8e2; background: white; padding: 8px 12px; display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 9px; text-align: left; cursor: pointer; }
 .completion-list button:last-child { border-bottom: 0; }
+.completion-list button:disabled { cursor: default; }
 .completion-list button > span { width: 27px; height: 27px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #edede7; color: #788681; font-size: 10px; font-weight: 800; }
 .completion-list button.completed { background: #f1f7f2; }
 .completion-list button.completed > span { background: #5f9671; color: white; }

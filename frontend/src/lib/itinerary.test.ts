@@ -37,6 +37,7 @@ function itinerary(version: number, items: ItineraryItem[]): Itinerary {
     parentItineraryId: version === 1 ? null : version - 1,
     changeReason: version === 1 ? null : 'DELAY',
     changeReasonDetail: null,
+    reoptimizationStartDate: version === 1 ? null : '2026-09-10',
     reoptimizationStartTime: version === 1 ? null : '10:30:00',
     reoptimizationStartLatitude: null,
     reoptimizationStartLongitude: null,
@@ -88,5 +89,15 @@ describe('itinerary comparison', () => {
     ])
 
     expect(minimumCompletedCount(source)).toBe(2)
+  })
+
+  it('treats a visit moved to another date as rescheduled', () => {
+    const original = item(1, 10, 1, '09:00:00')
+    const moved = { ...item(2, 10, 1, '09:00:00'), visitDate: '2026-09-11' }
+
+    const diff = compareItineraries(itinerary(1, [original]), itinerary(2, [moved]))
+
+    expect(diff.rescheduled).toHaveLength(1)
+    expect(diff.unchanged).toBe(0)
   })
 })

@@ -124,6 +124,7 @@ export interface Itinerary {
   parentItineraryId: number | null
   changeReason: ItineraryChangeReason | null
   changeReasonDetail: string | null
+  reoptimizationStartDate: string | null
   reoptimizationStartTime: string | null
   reoptimizationStartLatitude: number | null
   reoptimizationStartLongitude: number | null
@@ -193,6 +194,7 @@ export interface TripPlaceConstraints {
 
 export interface ReoptimizeInput {
   sourceItineraryId: number
+  currentDate: string
   currentTime: string
   currentLatitude: number
   currentLongitude: number

@@ -21,6 +21,7 @@ export function compareItineraries(
     .map((afterItem) => ({ before: beforeByPlace.get(afterItem.placeId)!, after: afterItem }))
     .filter(({ before: beforeItem, after: afterItem }) =>
       beforeItem.sequence !== afterItem.sequence ||
+      beforeItem.visitDate !== afterItem.visitDate ||
       beforeItem.startTime !== afterItem.startTime ||
       beforeItem.endTime !== afterItem.endTime,
     )

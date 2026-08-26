@@ -61,10 +61,6 @@ export function ItineraryWorkspace(props: Props) {
     if (itinerary) setAlgorithm(itinerary.algorithm)
   }, [itinerary])
 
-  useEffect(() => {
-    if (multiDay && tab === 'reoptimize') setTab('route')
-  }, [multiDay, tab])
-
   const optimize = async () => {
     setCalculating(true)
     try {
@@ -121,17 +117,13 @@ export function ItineraryWorkspace(props: Props) {
         </div>
         <div className="title-actions">
           <button className="button button-ghost" onClick={onGoToPlaces}><Plus size={16} /> 장소 변경</button>
-          {multiDay ? (
-            <button className="button button-primary" onClick={() => void optimize()} disabled={calculating}><RefreshCw size={17} /> {calculating ? '계산 중…' : '전체 일정 다시 계산'}</button>
-          ) : (
-            <button className="button button-primary" onClick={() => setTab('reoptimize')}><TimerReset size={17} /> 남은 일정 다시 짜기</button>
-          )}
+          <button className="button button-primary" onClick={() => setTab('reoptimize')}><TimerReset size={17} /> {multiDay ? '이 날짜부터 다시 짜기' : '남은 일정 다시 짜기'}</button>
         </div>
       </div>
 
       <div className="itinerary-tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'route'} className={tab === 'route' ? 'active' : ''} onClick={() => setTab('route')}><RouteIcon size={17} /> 일정과 지도</button>
-        {!multiDay && <button role="tab" aria-selected={tab === 'reoptimize'} className={tab === 'reoptimize' ? 'active' : ''} onClick={() => setTab('reoptimize')}><RefreshCw size={17} /> 재최적화</button>}
+        <button role="tab" aria-selected={tab === 'reoptimize'} className={tab === 'reoptimize' ? 'active' : ''} onClick={() => setTab('reoptimize')}><RefreshCw size={17} /> 재최적화</button>
         <button role="tab" aria-selected={tab === 'compare'} className={tab === 'compare' ? 'active' : ''} onClick={() => setTab('compare')} disabled={!previousItinerary}><GitCompareArrows size={17} /> 버전 비교</button>
       </div>
 
@@ -306,17 +298,53 @@ function ReoptimizationView({
   onError,
   onDone,
 }: Props & { algorithm: OptimizationAlgorithm; onAlgorithmChange: (value: OptimizationAlgorithm) => void; onDone: () => void }) {
-  const minimum = minimumCompletedCount(itinerary!)
-  const [completedCount, setCompletedCount] = useState(minimum)
-  const [currentTime, setCurrentTime] = useState((itinerary!.items[minimum - 1]?.endTime ?? itinerary!.reoptimizationStartTime ?? trip.dailyStartTime).slice(0, 5))
+  const statusMinimum = minimumCompletedCount(itinerary!)
+  const travelDates = itinerary!.days.length > 0
+    ? itinerary!.days.map((day) => day.visitDate)
+    : [trip.startDate]
+  const lastCompletedDate = itinerary!.items[statusMinimum - 1]?.visitDate ?? trip.startDate
+  const selectableDates = travelDates.filter((date) => date >= lastCompletedDate)
+  const initialCurrentDate = itinerary!.reoptimizationStartDate
+    ?? selectableDates[0]
+    ?? trip.startDate
+  const minimumForDate = (date: string) => Math.max(
+    statusMinimum,
+    itinerary!.items.filter((item) => item.visitDate < date).length,
+  )
+  const initialMinimum = minimumForDate(initialCurrentDate)
+  const [currentDate, setCurrentDate] = useState(initialCurrentDate)
+  const [completedCount, setCompletedCount] = useState(initialMinimum)
+  const initialLastItem = itinerary!.items[initialMinimum - 1]
+  const [currentTime, setCurrentTime] = useState((
+    initialLastItem?.visitDate === initialCurrentDate
+      ? initialLastItem.endTime
+      : itinerary!.reoptimizationStartDate === initialCurrentDate
+        ? itinerary!.reoptimizationStartTime ?? trip.dailyStartTime
+        : trip.dailyStartTime
+  ).slice(0, 5))
   const [latitude, setLatitude] = useState(String(itinerary!.reoptimizationStartLatitude ?? trip.accommodationLatitude))
   const [longitude, setLongitude] = useState(String(itinerary!.reoptimizationStartLongitude ?? trip.accommodationLongitude))
   const [reason, setReason] = useState<ItineraryChangeReason>('DELAY')
   const [detail, setDetail] = useState('')
   const [locating, setLocating] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const minimum = minimumForDate(currentDate)
+  const pastItemCount = itinerary!.items.filter((item) => item.visitDate < currentDate).length
+  const currentDayItems = itinerary!.items.filter((item) => item.visitDate === currentDate)
+  const completedToday = itinerary!.items
+    .slice(0, completedCount)
+    .filter((item) => item.visitDate === currentDate).length
+
+  const changeCurrentDate = (nextDate: string) => {
+    const nextMinimum = minimumForDate(nextDate)
+    const nextLast = itinerary!.items[nextMinimum - 1]
+    setCurrentDate(nextDate)
+    setCompletedCount(nextMinimum)
+    setCurrentTime((nextLast?.visitDate === nextDate ? nextLast.endTime : trip.dailyStartTime).slice(0, 5))
+  }
 
   const toggleCompleted = (index: number) => {
+    if (itinerary!.items[index].visitDate !== currentDate) return
     const next = completedCount === index + 1 ? Math.max(minimum, index) : index + 1
     setCompletedCount(next)
     const lastEnd = itinerary!.items[next - 1]?.endTime?.slice(0, 5)
@@ -348,6 +376,7 @@ function ReoptimizationView({
     try {
       const next = await api.reoptimize(trip.id, algorithm, {
         sourceItineraryId: itinerary!.itineraryId,
+        currentDate,
         currentTime,
         currentLatitude: Number(latitude),
         currentLongitude: Number(longitude),
@@ -367,17 +396,27 @@ function ReoptimizationView({
   return (
     <div className="reoptimize-layout">
       <div className="reoptimize-main panel">
-        <div className="panel-title"><div><span className="eyebrow">REPLAN FROM HERE</span><h2>어디까지 다녀오셨나요?</h2></div><span>{completedCount}곳 완료</span></div>
-        <p className="panel-description">완료한 앞부분은 그대로 잠그고, 현재 위치부터 남은 장소만 다시 계산합니다.</p>
+        <div className="panel-title"><div><span className="eyebrow">REPLAN FROM HERE</span><h2>어느 날, 어디까지 다녀오셨나요?</h2></div><span>오늘 {completedToday}곳 완료</span></div>
+        <p className="panel-description">지난 날짜는 그대로 잠그고, 선택한 날짜의 현재 위치부터 남은 여행만 다시 계산합니다.</p>
+        <label className="field reopt-date-field">
+          <span><CalendarDays size={15} /> 재계산 시작 날짜</span>
+          <select value={currentDate} onChange={(event) => changeCurrentDate(event.target.value)}>
+            {selectableDates.map((date) => <option key={date} value={date}>{dateLabel(date)}</option>)}
+          </select>
+        </label>
         <div className="completion-list">
           {itinerary!.items.map((item, index) => {
             const checked = index < completedCount
-            const locked = index < minimum
+            const previousDate = item.visitDate < currentDate
+            const futureDate = item.visitDate > currentDate
+            const locked = index < statusMinimum || previousDate
             return (
-              <button key={item.itineraryItemId} className={checked ? 'completed' : ''} onClick={() => toggleCompleted(index)} disabled={locked}>
+              <button key={item.itineraryItemId} className={checked ? 'completed' : ''} onClick={() => toggleCompleted(index)} disabled={locked || futureDate}>
                 <span>{checked ? <Check size={16} /> : index + 1}</span>
-                <div><strong>{item.placeName}</strong><small>{timeLabel(item.startTime)}–{timeLabel(item.endTime)}</small></div>
-                {locked && <em>이전 버전에서 완료</em>}
+                <div><strong>{item.placeName}</strong><small>{dateLabel(item.visitDate)} · {timeLabel(item.startTime)}–{timeLabel(item.endTime)}</small></div>
+                {previousDate && <em>지난 날짜 고정</em>}
+                {!previousDate && index < statusMinimum && <em>이전 버전에서 완료</em>}
+                {futureDate && <em>이후 날짜 재배치</em>}
               </button>
             )
           })}
@@ -397,14 +436,14 @@ function ReoptimizationView({
           <span className="summary-icon"><RefreshCw size={22} /></span>
           <h3>새 버전에서 달라지는 것</h3>
           <ul>
-            <li><Check size={15} /> 완료한 {completedCount}곳의 시간표 보존</li>
-            <li><CircleDot size={15} /> 남은 {itinerary!.items.length - completedCount}곳과 새 장소 재배치</li>
-            <li><BedDouble size={15} /> {timeLabel(trip.dailyEndTime)} 전 숙소 복귀 검증</li>
+            <li><Check size={15} /> 지난 일정 {pastItemCount}곳과 오늘 완료 {completedToday}곳 보존</li>
+            <li><CircleDot size={15} /> 오늘 남은 {Math.max(0, currentDayItems.length - completedToday)}곳과 이후 날짜 재배치</li>
+            <li><BedDouble size={15} /> 남은 모든 날짜의 {timeLabel(trip.dailyEndTime)} 전 숙소 복귀 검증</li>
           </ul>
         </div>
         <AlgorithmPicker algorithm={algorithm} onChange={onAlgorithmChange} placeCount={trip.places.length - completedCount} />
         <button className="button button-primary button-large reopt-submit" disabled={submitting} onClick={() => void submit()}><RefreshCw size={18} /> {submitting ? '남은 일정을 계산하는 중…' : '이 지점부터 다시 계산'}</button>
-        <small className="safe-note"><Check size={14} /> 현재 버전 {itinerary!.version}를 수정하지 않습니다.</small>
+        <small className="safe-note"><Check size={14} /> 현재 버전 {itinerary!.version}와 지난 날짜는 수정하지 않습니다.</small>
       </aside>
     </div>
   )
@@ -418,7 +457,7 @@ function VersionCompare({ before, after }: { before: Itinerary; after: Itinerary
         <div className="compare-version"><span>V{before.version}</span><small>{reasonLabel(before.changeReason)}</small></div>
         <div className="compare-arrow"><GitCompareArrows size={24} /><i></i></div>
         <div className="compare-version current"><span>V{after.version}</span><small>{reasonLabel(after.changeReason)}</small></div>
-        <div className="compare-reason"><strong>{after.changeReasonDetail ?? '남은 일정 조건을 반영했습니다.'}</strong><span>{after.reoptimizationStartTime ? `${timeLabel(after.reoptimizationStartTime)}부터 재계산` : '전체 일정 계산'}</span></div>
+        <div className="compare-reason"><strong>{after.changeReasonDetail ?? '남은 일정 조건을 반영했습니다.'}</strong><span>{after.reoptimizationStartTime ? `${after.reoptimizationStartDate ? `${dateLabel(after.reoptimizationStartDate)} ` : ''}${timeLabel(after.reoptimizationStartTime)}부터 재계산` : '전체 일정 계산'}</span></div>
       </div>
       <div className="compare-stats">
         <div className="panel added"><Plus size={18} /><strong>{diff.added.length}</strong><span>새로 추가</span></div>
@@ -439,7 +478,7 @@ function VersionColumn({ title, itinerary, muted = false }: { title: string; iti
     <div className={`version-column panel ${muted ? 'muted' : ''}`}>
       <div className="version-column-head"><h3>{title}</h3><span>{distanceLabel(itinerary.totalDistanceMeters)} · {durationLabel(itinerary.estimatedTravelMinutes)}</span></div>
       {itinerary.items.map((item) => (
-        <div className="version-row" key={item.itineraryItemId}><span>{item.sequence}</span><div><strong>{item.placeName}</strong><small>{timeLabel(item.startTime)}–{timeLabel(item.endTime)}</small></div>{item.status === 'COMPLETED' && <Check size={15} />}</div>
+        <div className="version-row" key={item.itineraryItemId}><span>{item.sequence}</span><div><strong>{item.placeName}</strong><small>{dateLabel(item.visitDate)} · {timeLabel(item.startTime)}–{timeLabel(item.endTime)}</small></div>{item.status === 'COMPLETED' && <Check size={15} />}</div>
       ))}
       <div className="version-return"><BedDouble size={16} /> 숙소 {timeLabel(itinerary.returnArrivalTime)} 도착</div>
     </div>
