@@ -22,7 +22,11 @@ V6는 여행 도중 지연되거나 장소가 바뀐 상황을 다룹니다.
 
 > 완료한 일정은 그대로 보존하면서 현재 위치·시각부터 남은 장소만 다시 계산하고, 변경 전후 버전을 추적할 수 있는가?
 
-## 구현 범위 (V1–V6)
+V7은 계산한 좋은 동선을 다른 사용자가 발견하고 자신의 조건으로 재사용하는 과정을 다룹니다.
+
+> 원본 여행이 바뀌어도 공개 당시 Route를 보존하고, 다른 사용자가 장소를 가져와 새 숙소·날짜·취향으로 다시 최적화할 수 있는가?
+
+## 구현 범위 (V1–V7)
 
 ### 지원
 
@@ -65,6 +69,12 @@ V6는 여행 도중 지연되거나 장소가 바뀐 상황을 다룹니다.
 - 현재 위치 기반 재최적화와 이전/현재 버전 비교 UI
 - 외부 검색 비활성 환경을 위한 수동 좌표 장소 등록
 - 브라우저 작업공간 복구와 반응형 모바일 UI
+- Itinerary 공개 시 변경 불가능한 SharedRoute 일정·장소 Snapshot 생성
+- 공개 Route 최신순·인기순·지역·여행 기간 탐색과 상세 조회
+- 공개 Route 조회수와 사용자별 좋아요·취소
+- 공개 Route 장소·Priority·Must Visit을 새 Trip으로 복사
+- 복사한 Route를 새 숙소·날짜·이동수단·여행 강도로 재최적화
+- Route 커뮤니티 목록·상세 지도·공개·좋아요·복사 UI
 - PostgreSQL, Flyway, OpenAPI, Docker Compose
 - JUnit 5, AssertJ, Testcontainers, Vitest 테스트
 
@@ -74,7 +84,7 @@ V6는 여행 도중 지연되거나 장소가 바뀐 상황을 다룹니다.
 - DB 영속 Route Matrix
 - Google Places 영업시간 자동 가져오기
 - QueryDSL, PostGIS
-- 인증, 공유 Route, 커뮤니티, LLM
+- 인증, LLM
 
 기본 `SIMPLE` 모드의 `estimatedTravelMinutes`는 직선거리와 고정 평균속도로 계산한 추정치입니다. `GOOGLE` Route Provider를 활성화하면 Google Routes API가 반환한 실제 경로 거리와 이동시간을 사용합니다.
 
@@ -110,7 +120,8 @@ com.routeplan
 ├─ trip            Trip과 TripPlace
 ├─ place           장소 정보
 ├─ optimization    Spring/JPA와 분리된 경로·제약 일정 계산
-└─ itinerary       최적화 orchestration과 결과 저장
+├─ itinerary       최적화 orchestration과 결과 저장
+└─ community       공개 Route Snapshot·탐색·좋아요·복사
 ```
 
 ```mermaid
@@ -118,7 +129,9 @@ flowchart LR
     WEB[React Frontend] -->|Nginx /api proxy| API[REST API]
     WEB --> OSM[OpenStreetMap Tiles]
     API --> APP[Optimization / Reoptimization Service]
+    API --> COMMUNITY[SharedRoute Service]
     APP --> DB[(PostgreSQL)]
+    COMMUNITY --> DB
     APP --> MATRIX[RouteMatrixProvider]
     MATRIX --> SIMPLE[Simple Distance]
     MATRIX --> GOOGLE[Google Routes API]
@@ -149,6 +162,10 @@ flowchart LR
 → 완료 구간과 현재 위치 입력
 → 남은 일정 재최적화
 → 부모/현재 버전 비교
+→ 일정 Snapshot 공개
+→ 공개 Route 탐색·좋아요
+→ 내 Trip으로 복사
+→ 내 조건으로 재최적화
 ```
 
 일정 지도는 숙소와 방문 장소 Marker를 표시하고 방문 순서를 선으로 연결합니다. 선은 도로 Polyline이 아니라 순서 시각화이며, 실제 이동거리와 시간은 백엔드 Route Matrix 결과를 사용합니다. 기본 Place Provider가 `DISABLED`여도 좌표 등록 화면으로 전체 흐름을 실행할 수 있습니다.
@@ -167,6 +184,12 @@ erDiagram
     ITINERARIES ||--o{ ITINERARY_EXCLUSIONS : excludes
     PLACES ||--o{ ITINERARY_ITEMS : references
     PLACES ||--o{ ITINERARY_EXCLUSIONS : references
+    USERS ||--o{ SHARED_ROUTES : publishes
+    ITINERARIES o|--o| SHARED_ROUTES : snapshots
+    SHARED_ROUTES ||--|{ SHARED_ROUTE_ITEMS : contains
+    PLACES ||--o{ SHARED_ROUTE_ITEMS : references
+    USERS ||--o{ ROUTE_LIKES : creates
+    SHARED_ROUTES ||--o{ ROUTE_LIKES : receives
 ```
 
 주요 DB 제약조건은 다음과 같습니다.
@@ -182,6 +205,9 @@ erDiagram
 - Priority는 1–100, 체류시간은 1–1,440분
 - Trip의 하루 종료시간은 시작시간보다 늦어야 함
 - V1 Trip은 `start_date = end_date`
+- 같은 Itinerary는 SharedRoute로 한 번만 공개할 수 있음
+- SharedRoute의 장소 순서는 중복될 수 없고 Snapshot 항목이 한 개 이상이어야 함
+- 같은 사용자는 같은 SharedRoute에 좋아요를 한 번만 등록할 수 있음
 
 ## Optimization Engine
 
@@ -364,6 +390,12 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 | `POST` | `/api/v1/trips/{tripId}/reoptimize?algorithm=...` | 완료 구간을 고정하고 남은 일정만 새 버전으로 재계산 |
 | `GET` | `/api/v1/trips/{tripId}/itineraries/latest` | 최신 일정 조회 |
 | `GET` | `/api/v1/itineraries/{itineraryId}` | 특정 일정 조회 |
+| `POST` | `/api/v1/itineraries/{itineraryId}/share` | 일정 Snapshot을 SharedRoute로 공개 |
+| `GET` | `/api/v1/routes?region=...&travelDays=1&sort=...` | 공개 Route 탐색 |
+| `GET` | `/api/v1/routes/{routeId}?viewerUserId=...` | 공개 Route 상세 조회와 조회수 증가 |
+| `POST` | `/api/v1/routes/{routeId}/likes` | 공개 Route 좋아요 |
+| `DELETE` | `/api/v1/routes/{routeId}/likes?userId=...` | 공개 Route 좋아요 취소 |
+| `POST` | `/api/v1/routes/{routeId}/copy` | 공개 Route 장소를 새 Trip으로 복사 |
 
 Swagger UI는 Docker Compose 실행 시 `http://localhost:8180/swagger-ui.html`, 애플리케이션 직접 실행 시 `http://localhost:8080/swagger-ui.html`에서 확인할 수 있습니다.
 
@@ -414,6 +446,25 @@ Trip 생성 시 `dailyStartTime`, `dailyEndTime`, `pace`를 생략하면 각각 
 5. 결과는 `parentItineraryId`, `generationType=REOPTIMIZATION`, 변경 사유와 시작점을 가진 다음 버전으로 저장됩니다.
 
 최신 버전이 아닌 기준 일정은 `409 REOPTIMIZATION_SOURCE_NOT_LATEST`, 다른 Trip의 일정은 `409 REOPTIMIZATION_SOURCE_MISMATCH`, 완료 항목이 연속된 앞부분이 아니거나 현재 시각이 완료 구간보다 빠르면 `422 INVALID_REOPTIMIZATION_STATE`를 반환합니다. 이전 버전과 새 응답의 `parentItineraryId`를 따라 각각 `/api/v1/itineraries/{itineraryId}`로 조회하면 변경 전후를 비교할 수 있습니다.
+
+### Shared Route 공개와 재사용
+
+공개 API는 원본 Trip이나 Itinerary를 그대로 노출하지 않습니다. 공개 시점의 여행 조건, 최적화 지표, 장소 이름·좌표·시간표·이동비용을 `SharedRoute`와 `SharedRouteItem`에 복사합니다. 이후 원 작성자가 Trip 이름, 숙소 또는 장소 조건을 수정해도 이미 공개된 Route는 변하지 않습니다. `sourceTripId`, `sourceItineraryId`, 원본 version은 계보 확인용이며 Snapshot 값의 기준으로 다시 조회하지 않습니다.
+
+```text
+완성된 Itinerary
+→ 작성자 소유권 확인
+→ SharedRoute + SharedRouteItem Snapshot
+→ PUBLIC Route 탐색
+→ 다른 사용자가 Route 선택
+→ 새 Trip + TripPlace 생성
+→ 새 숙소·날짜·이동수단·강도 적용
+→ 기존 Optimization Engine으로 새 Itinerary 계산
+```
+
+Route 복사는 공개 시간표를 그대로 새 Itinerary에 저장하지 않습니다. Snapshot의 방문 장소와 `Priority`, `Must Visit`만 새 TripPlace로 옮기고, 선호 시간창과 체류시간은 새 여행 조건으로 다시 계산합니다. 따라서 숙소와 이동수단이 달라져도 실행 가능성 검사를 우회하지 않습니다. 공개 Route 원본과 복사된 Trip 사이에는 수정 전파가 없습니다.
+
+`visibility=PUBLIC`은 목록에서 탐색할 수 있고, `UNLISTED`는 Route ID를 아는 경우에만 상세 조회할 수 있습니다. 최신순은 공개시각, 인기순은 복사수 → 좋아요수 → 조회수 → 공개시각 순으로 정렬합니다. 조회·복사·좋아요 카운터는 SharedRoute 비관적 Lock 안에서 갱신하며, 좋아요 중복은 `(shared_route_id, user_id)` DB Unique Constraint가 최종 방어선입니다.
 
 ### 외부 Provider 설정
 
@@ -557,7 +608,14 @@ npm run build
 - 오래된 기준 버전과 비연속 완료 목록 거부
 - 모든 장소 완료 후 현재 위치에서 숙소로 바로 복귀하는 경계값
 - 일정 버전 추가·삭제·시간 변경 비교와 완료된 연속 구간 계산
+- 공개 일정 Snapshot이 원본 Trip 수정 후에도 유지되는지 검증
+- 공개 Route 지역 검색·최신/인기 정렬·상세 조회수 증가
+- 사용자별 좋아요 중복 방지와 취소
+- 공개 Route 복사 후 새 조건으로 재최적화하는 전체 API 흐름
+- 다른 사용자의 Itinerary 공개 권한 거부
 - API 성공 응답과 구조화된 오류 전달
+- 예상하지 못한 Proxy 오류 형식의 사용자 안전 메시지 fallback
+- 커뮤니티 목록 렌더링과 인기순 전환
 - TypeScript 프로덕션 빌드와 ESLint
 - 중복 장소, 빈 여행, 다일 여행 오류 응답
 
@@ -595,7 +653,9 @@ V5  외부 API 호출 측정·Redis Cache·Before/After 검증 ✓
  ↓
 V6  일정 지연·장소 변경 후 남은 일정 재최적화 ✓
  ↓
-V7  공유 Route·커뮤니티
+V7  공유 Snapshot·탐색·좋아요·복사·사용자 조건 재최적화 ✓
+ ↓
+V8  자연어 요구사항 Structured Output
 ```
 
 ## Performance Benchmark
@@ -666,6 +726,11 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 서버에 사용자별 Trip 목록 API가 없어 현재 작업공간 한 건을 브라우저에 보존합니다.
 - 여전히 하루짜리 여행만 지원합니다.
 - 인증이 없어 `userId`는 소유 관계만 표현하며 권한을 보장하지 않습니다.
+- 커뮤니티 화면은 현재 Trip 작업공간을 만든 사용자만 진입할 수 있습니다.
+- Route 복사 시 방문 장소·Priority·Must Visit만 옮기며 공개 당시 선호 시간창은 복사하지 않습니다.
+- 조회수는 상세 요청마다 증가하며 사용자·세션별 중복 조회를 제거하지 않습니다.
+- 인기순은 복사·좋아요·조회수의 단순 우선 정렬이며 시간 감쇠나 가중 점수는 적용하지 않습니다.
+- `UNLISTED`는 ID 기반 접근만 지원하고 완전한 비공개 Route는 인증 도입 전까지 지원하지 않습니다.
 
 ## Troubleshooting
 
@@ -680,3 +745,5 @@ V4의 요청 단위 Matrix는 한 최적화가 끝나면 폐기되어 같은 Tri
 V5까지의 반복 최적화는 항상 숙소와 하루 시작시각부터 전체 일정을 새로 만들었기 때문에 여행 도중 완료한 방문까지 바뀌었습니다. V6에서는 기준 일정의 완료 구간을 불변 Snapshot으로 복사하고, 현재 위치·시각과 최신 TripPlace만 별도 최적화 입력으로 사용합니다. 원본 Itinerary는 갱신하지 않고 부모를 가리키는 다음 버전을 추가해 변경 이력을 보존합니다.
 
 외부 호출을 기존 최적화 Transaction 안에 두면 느린 네트워크 동안 Trip Lock을 점유하게 됩니다. 이를 입력 Snapshot 조회, 외부 계산, 입력 재검증과 저장의 세 구간으로 분리해 Lock 보유시간을 DB 저장 구간으로 제한했습니다.
+
+V7에서 원본 Trip이나 Itinerary를 조회할 때마다 공개 화면을 만들면 원 작성자의 이후 수정이 이미 공유한 Route에 반영되는 문제가 생깁니다. 공개 시점에 별도 SharedRouteItem을 생성해 장소명·좌표·시간표·이동비용을 고정했습니다. 반대로 Route를 가져올 때 Snapshot 시간표까지 그대로 복사하면 새 숙소와 이동수단의 실행 가능성을 검증하지 못하므로, 장소·우선순위만 새 Trip에 옮기고 기존 최적화 엔진을 다시 실행합니다.
