@@ -29,6 +29,37 @@ springdoc:
 server:
   shutdown: graceful
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+  health:
+    redis:
+      enabled: false
+  info:
+    env:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+info:
+  app:
+    name: ${spring.application.name}
+    description: Constraint-aware travel route planning platform
+
+logging:
+  pattern:
+    level: "%5p [cid:%X{correlationId:-none}]"
+
 routeplan:
   ai:
     provider: ${ROUTEPLAN_AI_PROVIDER:RULE_BASED}

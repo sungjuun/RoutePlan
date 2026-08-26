@@ -77,6 +77,10 @@ public final class RouteMatrix implements RouteProvider {
         return dataType;
     }
 
+    public TransportMode transportMode() {
+        return transportMode;
+    }
+
     public int providerCallCount() {
         return providerCallCount;
     }

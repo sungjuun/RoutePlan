@@ -49,7 +49,7 @@ services:
     ports:
       - "${BACKEND_PORT:-8180}:8080"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/v3/api-docs"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health/readiness"]
       interval: 5s
       timeout: 3s
       retries: 12

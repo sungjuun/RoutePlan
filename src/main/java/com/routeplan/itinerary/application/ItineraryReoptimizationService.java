@@ -2,6 +2,8 @@ package com.routeplan.itinerary.application;
 
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
+import com.routeplan.common.observability.RoutePlanMetrics;
+import com.routeplan.integration.google.ExternalProviderException;
 import com.routeplan.itinerary.domain.Itinerary;
 import com.routeplan.itinerary.domain.ItineraryChangeReason;
 import com.routeplan.itinerary.domain.ItineraryDay;
@@ -29,6 +31,7 @@ import com.routeplan.trip.domain.Trip;
 import com.routeplan.trip.domain.TripPlace;
 import com.routeplan.trip.persistence.TripPlaceRepository;
 import com.routeplan.trip.persistence.TripRepository;
+import io.micrometer.core.instrument.Timer;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -57,6 +60,7 @@ public class ItineraryReoptimizationService {
     private final PlaceOpeningHourRepository openingHourRepository;
     private final MultiDaySchedulePlanner schedulePlanner;
     private final RouteMatrixProvider routeMatrixProvider;
+    private final RoutePlanMetrics metrics;
     private final TransactionTemplate readTransaction;
     private final TransactionTemplate writeTransaction;
 
@@ -68,6 +72,7 @@ public class ItineraryReoptimizationService {
             PlaceOpeningHourRepository openingHourRepository,
             MultiDaySchedulePlanner schedulePlanner,
             RouteMatrixProvider routeMatrixProvider,
+            RoutePlanMetrics metrics,
             PlatformTransactionManager transactionManager
     ) {
         this.tripRepository = tripRepository;
@@ -77,6 +82,7 @@ public class ItineraryReoptimizationService {
         this.openingHourRepository = openingHourRepository;
         this.schedulePlanner = schedulePlanner;
         this.routeMatrixProvider = routeMatrixProvider;
+        this.metrics = metrics;
         this.readTransaction = new TransactionTemplate(transactionManager);
         this.readTransaction.setReadOnly(true);
         this.writeTransaction = new TransactionTemplate(transactionManager);
@@ -87,22 +93,52 @@ public class ItineraryReoptimizationService {
             OptimizationAlgorithm algorithm,
             ReoptimizeCommand command
     ) {
-        ReoptimizationSnapshot snapshot = Objects.requireNonNull(
-                readTransaction.execute(status -> loadSnapshot(tripId, algorithm, command))
+        var sample = metrics.startGeneration();
+        try {
+            ReoptimizationSnapshot snapshot = Objects.requireNonNull(
+                    readTransaction.execute(status -> loadSnapshot(tripId, algorithm, command))
+            );
+            RouteMatrix routeMatrix = routeMatrixProvider.build(
+                    locations(snapshot.input()),
+                    snapshot.input().optimizationRequest().transportMode()
+            );
+            metrics.recordRouteMatrix(routeMatrix);
+            OptimizationResult result = optimizationEngineRegistry.get(algorithm)
+                    .optimize(snapshot.input().optimizationRequest(), routeMatrix);
+            MultiDaySchedule schedule = schedulePlanner.plan(
+                    snapshot.input().toScheduleRequests(result),
+                    routeMatrix
+            );
+            ItineraryView itinerary = Objects.requireNonNull(writeTransaction.execute(status ->
+                    saveIfUnchanged(snapshot, result, schedule, routeMatrix)
+            ));
+            metrics.recordGeneration(
+                    sample,
+                    RoutePlanMetrics.GenerationType.REOPTIMIZATION,
+                    algorithm,
+                    RoutePlanMetrics.Outcome.SUCCESS
+            );
+            return itinerary;
+        } catch (ExternalProviderException exception) {
+            metrics.recordRouteApiFailure(exception.failure());
+            recordFailure(sample, algorithm);
+            throw exception;
+        } catch (RuntimeException exception) {
+            recordFailure(sample, algorithm);
+            throw exception;
+        }
+    }
+
+    private void recordFailure(
+            Timer.Sample sample,
+            OptimizationAlgorithm algorithm
+    ) {
+        metrics.recordGeneration(
+                sample,
+                RoutePlanMetrics.GenerationType.REOPTIMIZATION,
+                algorithm,
+                RoutePlanMetrics.Outcome.FAILURE
         );
-        RouteMatrix routeMatrix = routeMatrixProvider.build(
-                locations(snapshot.input()),
-                snapshot.input().optimizationRequest().transportMode()
-        );
-        OptimizationResult result = optimizationEngineRegistry.get(algorithm)
-                .optimize(snapshot.input().optimizationRequest(), routeMatrix);
-        MultiDaySchedule schedule = schedulePlanner.plan(
-                snapshot.input().toScheduleRequests(result),
-                routeMatrix
-        );
-        return Objects.requireNonNull(writeTransaction.execute(status ->
-                saveIfUnchanged(snapshot, result, schedule, routeMatrix)
-        ));
     }
 
     private ReoptimizationSnapshot loadSnapshot(

@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.routeplan.common.observability.CorrelationIdFilter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,6 +34,24 @@ class RoutePlanApiIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
+
+    @Test
+    void exposesReadinessAndPropagatesCorrelationIdIntoErrors() throws Exception {
+        mockMvc.perform(get("/actuator/health/readiness"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+
+        mockMvc.perform(get("/api/v1/trips/{tripId}", 999_999)
+                        .header(CorrelationIdFilter.HEADER_NAME, "routeplan-test-123"))
+                .andExpect(status().isNotFound())
+                .andExpect(result -> assertThat(
+                        result.getResponse().getHeader(CorrelationIdFilter.HEADER_NAME)
+                ).isEqualTo("routeplan-test-123"))
+                .andExpect(jsonPath("$.correlationId").value("routeplan-test-123"));
+    }
 
     @Test
     void createsTripOptimizesTwiceAndReturnsLatestVersion() throws Exception {
@@ -119,6 +139,21 @@ class RoutePlanApiIntegrationTest {
         mockMvc.perform(get("/api/v1/trips/{tripId}", tripId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("OPTIMIZED"));
+
+        assertThat(meterRegistry.find("routeplan.itinerary.generation.duration")
+                .tags(
+                        "type", "optimization",
+                        "algorithm", "NEAREST_NEIGHBOR_2_OPT",
+                        "outcome", "success"
+                )
+                .timer().count()).isGreaterThanOrEqualTo(1);
+        assertThat(meterRegistry.find("routeplan.route.matrix.build.duration")
+                .tag("data_type", "STRAIGHT_LINE_ESTIMATE")
+                .timer().count()).isGreaterThanOrEqualTo(1);
+        mockMvc.perform(get("/actuator/prometheus"))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .contains("routeplan_itinerary_generation_duration_seconds_count"));
     }
 
     @Test
@@ -161,6 +196,9 @@ class RoutePlanApiIntegrationTest {
         mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", emptyTripId))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("TRIP_HAS_NO_PLACES"));
+        assertThat(meterRegistry.find("routeplan.itinerary.generation.total")
+                .tags("type", "optimization", "outcome", "failure")
+                .counter().count()).isGreaterThanOrEqualTo(1);
     }
 
     @Test
@@ -271,6 +309,9 @@ class RoutePlanApiIntegrationTest {
                 .andExpect(jsonPath("$.items[1].status").value("PLANNED"))
                 .andExpect(jsonPath("$.items[1].visitDate").value("2026-09-11"))
                 .andExpect(jsonPath("$.totalStayMinutes").value(180));
+        assertThat(meterRegistry.find("routeplan.itinerary.reoptimization.total")
+                .tags("algorithm", "NEAREST_NEIGHBOR", "outcome", "success")
+                .counter().count()).isGreaterThanOrEqualTo(1);
     }
 
     @Test

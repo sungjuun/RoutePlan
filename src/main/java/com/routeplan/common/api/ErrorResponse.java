@@ -7,6 +7,7 @@ public record ErrorResponse(
         String code,
         String message,
         String path,
+        String correlationId,
         Instant timestamp,
         List<Violation> violations
 ) {

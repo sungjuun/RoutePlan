@@ -2,6 +2,7 @@ package com.routeplan.common.api;
 
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
+import com.routeplan.common.observability.CorrelationIdFilter;
 import com.routeplan.optimization.constraint.InfeasibleScheduleException;
 import com.routeplan.optimization.constraint.InfeasibleReturnException;
 import com.routeplan.integration.google.ExternalProviderException;
@@ -135,6 +136,7 @@ public class GlobalExceptionHandler {
                 errorCode.name(),
                 message,
                 request.getRequestURI(),
+                CorrelationIdFilter.from(request),
                 Instant.now(),
                 violations
         );
