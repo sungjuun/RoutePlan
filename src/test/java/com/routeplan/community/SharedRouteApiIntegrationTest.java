@@ -63,7 +63,7 @@ class SharedRouteApiIntegrationTest {
                   "userId":%d,
                   "name":"오사카 원본 여행",
                   "startDate":"2026-09-10",
-                  "endDate":"2026-09-10",
+                  "endDate":"2026-09-11",
                   "dailyStartTime":"09:00",
                   "dailyEndTime":"20:00",
                   "accommodationName":"난바 숙소",
@@ -105,6 +105,7 @@ class SharedRouteApiIntegrationTest {
                 .andExpect(jsonPath("$.sourceItineraryVersion").value(1))
                 .andExpect(jsonPath("$.sourceTripName").value("오사카 원본 여행"))
                 .andExpect(jsonPath("$.ownerNickname").value("community-owner"))
+                .andExpect(jsonPath("$.travelDays").value(2))
                 .andExpect(jsonPath("$.placeCount").value(2))
                 .andExpect(jsonPath("$.items[0].placeName").exists())
                 .andExpect(jsonPath("$.items[0].startTime").exists())
@@ -126,7 +127,7 @@ class SharedRouteApiIntegrationTest {
 
         mockMvc.perform(get("/api/v1/routes")
                         .queryParam("region", "오사")
-                        .queryParam("travelDays", "1")
+                        .queryParam("travelDays", "2")
                         .queryParam("sort", "LATEST"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
@@ -196,6 +197,7 @@ class SharedRouteApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.userId").value(travelerId))
                 .andExpect(jsonPath("$.name").value("내 오사카 여행"))
+                .andExpect(jsonPath("$.endDate").value("2026-10-16"))
                 .andExpect(jsonPath("$.accommodationName").value("우메다 숙소"))
                 .andExpect(jsonPath("$.transportMode").value("PUBLIC_TRANSIT"))
                 .andExpect(jsonPath("$.pace").value("ACTIVE"))
@@ -210,6 +212,7 @@ class SharedRouteApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.tripId").value(copiedTripId.longValue()))
                 .andExpect(jsonPath("$.algorithm").value("NEAREST_NEIGHBOR_2_OPT"))
+                .andExpect(jsonPath("$.days.length()").value(2))
                 .andExpect(jsonPath("$.items.length()").value(2));
 
         mockMvc.perform(get("/api/v1/routes/{routeId}", routeId.longValue())

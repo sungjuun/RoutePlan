@@ -16,12 +16,15 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 @Entity
 @Table(name = "trips")
 public class Trip {
+
+    public static final int MAX_TRAVEL_DAYS = 14;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -180,7 +183,7 @@ public class Trip {
             TripPace pace
     ) {
         this.name = requireText(name, "여행 이름", 100);
-        validateSingleDay(startDate, endDate);
+        validateTravelPeriod(startDate, endDate);
         this.startDate = startDate;
         this.endDate = endDate;
         this.accommodationName = requireText(accommodationName, "숙소 이름", 100);
@@ -220,12 +223,16 @@ public class Trip {
         return user;
     }
 
-    private static void validateSingleDay(LocalDate startDate, LocalDate endDate) {
+    private static void validateTravelPeriod(LocalDate startDate, LocalDate endDate) {
         if (startDate == null || endDate == null) {
             throw new IllegalArgumentException("여행 날짜는 필수입니다.");
         }
-        if (!startDate.equals(endDate)) {
-            throw new IllegalArgumentException("V1에서는 하루짜리 여행만 지원합니다.");
+        if (endDate.isBefore(startDate)) {
+            throw new IllegalArgumentException("여행 종료일은 시작일보다 빠를 수 없습니다.");
+        }
+        long travelDays = ChronoUnit.DAYS.between(startDate, endDate) + 1;
+        if (travelDays > MAX_TRAVEL_DAYS) {
+            throw new IllegalArgumentException("여행 기간은 최대 " + MAX_TRAVEL_DAYS + "일까지 지원합니다.");
         }
     }
 

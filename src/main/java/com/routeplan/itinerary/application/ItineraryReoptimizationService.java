@@ -108,6 +108,9 @@ public class ItineraryReoptimizationService {
     ) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_NOT_FOUND));
+        if (!trip.getStartDate().equals(trip.getEndDate())) {
+            throw invalidState("다일 여행은 일자별 전체 재계산을 사용해 주세요.");
+        }
         Itinerary source = itineraryRepository.findDetailedById(command.sourceItineraryId())
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.ITINERARY_NOT_FOUND));
         validateSource(tripId, source);
@@ -346,6 +349,18 @@ public class ItineraryReoptimizationService {
                 routeMatrix.cacheHitCount(),
                 routeMatrix.cacheMissCount(),
                 routeMatrix.cacheFailureCount()
+        );
+        itinerary.addDay(
+                trip.getStartDate(),
+                1,
+                Math.addExact(completed.distanceMeters(), schedule.totalDistanceMeters()),
+                totalTravel,
+                Math.addExact(completed.stayMinutes(), schedule.totalStayMinutes()),
+                totalWaiting,
+                schedule.returnTravelDistanceMeters(),
+                schedule.returnTravelMinutes(),
+                schedule.returnArrivalTime(),
+                true
         );
         itinerary.markReoptimized(
                 source,

@@ -15,4 +15,7 @@ public interface PlaceOpeningHourRepository extends JpaRepository<PlaceOpeningHo
 
     @EntityGraph(attributePaths = "place")
     List<PlaceOpeningHour> findAllByPlaceIdInAndDayOfWeek(List<Long> placeIds, DayOfWeek dayOfWeek);
+
+    @EntityGraph(attributePaths = "place")
+    List<PlaceOpeningHour> findAllByPlaceIdIn(List<Long> placeIds);
 }

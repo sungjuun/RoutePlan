@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -171,7 +172,9 @@ public class SharedRoute {
         this.title = requireText(title, "공개 루트 제목", 150);
         this.description = normalizeNullable(description, "공개 루트 설명", 1000);
         this.region = requireText(region, "지역", 100);
-        this.travelDays = 1;
+        this.travelDays = Math.toIntExact(
+                ChronoUnit.DAYS.between(trip.getStartDate(), trip.getEndDate()) + 1
+        );
         this.visibility = visibility == null ? SharedRouteVisibility.PUBLIC : visibility;
         this.totalDistanceMeters = sourceItinerary.getTotalDistanceMeters();
         this.estimatedTravelMinutes = sourceItinerary.getEstimatedTravelMinutes();

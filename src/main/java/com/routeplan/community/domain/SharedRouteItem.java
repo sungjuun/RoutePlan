@@ -15,6 +15,7 @@ import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 
 @Entity
 @Table(
@@ -102,7 +103,11 @@ public class SharedRouteItem {
         Place sourcePlace = source.getPlace();
         this.sharedRoute = sharedRoute;
         this.place = sourcePlace;
-        this.dayNumber = 1;
+        this.dayNumber = Math.toIntExact(
+                ChronoUnit.DAYS.between(
+                        sharedRoute.getSourceStartDate(), source.getVisitDate()
+                ) + 1
+        );
         this.sequence = source.getSequence();
         this.visitDate = source.getVisitDate();
         this.placeName = sourcePlace.getName();

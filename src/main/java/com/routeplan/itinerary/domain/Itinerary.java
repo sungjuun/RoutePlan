@@ -142,6 +142,10 @@ public class Itinerary {
     private final List<ItineraryItem> items = new ArrayList<>();
 
     @OneToMany(mappedBy = "itinerary", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("dayNumber ASC")
+    private final Set<ItineraryDay> days = new LinkedHashSet<>();
+
+    @OneToMany(mappedBy = "itinerary", cascade = CascadeType.ALL, orphanRemoval = true)
     private final Set<ItineraryExclusion> exclusions = new LinkedHashSet<>();
 
     protected Itinerary() {
@@ -359,6 +363,25 @@ public class Itinerary {
         exclusions.add(new ItineraryExclusion(this, place, priority, reason));
     }
 
+    public void addDay(
+            LocalDate visitDate,
+            int dayNumber,
+            long totalDistanceMeters,
+            int estimatedTravelMinutes,
+            int totalStayMinutes,
+            int totalWaitingMinutes,
+            long returnTravelDistanceMeters,
+            int returnTravelMinutes,
+            LocalTime returnArrivalTime,
+            boolean returnedToAccommodation
+    ) {
+        days.add(new ItineraryDay(
+                this, visitDate, dayNumber, totalDistanceMeters, estimatedTravelMinutes,
+                totalStayMinutes, totalWaitingMinutes, returnTravelDistanceMeters,
+                returnTravelMinutes, returnArrivalTime, returnedToAccommodation
+        ));
+    }
+
     public Long getId() {
         return id;
     }
@@ -482,6 +505,12 @@ public class Itinerary {
 
     public List<ItineraryItem> getItems() {
         return Collections.unmodifiableList(items);
+    }
+
+    public List<ItineraryDay> getDays() {
+        return days.stream()
+                .sorted(java.util.Comparator.comparingInt(ItineraryDay::getDayNumber))
+                .toList();
     }
 
     public Set<ItineraryExclusion> getExclusions() {

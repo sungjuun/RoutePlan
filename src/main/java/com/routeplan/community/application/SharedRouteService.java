@@ -172,7 +172,7 @@ public class SharedRouteService {
                         command.userId(),
                         command.name(),
                         command.startDate(),
-                        command.startDate(),
+                        command.startDate().plusDays(route.getTravelDays() - 1L),
                         command.accommodationName(),
                         command.accommodationLatitude(),
                         command.accommodationLongitude(),

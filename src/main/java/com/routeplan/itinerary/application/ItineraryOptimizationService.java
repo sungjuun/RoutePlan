@@ -6,8 +6,8 @@ import com.routeplan.itinerary.domain.Itinerary;
 import com.routeplan.itinerary.persistence.ItineraryRepository;
 import com.routeplan.optimization.algorithm.ExactSearchOptimizationEngine;
 import com.routeplan.optimization.algorithm.OptimizationEngineRegistry;
-import com.routeplan.optimization.constraint.ConstraintSchedule;
-import com.routeplan.optimization.constraint.ConstraintSchedulePlanner;
+import com.routeplan.optimization.constraint.MultiDaySchedule;
+import com.routeplan.optimization.constraint.MultiDaySchedulePlanner;
 import com.routeplan.optimization.constraint.ScheduleCandidate;
 import com.routeplan.optimization.constraint.ScheduleRequest;
 import com.routeplan.optimization.domain.Location;
@@ -26,6 +26,8 @@ import com.routeplan.trip.persistence.TripPlaceRepository;
 import com.routeplan.trip.persistence.TripRepository;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.DayOfWeek;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -44,7 +46,7 @@ public class ItineraryOptimizationService {
     private final ItineraryRepository itineraryRepository;
     private final OptimizationEngineRegistry optimizationEngineRegistry;
     private final PlaceOpeningHourRepository openingHourRepository;
-    private final ConstraintSchedulePlanner schedulePlanner;
+    private final MultiDaySchedulePlanner schedulePlanner;
     private final RouteMatrixProvider routeMatrixProvider;
     private final TransactionTemplate readTransaction;
     private final TransactionTemplate writeTransaction;
@@ -55,7 +57,7 @@ public class ItineraryOptimizationService {
             ItineraryRepository itineraryRepository,
             OptimizationEngineRegistry optimizationEngineRegistry,
             PlaceOpeningHourRepository openingHourRepository,
-            ConstraintSchedulePlanner schedulePlanner,
+            MultiDaySchedulePlanner schedulePlanner,
             RouteMatrixProvider routeMatrixProvider,
             PlatformTransactionManager transactionManager
     ) {
@@ -81,8 +83,8 @@ public class ItineraryOptimizationService {
         );
         OptimizationResult result = optimizationEngineRegistry.get(algorithm)
                 .optimize(snapshot.optimizationRequest(), routeMatrix);
-        ConstraintSchedule schedule = schedulePlanner.plan(
-                snapshot.toScheduleRequest(result),
+        MultiDaySchedule schedule = schedulePlanner.plan(
+                snapshot.toScheduleRequests(result),
                 routeMatrix
         );
         return Objects.requireNonNull(writeTransaction.execute(status ->
@@ -101,7 +103,7 @@ public class ItineraryOptimizationService {
     private ItineraryView saveIfUnchanged(
             OptimizationSnapshot snapshot,
             OptimizationResult result,
-            ConstraintSchedule schedule,
+            MultiDaySchedule schedule,
             RouteMatrix routeMatrix
     ) {
         Trip trip = tripRepository.findByIdForUpdate(snapshot.tripId())
@@ -138,6 +140,18 @@ public class ItineraryOptimizationService {
                 routeMatrix.cacheMissCount(),
                 routeMatrix.cacheFailureCount()
         );
+        schedule.days().forEach(day -> itinerary.addDay(
+                day.visitDate(),
+                day.dayNumber(),
+                day.totalDistanceMeters(),
+                day.totalTravelMinutes(),
+                day.totalStayMinutes(),
+                day.totalWaitingMinutes(),
+                day.returnTravelDistanceMeters(),
+                day.returnTravelMinutes(),
+                day.returnArrivalTime(),
+                true
+        ));
 
         Map<Long, Place> placesById = currentTripPlaces.stream()
                 .map(TripPlace::getPlace)
@@ -200,33 +214,48 @@ public class ItineraryOptimizationService {
         List<Long> placeIds = tripPlaces.stream()
                 .map(tripPlace -> tripPlace.getPlace().getId())
                 .toList();
-        Map<Long, PlaceOpeningHour> openingHours = openingHourRepository
-                .findAllByPlaceIdInAndDayOfWeek(placeIds, trip.getStartDate().getDayOfWeek())
+        Map<OpeningHourKey, PlaceOpeningHour> openingHours = openingHourRepository
+                .findAllByPlaceIdIn(placeIds)
                 .stream()
                 .collect(Collectors.toMap(
-                        openingHour -> openingHour.getPlace().getId(),
+                        openingHour -> new OpeningHourKey(
+                                openingHour.getPlace().getId(), openingHour.getDayOfWeek()
+                        ),
                         Function.identity()
                 ));
-        List<ScheduleCandidate> scheduleCandidates = tripPlaces.stream()
-                .map(tripPlace -> toScheduleCandidate(trip, tripPlace, openingHours))
-                .toList();
+        List<DailyCandidates> dailyCandidates = new ArrayList<>();
+        for (LocalDate date = trip.getStartDate(); !date.isAfter(trip.getEndDate()); date = date.plusDays(1)) {
+            LocalDate visitDate = date;
+            dailyCandidates.add(new DailyCandidates(
+                    visitDate,
+                    tripPlaces.stream()
+                            .map(tripPlace -> toScheduleCandidate(
+                                    trip,
+                                    tripPlace,
+                                    openingHours.get(new OpeningHourKey(
+                                            tripPlace.getPlace().getId(), visitDate.getDayOfWeek()
+                                    ))
+                            ))
+                            .toList()
+            ));
+        }
         return new OptimizationSnapshot(
                 trip.getId(),
                 trip.getStartDate(),
+                trip.getEndDate(),
                 trip.getDailyStartTime(),
                 trip.getDailyEndTime(),
                 optimizationRequest,
-                scheduleCandidates
+                dailyCandidates
         );
     }
 
     private ScheduleCandidate toScheduleCandidate(
             Trip trip,
             TripPlace tripPlace,
-            Map<Long, PlaceOpeningHour> openingHours
+            PlaceOpeningHour openingHour
     ) {
         Place place = tripPlace.getPlace();
-        PlaceOpeningHour openingHour = openingHours.get(place.getId());
         return new ScheduleCandidate(
                 tripPlace.getId(),
                 place.getId(),
@@ -258,38 +287,55 @@ public class ItineraryOptimizationService {
 
     private record OptimizationSnapshot(
             Long tripId,
-            LocalDate visitDate,
+            LocalDate startDate,
+            LocalDate endDate,
             LocalTime dailyStartTime,
             LocalTime dailyEndTime,
             OptimizationRequest optimizationRequest,
-            List<ScheduleCandidate> scheduleCandidates
+            List<DailyCandidates> dailyCandidates
     ) {
 
         private OptimizationSnapshot {
-            scheduleCandidates = List.copyOf(scheduleCandidates);
+            dailyCandidates = List.copyOf(dailyCandidates);
         }
 
-        private ScheduleRequest toScheduleRequest(OptimizationResult result) {
-            return new ScheduleRequest(
-                    visitDate,
-                    dailyStartTime,
-                    dailyEndTime,
-                    optimizationRequest.startLocation(),
-                    optimizationRequest.startLocation(),
-                    optimizationRequest.transportMode(),
-                    result.algorithm(),
-                    scheduleCandidates,
-                    result.stops().stream().map(stop -> stop.tripPlaceId()).toList()
-            );
+        private List<ScheduleRequest> toScheduleRequests(OptimizationResult result) {
+            List<Long> proposedOrder = result.stops().stream()
+                    .map(stop -> stop.tripPlaceId())
+                    .toList();
+            return dailyCandidates.stream()
+                    .map(day -> new ScheduleRequest(
+                            day.visitDate(),
+                            dailyStartTime,
+                            dailyEndTime,
+                            optimizationRequest.startLocation(),
+                            optimizationRequest.startLocation(),
+                            optimizationRequest.transportMode(),
+                            result.algorithm(),
+                            day.candidates(),
+                            proposedOrder
+                    ))
+                    .toList();
         }
 
         private boolean hasSameInput(OptimizationSnapshot other) {
             return tripId.equals(other.tripId)
-                    && visitDate.equals(other.visitDate)
+                    && startDate.equals(other.startDate)
+                    && endDate.equals(other.endDate)
                     && dailyStartTime.equals(other.dailyStartTime)
                     && dailyEndTime.equals(other.dailyEndTime)
                     && optimizationRequest.equals(other.optimizationRequest)
-                    && scheduleCandidates.equals(other.scheduleCandidates);
+                    && dailyCandidates.equals(other.dailyCandidates);
         }
+    }
+
+    private record DailyCandidates(LocalDate visitDate, List<ScheduleCandidate> candidates) {
+
+        private DailyCandidates {
+            candidates = List.copyOf(candidates);
+        }
+    }
+
+    private record OpeningHourKey(Long placeId, DayOfWeek dayOfWeek) {
     }
 }

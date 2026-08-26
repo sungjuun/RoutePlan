@@ -29,6 +29,18 @@ public class ConstraintSchedulePlanner {
     }
 
     public ConstraintSchedule plan(ScheduleRequest request, RouteProvider routeProvider) {
+        return plan(request, routeProvider, true);
+    }
+
+    ConstraintSchedule planLenient(ScheduleRequest request, RouteProvider routeProvider) {
+        return plan(request, routeProvider, false);
+    }
+
+    private ConstraintSchedule plan(
+            ScheduleRequest request,
+            RouteProvider routeProvider,
+            boolean enforceMustVisit
+    ) {
         RouteCache routes = new RouteCache(routeProvider, request.transportMode());
         Map<Long, Integer> proposedRank = proposedRank(request.proposedTripPlaceOrder());
         List<ScheduleCandidate> candidates = request.candidates().stream()
@@ -47,7 +59,7 @@ public class ConstraintSchedulePlanner {
 
         for (ScheduleCandidate candidate : candidates) {
             if (candidate.closed()) {
-                if (candidate.mustVisit()) {
+                if (candidate.mustVisit() && enforceMustVisit) {
                     throw infeasible(List.of(candidate), ExclusionReason.CLOSED);
                 }
                 exclusions.add(exclusion(candidate, ExclusionReason.CLOSED));
@@ -68,7 +80,12 @@ public class ConstraintSchedulePlanner {
                         ? bestPermutation(request, mandatory, routes)
                         : null;
                 if (repaired == null) {
-                    throw infeasible(mandatory, classify(request, candidate, routes));
+                    ExclusionReason reason = classify(request, candidate, routes);
+                    if (enforceMustVisit) {
+                        throw infeasible(mandatory, reason);
+                    }
+                    exclusions.add(exclusion(candidate, reason));
+                    continue;
                 }
                 selected = new ArrayList<>(repaired.order());
                 selectedEvaluation = repaired;

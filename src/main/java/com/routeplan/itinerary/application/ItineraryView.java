@@ -2,6 +2,7 @@ package com.routeplan.itinerary.application;
 
 import com.routeplan.itinerary.domain.Itinerary;
 import com.routeplan.itinerary.domain.ItineraryItem;
+import com.routeplan.itinerary.domain.ItineraryDay;
 import com.routeplan.itinerary.domain.ItineraryExclusion;
 import com.routeplan.itinerary.domain.ItineraryChangeReason;
 import com.routeplan.itinerary.domain.ItineraryGenerationType;
@@ -48,6 +49,7 @@ public record ItineraryView(
         int routeCacheFailureCount,
         double routeCacheHitRatio,
         Instant createdAt,
+        List<Day> days,
         List<Item> items,
         List<Exclusion> exclusions
 ) {
@@ -90,6 +92,7 @@ public record ItineraryView(
                 itinerary.getRouteCacheFailureCount(),
                 itinerary.getRouteCacheHitRatio(),
                 itinerary.getCreatedAt(),
+                itinerary.getDays().stream().map(Day::from).toList(),
                 itinerary.getItems().stream().map(Item::from).toList(),
                 itinerary.getExclusions().stream()
                         .sorted(Comparator
@@ -98,6 +101,35 @@ public record ItineraryView(
                         .map(Exclusion::from)
                         .toList()
         );
+    }
+
+    public record Day(
+            int dayNumber,
+            LocalDate visitDate,
+            long totalDistanceMeters,
+            int estimatedTravelMinutes,
+            int totalStayMinutes,
+            int totalWaitingMinutes,
+            long returnTravelDistanceMeters,
+            int returnTravelMinutes,
+            LocalTime returnArrivalTime,
+            boolean returnedToAccommodation
+    ) {
+
+        static Day from(ItineraryDay day) {
+            return new Day(
+                    day.getDayNumber(),
+                    day.getVisitDate(),
+                    day.getTotalDistanceMeters(),
+                    day.getEstimatedTravelMinutes(),
+                    day.getTotalStayMinutes(),
+                    day.getTotalWaitingMinutes(),
+                    day.getReturnTravelDistanceMeters(),
+                    day.getReturnTravelMinutes(),
+                    day.getReturnArrivalTime(),
+                    day.isReturnedToAccommodation()
+            );
+        }
     }
 
     public record Item(

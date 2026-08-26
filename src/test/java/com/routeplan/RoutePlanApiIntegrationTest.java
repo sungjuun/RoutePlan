@@ -122,7 +122,7 @@ class RoutePlanApiIntegrationTest {
     }
 
     @Test
-    void rejectsMultiDayTripAndOptimizationWithoutPlaces() throws Exception {
+    void createsMultiDayTripAndRejectsOptimizationWithoutPlaces() throws Exception {
         long userId = postAndReadId("/api/v1/users", """
                 {"nickname":"boundary-tester"}
                 """);
@@ -132,7 +132,7 @@ class RoutePlanApiIntegrationTest {
                         .content("""
                                 {
                                   "userId":%d,
-                                  "name":"지원하지 않는 다일 여행",
+                                  "name":"다일 여행",
                                   "startDate":"2026-09-10",
                                   "endDate":"2026-09-11",
                                   "accommodationName":"난바 숙소",
@@ -141,8 +141,9 @@ class RoutePlanApiIntegrationTest {
                                   "transportMode":"WALKING"
                                 }
                                 """.formatted(userId)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.startDate").value("2026-09-10"))
+                .andExpect(jsonPath("$.endDate").value("2026-09-11"));
 
         long emptyTripId = postAndReadId("/api/v1/trips", """
                 {
@@ -160,6 +161,66 @@ class RoutePlanApiIntegrationTest {
         mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", emptyTripId))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("TRIP_HAS_NO_PLACES"));
+    }
+
+    @Test
+    void distributesPlacesAcrossDatesAndPersistsDailySummaries() throws Exception {
+        long userId = postAndReadId("/api/v1/users", """
+                {"nickname":"multi-day-tester"}
+                """);
+        long firstPlaceId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"첫날 우선 장소",
+                  "latitude":37.566500,
+                  "longitude":126.978000,
+                  "averageStayMinutes":90
+                }
+                """);
+        long secondPlaceId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"둘째 날 이월 장소",
+                  "latitude":37.566500,
+                  "longitude":126.978000,
+                  "averageStayMinutes":90
+                }
+                """);
+        long tripId = postAndReadId("/api/v1/trips", """
+                {
+                  "userId":%d,
+                  "name":"서울 이틀 여행",
+                  "startDate":"2026-09-10",
+                  "endDate":"2026-09-11",
+                  "dailyStartTime":"09:00",
+                  "dailyEndTime":"11:00",
+                  "accommodationName":"서울 숙소",
+                  "accommodationLatitude":37.566500,
+                  "accommodationLongitude":126.978000,
+                  "transportMode":"WALKING"
+                }
+                """.formatted(userId));
+        addPlace(tripId, firstPlaceId);
+        addPlace(tripId, secondPlaceId);
+
+        MvcResult optimized = mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", tripId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.days.length()").value(2))
+                .andExpect(jsonPath("$.days[0].dayNumber").value(1))
+                .andExpect(jsonPath("$.days[0].visitDate").value("2026-09-10"))
+                .andExpect(jsonPath("$.days[1].dayNumber").value(2))
+                .andExpect(jsonPath("$.days[1].visitDate").value("2026-09-11"))
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].visitDate").value("2026-09-10"))
+                .andExpect(jsonPath("$.items[1].visitDate").value("2026-09-11"))
+                .andExpect(jsonPath("$.exclusions.length()").value(0))
+                .andReturn();
+        Number itineraryId = JsonPath.read(
+                optimized.getResponse().getContentAsString(), "$.itineraryId"
+        );
+
+        mockMvc.perform(get("/api/v1/itineraries/{itineraryId}", itineraryId.longValue()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.days.length()").value(2))
+                .andExpect(jsonPath("$.days[1].returnArrivalTime").value("10:30:00"));
     }
 
     @Test

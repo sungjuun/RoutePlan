@@ -24,7 +24,7 @@ class SharedRouteTest {
                 owner,
                 "오사카 원본 여행",
                 LocalDate.of(2026, 9, 10),
-                LocalDate.of(2026, 9, 10),
+                LocalDate.of(2026, 9, 11),
                 "난바 숙소",
                 new BigDecimal("34.665400"),
                 new BigDecimal("135.501900"),
@@ -52,7 +52,7 @@ class SharedRouteTest {
                 1,
                 2_500,
                 35,
-                LocalDate.of(2026, 9, 10),
+                LocalDate.of(2026, 9, 11),
                 LocalTime.of(9, 35),
                 LocalTime.of(9, 35),
                 LocalTime.of(11, 5),
@@ -65,7 +65,7 @@ class SharedRouteTest {
         SharedRoute route = SharedRoute.publish(
                 owner,
                 itinerary,
-                "오사카 핵심 하루",
+                "오사카 핵심 이틀",
                 "걷기 좋은 핵심 동선",
                 "오사카",
                 SharedRouteVisibility.PUBLIC
@@ -73,7 +73,7 @@ class SharedRouteTest {
         trip.update(
                 "수정된 원본 여행",
                 LocalDate.of(2026, 9, 10),
-                LocalDate.of(2026, 9, 10),
+                LocalDate.of(2026, 9, 11),
                 "우메다 숙소",
                 new BigDecimal("34.705500"),
                 new BigDecimal("135.498300"),
@@ -87,7 +87,9 @@ class SharedRouteTest {
         assertThat(route.getAccommodationName()).isEqualTo("난바 숙소");
         assertThat(route.getTransportMode()).isEqualTo(TransportMode.WALKING);
         assertThat(route.getPace()).isEqualTo(TripPace.RELAXED);
+        assertThat(route.getTravelDays()).isEqualTo(2);
         assertThat(route.getItems()).singleElement().satisfies(item -> {
+            assertThat(item.getDayNumber()).isEqualTo(2);
             assertThat(item.getPlaceName()).isEqualTo("오사카성");
             assertThat(item.getStartTime()).isEqualTo(LocalTime.of(9, 35));
             assertThat(item.getStayMinutes()).isEqualTo(90);

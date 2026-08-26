@@ -30,18 +30,50 @@ class TripTest {
     }
 
     @Test
-    void rejectsMultiDayTripInV1() {
+    void createsTripUpToFourteenDays() {
+        Trip trip = Trip.create(
+                User.create("traveler"),
+                "오사카 여행",
+                LocalDate.of(2026, 9, 10),
+                LocalDate.of(2026, 9, 23),
+                "난바 숙소",
+                new BigDecimal("34.665400"),
+                new BigDecimal("135.501900"),
+                TransportMode.PUBLIC_TRANSIT
+        );
+
+        assertThat(trip.getEndDate()).isEqualTo(LocalDate.of(2026, 9, 23));
+    }
+
+    @Test
+    void rejectsEndDateBeforeStartDate() {
         assertThatThrownBy(() -> Trip.create(
                 User.create("traveler"),
                 "오사카 여행",
                 LocalDate.of(2026, 9, 10),
-                LocalDate.of(2026, 9, 11),
+                LocalDate.of(2026, 9, 9),
                 "난바 숙소",
                 new BigDecimal("34.665400"),
                 new BigDecimal("135.501900"),
                 TransportMode.PUBLIC_TRANSIT
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("하루짜리");
+                .hasMessageContaining("종료일");
+    }
+
+    @Test
+    void rejectsTripLongerThanFourteenDays() {
+        assertThatThrownBy(() -> Trip.create(
+                User.create("traveler"),
+                "오사카 여행",
+                LocalDate.of(2026, 9, 10),
+                LocalDate.of(2026, 9, 24),
+                "난바 숙소",
+                new BigDecimal("34.665400"),
+                new BigDecimal("135.501900"),
+                TransportMode.PUBLIC_TRANSIT
+        ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("14일");
     }
 }
