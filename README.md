@@ -30,12 +30,16 @@ V8은 자유로운 문장을 기존의 결정적 최적화 입력으로 안전�
 
 > LLM이 일정을 직접 만들지 않고, 자연어를 검증 가능한 Structured Constraints로만 해석한 뒤 사용자가 확인한 조건만 적용할 수 있는가?
 
-## 구현 범위 (V1–V8)
+V9는 하루 제약 계산을 여행 기간 전체로 확장합니다.
+
+> 장소별 요일 영업시간과 우선순위를 지키면서 여러 날짜에 장소를 배분하고, 매일 숙소 출발·복귀가 보장되는 일정을 만들 수 있는가?
+
+## 구현 범위 (V1–V9)
 
 ### 지원
 
 - 최소 사용자 생성
-- 하루짜리 Trip 생성·조회·수정
+- 1–14일 Trip 생성·조회·수정
 - 좌표 기반 Place 등록·조회
 - Trip에 장소 추가·삭제
 - Haversine 직선거리 계산
@@ -83,12 +87,14 @@ V8은 자유로운 문장을 기존의 결정적 최적화 입력으로 안전�
 - 규칙 기반 로컬 Parser와 OpenAI Responses API Structured Output Provider
 - 현재 Trip 장소명 재매칭, 충돌 경고, 미리보기 후 명시적 적용
 - 자연어 조건 미리보기·변경 비교·적용 UI
+- 날짜별 영업시간을 반영한 다일 장소 배분과 다음 날 이월
+- 일자별 이동·체류·대기·숙소 복귀 Snapshot 저장
+- 일자별 타임라인과 지도 DAY 전환, 다일 SharedRoute 공개·복사
 - PostgreSQL, Flyway, OpenAPI, Docker Compose
 - JUnit 5, AssertJ, Testcontainers, Vitest 테스트
 
 ### 지원하지 않음
 
-- 여러 날짜에 장소 배분
 - DB 영속 Route Matrix
 - Google Places 영업시간 자동 가져오기
 - QueryDSL, PostGIS
@@ -214,7 +220,8 @@ erDiagram
 - 영업일의 종료시간은 시작시간보다 늦어야 함
 - Priority는 1–100, 체류시간은 1–1,440분
 - Trip의 하루 종료시간은 시작시간보다 늦어야 함
-- V1 Trip은 `start_date = end_date`
+- Trip은 종료일이 시작일보다 빠를 수 없고 최대 14일까지 허용
+- 같은 Itinerary의 일자 번호와 방문일은 각각 중복될 수 없음
 - 같은 Itinerary는 SharedRoute로 한 번만 공개할 수 있음
 - SharedRoute의 장소 순서는 중복될 수 없고 Snapshot 항목이 한 개 이상이어야 함
 - 같은 사용자는 같은 SharedRoute에 좋아요를 한 번만 등록할 수 있음
@@ -305,6 +312,12 @@ Priority가 핵심 선택 기준이고, 같은 방문 집합에서는 이동·�
 
 `EXACT_SEARCH`는 제약이 없는 V2 이동 경로에서는 전역 최적해를 보장합니다. 시간창 때문에 장소가 제외되거나 재배치되면 현재 V3의 우선순위 삽입 휴리스틱이 최종 결정을 내리므로 전체 제약 최적화 문제의 전역 최적해까지 보장하지는 않습니다.
 
+### 여러 날짜 배분
+
+V9는 시작일부터 종료일까지 날짜 순서대로 하루 제약 계산기를 실행합니다. 각 날짜에는 해당 요일의 영업시간을 사용하고, 그날 배치하지 못한 장소는 제외로 확정하지 않고 다음 날 후보로 이월합니다. Must Visit과 높은 Priority를 먼저 시도하며 마지막 날까지 배치하지 못한 선택 장소만 최종 제외로 저장합니다. Must Visit이 남으면 전체 여행 기간 기준 `422 INFEASIBLE_MUST_VISIT`를 반환합니다.
+
+모든 날짜는 숙소에서 시작해 하루 종료 전 같은 숙소로 돌아오는 닫힌 일정입니다. 일자별 이동·체류·대기·복귀 합계는 `itinerary_days`에 저장하고, Itinerary 전체 합계는 모든 날짜의 값을 합산합니다. 이 방식은 결정적인 일자 순차 휴리스틱이며 장소를 날짜와 순서에 동시에 배치하는 전역 최적해를 보장하지 않습니다.
+
 ## 외부 지도 API와 Route Matrix
 
 ### Google Places Text Search
@@ -384,7 +397,7 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 | Method | Endpoint | 기능 |
 |---|---|---|
 | `POST` | `/api/v1/users` | 사용자 생성 |
-| `POST` | `/api/v1/trips` | 하루 Trip 생성 |
+| `POST` | `/api/v1/trips` | 1–14일 Trip 생성 |
 | `GET` | `/api/v1/trips/{tripId}` | Trip과 장소 조회 |
 | `PATCH` | `/api/v1/trips/{tripId}` | Trip 수정 |
 | `POST` | `/api/v1/places` | Place 등록 |
@@ -401,7 +414,7 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 | `GET` | `/api/v1/trips/{tripId}/itineraries/latest` | 최신 일정 조회 |
 | `GET` | `/api/v1/itineraries/{itineraryId}` | 특정 일정 조회 |
 | `POST` | `/api/v1/itineraries/{itineraryId}/share` | 일정 Snapshot을 SharedRoute로 공개 |
-| `GET` | `/api/v1/routes?region=...&travelDays=1&sort=...` | 공개 Route 탐색 |
+| `GET` | `/api/v1/routes?region=...&travelDays=...&sort=...` | 공개 Route 탐색 |
 | `GET` | `/api/v1/routes/{routeId}?viewerUserId=...` | 공개 Route 상세 조회와 조회수 증가 |
 | `POST` | `/api/v1/routes/{routeId}/likes` | 공개 Route 좋아요 |
 | `DELETE` | `/api/v1/routes/{routeId}/likes?userId=...` | 공개 Route 좋아요 취소 |
@@ -628,13 +641,15 @@ npm run build
 - 동일 비용의 결정적 순서
 - Exact Search의 전역 최적해와 10곳 제한
 - 2-opt의 경로 개선과 단일 장소 경계값
-- 하루 여행 불변식
+- 1–14일 여행 기간 불변식
 - Flyway 및 PostgreSQL JPA 매핑
 - 사용자 → 여행 → 장소 → 최적화 전체 API 흐름
 - 반복 최적화 시 version 증가
 - 알고리즘별 결과와 version 증가
 - 영업 시작 전 대기와 방문 시작·종료 시각
 - 하루 종료 전 숙소 복귀
+- 여러 날짜 장소 이월과 일자별 숙소 복귀 Snapshot
+- 다일 SharedRoute 기간 보존 복사
 - 여행 강도별 체류시간
 - 높은 Priority 장소 보존과 낮은 Priority 장소 제외
 - 휴무일 Must Visit의 구조화된 422 충돌 응답
@@ -666,7 +681,7 @@ npm run build
 - OpenAI 요청의 Strict JSON Schema·`store=false`·API key 비노출 계약
 - 자연어 변경 비교와 적용 프론트엔드 흐름
 - TypeScript 프로덕션 빌드와 ESLint
-- 중복 장소, 빈 여행, 다일 여행 오류 응답
+- 중복 장소, 빈 여행, 잘못된 여행 기간 오류 응답
 
 통합 테스트는 H2 대신 PostgreSQL Testcontainers를 사용하므로 Docker가 실행 중이어야 합니다.
 
@@ -708,7 +723,7 @@ V7  공유 Snapshot·탐색·좋아요·복사·사용자 조건 재최적화 �
  ↓
 V8  자연어 요구사항 Structured Output·검증·적용 ✓
  ↓
-V9  여러 날짜 장소 배분과 일자별 제약 최적화
+V9  여러 날짜 장소 배분과 일자별 제약 최적화 ✓
 ```
 
 ## Performance Benchmark
@@ -777,7 +792,8 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 완료 상태는 기준 일정의 연속된 앞부분만 지원하고 중간 장소 건너뛰기는 지원하지 않습니다.
 - 프론트 지도 선은 실제 도로 Geometry가 아니라 방문 순서를 잇는 시각화입니다.
 - 서버에 사용자별 Trip 목록 API가 없어 현재 작업공간 한 건을 브라우저에 보존합니다.
-- 여전히 하루짜리 여행만 지원합니다.
+- 다일 장소 배분은 날짜 순차 휴리스틱이며 날짜·장소 조합의 전역 최적해를 보장하지 않습니다.
+- 여행 도중 잔여 일정 재최적화는 현재 하루 Trip만 지원하며, 다일 Trip은 전체 새 버전 계산을 사용합니다.
 - 인증이 없어 `userId`는 소유 관계만 표현하며 권한을 보장하지 않습니다.
 - 커뮤니티 화면은 현재 Trip 작업공간을 만든 사용자만 진입할 수 있습니다.
 - Route 복사 시 방문 장소·Priority·Must Visit만 옮기며 공개 당시 선호 시간창은 복사하지 않습니다.
@@ -807,3 +823,5 @@ V5까지의 반복 최적화는 항상 숙소와 하루 시작시각부터 전�
 V7에서 원본 Trip이나 Itinerary를 조회할 때마다 공개 화면을 만들면 원 작성자의 이후 수정이 이미 공유한 Route에 반영되는 문제가 생깁니다. 공개 시점에 별도 SharedRouteItem을 생성해 장소명·좌표·시간표·이동비용을 고정했습니다. 반대로 Route를 가져올 때 Snapshot 시간표까지 그대로 복사하면 새 숙소와 이동수단의 실행 가능성을 검증하지 못하므로, 장소·우선순위만 새 Trip에 옮기고 기존 최적화 엔진을 다시 실행합니다.
 
 V8에서 모델 출력의 Place ID를 그대로 신뢰하면 다른 Trip의 장소를 수정하거나 존재하지 않는 장소를 최적화 입력에 섞을 수 있습니다. 모델 Schema에는 장소명만 허용하고, 서버가 현재 Trip 장소를 다시 매칭해 적용용 ID를 만듭니다. 또한 해석과 적용을 한 요청으로 합치면 잘못 해석된 조건이 즉시 저장되므로 `/preview`와 `/apply`를 분리했습니다. OpenAI가 반환한 JSON도 최종 권한이 아니며 Java 도메인 타입, 시간 범위, 장소 소속과 Trip 불변식을 모두 통과해야 합니다.
+
+V9에서 첫날 계산의 제외 결과를 즉시 확정하면 다음 날 영업하는 장소까지 잃게 됩니다. 일자별 계산은 Must Visit 우선순위를 유지하되 실패를 임시 이월 사유로 모으고, 방문에 성공한 장소만 남은 후보에서 제거합니다. 마지막 날 이후에도 남은 후보에 대해서만 제외 또는 Must Visit 충돌을 확정합니다. 일자별 복귀 구간은 조회 때 다시 계산하지 않고 별도 Snapshot으로 저장해 공유와 재조회에서도 같은 합계를 유지합니다.
