@@ -26,7 +26,11 @@ V7은 계산한 좋은 동선을 다른 사용자가 발견하고 자신의 조�
 
 > 원본 여행이 바뀌어도 공개 당시 Route를 보존하고, 다른 사용자가 장소를 가져와 새 숙소·날짜·취향으로 다시 최적화할 수 있는가?
 
-## 구현 범위 (V1–V7)
+V8은 자유로운 문장을 기존의 결정적 최적화 입력으로 안전하게 연결합니다.
+
+> LLM이 일정을 직접 만들지 않고, 자연어를 검증 가능한 Structured Constraints로만 해석한 뒤 사용자가 확인한 조건만 적용할 수 있는가?
+
+## 구현 범위 (V1–V8)
 
 ### 지원
 
@@ -75,6 +79,10 @@ V7은 계산한 좋은 동선을 다른 사용자가 발견하고 자신의 조�
 - 공개 Route 장소·Priority·Must Visit을 새 Trip으로 복사
 - 복사한 Route를 새 숙소·날짜·이동수단·여행 강도로 재최적화
 - Route 커뮤니티 목록·상세 지도·공개·좋아요·복사 UI
+- 자연어에서 하루 시간·여행 강도·이동수단·도보 선호·장소별 조건 추출
+- 규칙 기반 로컬 Parser와 OpenAI Responses API Structured Output Provider
+- 현재 Trip 장소명 재매칭, 충돌 경고, 미리보기 후 명시적 적용
+- 자연어 조건 미리보기·변경 비교·적용 UI
 - PostgreSQL, Flyway, OpenAPI, Docker Compose
 - JUnit 5, AssertJ, Testcontainers, Vitest 테스트
 
@@ -84,7 +92,7 @@ V7은 계산한 좋은 동선을 다른 사용자가 발견하고 자신의 조�
 - DB 영속 Route Matrix
 - Google Places 영업시간 자동 가져오기
 - QueryDSL, PostGIS
-- 인증, LLM
+- 인증, 다중 턴 AI 대화, AI의 장소 자동 추가
 
 기본 `SIMPLE` 모드의 `estimatedTravelMinutes`는 직선거리와 고정 평균속도로 계산한 추정치입니다. `GOOGLE` Route Provider를 활성화하면 Google Routes API가 반환한 실제 경로 거리와 이동시간을 사용합니다.
 
@@ -106,6 +114,7 @@ V7은 계산한 좋은 동선을 다른 사용자가 발견하고 자신의 조�
 - React Leaflet, OpenStreetMap
 - Vitest, Testing Library, ESLint
 - Nginx
+- OpenAI Responses API Structured Outputs (선택)
 
 QueryDSL은 동적 검색 쿼리가 없는 현재 단계에서는 사용하지 않습니다. Redis는 동일 Route Matrix를 반복 최적화할 때 외부 호출이 그대로 재발하는 문제를 측정한 뒤 V5에서 도입했습니다. PostGIS는 실제 공간 검색 요구가 생기기 전까지 사용하지 않습니다.
 
@@ -121,7 +130,8 @@ com.routeplan
 ├─ place           장소 정보
 ├─ optimization    Spring/JPA와 분리된 경로·제약 일정 계산
 ├─ itinerary       최적화 orchestration과 결과 저장
-└─ community       공개 Route Snapshot·탐색·좋아요·복사
+├─ community       공개 Route Snapshot·탐색·좋아요·복사
+└─ ai              자연어 해석 Provider·검증·Trip 적용
 ```
 
 ```mermaid
@@ -396,6 +406,8 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 | `POST` | `/api/v1/routes/{routeId}/likes` | 공개 Route 좋아요 |
 | `DELETE` | `/api/v1/routes/{routeId}/likes?userId=...` | 공개 Route 좋아요 취소 |
 | `POST` | `/api/v1/routes/{routeId}/copy` | 공개 Route 장소를 새 Trip으로 복사 |
+| `POST` | `/api/v1/trips/{tripId}/natural-language/preview` | 자연어를 구조화된 여행 조건과 변경안으로 해석 |
+| `POST` | `/api/v1/trips/{tripId}/natural-language/apply` | 검토한 변경안을 현재 Trip에 원자적으로 적용 |
 
 Swagger UI는 Docker Compose 실행 시 `http://localhost:8180/swagger-ui.html`, 애플리케이션 직접 실행 시 `http://localhost:8080/swagger-ui.html`에서 확인할 수 있습니다.
 
@@ -466,6 +478,28 @@ Route 복사는 공개 시간표를 그대로 새 Itinerary에 저장하지 않�
 
 `visibility=PUBLIC`은 목록에서 탐색할 수 있고, `UNLISTED`는 Route ID를 아는 경우에만 상세 조회할 수 있습니다. 최신순은 공개시각, 인기순은 복사수 → 좋아요수 → 조회수 → 공개시각 순으로 정렬합니다. 조회·복사·좋아요 카운터는 SharedRoute 비관적 Lock 안에서 갱신하며, 좋아요 중복은 `(shared_route_id, user_id)` DB Unique Constraint가 최종 방어선입니다.
 
+### 자연어 Structured Constraints
+
+V8에서 LLM은 일정 계산기가 아니라 입력 해석기입니다. 자연어 해석과 실제 일정 계산 사이에는 다음 경계를 둡니다.
+
+```text
+사용자 자연어
+→ Rule-based 또는 OpenAI Structured Output
+→ 서버 도메인 타입 역직렬화
+→ 현재 Trip 장소명 재매칭
+→ 시간·체류시간·중복·장소 소속 검증
+→ 변경 전/후 미리보기
+→ 사용자 적용
+→ Trip DRAFT 전환
+→ 기존 Optimization Engine 실행
+```
+
+Structured Output은 하루 시작·종료, `pace`, `transportMode`, 도보 선호, 장소별 `MUST_VISIT/PREFERRED/OPTIONAL`, 선호 시간, 체류시간, 식사 유형을 표현합니다. 식사 유형은 아침 `07:00–10:00`, 점심 `11:30–14:00`, 저녁 `17:30–20:30` 시간창으로 변환한 뒤 Trip 하루 시간과 교차시킵니다. 세부 도보량은 현재 목적함수에 없으므로 `walkingPreference`는 인식하되 자동 적용하지 않고 경고를 반환합니다.
+
+모델은 Place ID를 생성할 수 없습니다. 출력 장소명은 현재 Trip에 담긴 장소와 서버가 다시 매칭하며, 없거나 모호한 장소는 적용안에서 제외합니다. `/preview`는 DB를 변경하지 않고 `/apply`는 클라이언트가 검토한 최종 값에 대해 Trip 소속 장소를 다시 확인한 뒤 한 트랜잭션으로 적용합니다. 자연어 원문과 모델 응답은 DB에 저장하지 않습니다.
+
+기본 `RULE_BASED` Provider는 API 키 없이 대표적인 한국어 시간·강도·이동수단·현재 장소명 표현을 결정적으로 해석합니다. `OPENAI` Provider는 [Responses API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)의 `text.format.type=json_schema`, `strict=true`를 사용하고 `store=false`로 요청합니다. 기본 모델 `gpt-5.4-mini`는 공식 모델 문서상 Responses API와 Structured Outputs를 지원하며 `OPENAI_MODEL`로 교체할 수 있습니다.
+
 ### 외부 Provider 설정
 
 기본값은 API 키 없이 실행 가능한 다음 조합입니다.
@@ -473,6 +507,7 @@ Route 복사는 공개 시간표를 그대로 새 Itinerary에 저장하지 않�
 ```text
 ROUTEPLAN_PLACE_PROVIDER=DISABLED
 ROUTEPLAN_ROUTE_PROVIDER=SIMPLE
+ROUTEPLAN_AI_PROVIDER=RULE_BASED
 ```
 
 Google Cloud 프로젝트에서 Places API (New)와 Routes API를 활성화하고 제한된 API 키를 발급한 뒤 `.env`를 다음처럼 설정하면 실제 Provider를 사용합니다.
@@ -483,6 +518,16 @@ ROUTEPLAN_ROUTE_PROVIDER=GOOGLE
 ROUTEPLAN_ROUTE_CACHE_ENABLED=true
 GOOGLE_MAPS_API_KEY=your-restricted-key
 ```
+
+자유로운 자연어를 OpenAI Structured Output으로 해석하려면 `.env`에 다음을 설정합니다.
+
+```dotenv
+ROUTEPLAN_AI_PROVIDER=OPENAI
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-5.4-mini
+```
+
+OpenAI 키는 `Authorization` 헤더에만 사용하고 응답·오류에 포함하지 않습니다. 15초 Timeout을 적용하며 429, 연결 실패, 잘못된 JSON 또는 미완료 응답을 기존 외부 Provider 오류 체계로 구분합니다. 자동 Retry는 아직 적용하지 않습니다.
 
 필요하면 이동수단별 TTL을 변경할 수 있습니다.
 
@@ -616,6 +661,10 @@ npm run build
 - API 성공 응답과 구조화된 오류 전달
 - 예상하지 못한 Proxy 오류 형식의 사용자 안전 메시지 fallback
 - 커뮤니티 목록 렌더링과 인기순 전환
+- 한국어 자연어의 시간·여행 강도·이동수단·장소 우선순위 결정적 해석
+- 자연어 미리보기와 검토한 조건의 Trip 원자적 적용 API
+- OpenAI 요청의 Strict JSON Schema·`store=false`·API key 비노출 계약
+- 자연어 변경 비교와 적용 프론트엔드 흐름
 - TypeScript 프로덕션 빌드와 ESLint
 - 중복 장소, 빈 여행, 다일 여행 오류 응답
 
@@ -636,6 +685,8 @@ V4에서는 외부 Route API를 호출하는 동안 DB 트랜잭션이나 비관
 
 저장 직전에 Trip, TripPlace, Place 좌표·체류시간, 당일 영업시간을 다시 순수 입력 모델로 만들고 원래 Snapshot과 비교합니다. 재최적화는 최신 기준 버전도 다시 확인합니다. 달라졌다면 오래된 결과를 저장하지 않고 `409 OPTIMIZATION_INPUT_CHANGED` 또는 `409 REOPTIMIZATION_SOURCE_NOT_LATEST`를 반환합니다. `(trip_id, version)` unique constraint도 동시성의 마지막 방어선으로 유지합니다.
 
+자연어 `/preview`는 읽기만 수행하고 외부 OpenAI 호출 중 DB Lock을 유지하지 않습니다. `/apply`는 Trip을 비관적 Lock으로 다시 조회하고 요청의 모든 Place ID가 해당 Trip에 속하는지 확인한 뒤 Trip과 TripPlace를 한 트랜잭션으로 변경합니다. 모델 호출과 DB 변경이 같은 트랜잭션에 들어가지 않으며, 미리보기만으로는 상태가 바뀌지 않습니다.
+
 ## Algorithm Roadmap
 
 ```text
@@ -655,7 +706,9 @@ V6  일정 지연·장소 변경 후 남은 일정 재최적화 ✓
  ↓
 V7  공유 Snapshot·탐색·좋아요·복사·사용자 조건 재최적화 ✓
  ↓
-V8  자연어 요구사항 Structured Output
+V8  자연어 요구사항 Structured Output·검증·적용 ✓
+ ↓
+V9  여러 날짜 장소 배분과 일자별 제약 최적화
 ```
 
 ## Performance Benchmark
@@ -731,6 +784,11 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 조회수는 상세 요청마다 증가하며 사용자·세션별 중복 조회를 제거하지 않습니다.
 - 인기순은 복사·좋아요·조회수의 단순 우선 정렬이며 시간 감쇠나 가중 점수는 적용하지 않습니다.
 - `UNLISTED`는 ID 기반 접근만 지원하고 완전한 비공개 Route는 인증 도입 전까지 지원하지 않습니다.
+- 기본 규칙 기반 자연어 Parser는 대표 한국어 표현만 지원하며 문맥 이해 범위가 제한적입니다.
+- OpenAI Provider 실호출은 이 개발 환경에 API 키가 없어 latency·비용·quota를 아직 측정하지 못했습니다.
+- 자연어 장소 조건은 현재 Trip에 이미 담긴 장소만 매칭하며 장소 검색·자동 추가는 하지 않습니다.
+- `walkingPreference`는 Structured Output에 포함되지만 세부 도보량 목적함수가 없어 현재 최적화에는 직접 반영되지 않습니다.
+- 자연어 미리보기는 서버에 저장하지 않으므로 새로고침하면 다시 해석해야 합니다.
 
 ## Troubleshooting
 
@@ -747,3 +805,5 @@ V5까지의 반복 최적화는 항상 숙소와 하루 시작시각부터 전�
 외부 호출을 기존 최적화 Transaction 안에 두면 느린 네트워크 동안 Trip Lock을 점유하게 됩니다. 이를 입력 Snapshot 조회, 외부 계산, 입력 재검증과 저장의 세 구간으로 분리해 Lock 보유시간을 DB 저장 구간으로 제한했습니다.
 
 V7에서 원본 Trip이나 Itinerary를 조회할 때마다 공개 화면을 만들면 원 작성자의 이후 수정이 이미 공유한 Route에 반영되는 문제가 생깁니다. 공개 시점에 별도 SharedRouteItem을 생성해 장소명·좌표·시간표·이동비용을 고정했습니다. 반대로 Route를 가져올 때 Snapshot 시간표까지 그대로 복사하면 새 숙소와 이동수단의 실행 가능성을 검증하지 못하므로, 장소·우선순위만 새 Trip에 옮기고 기존 최적화 엔진을 다시 실행합니다.
+
+V8에서 모델 출력의 Place ID를 그대로 신뢰하면 다른 Trip의 장소를 수정하거나 존재하지 않는 장소를 최적화 입력에 섞을 수 있습니다. 모델 Schema에는 장소명만 허용하고, 서버가 현재 Trip 장소를 다시 매칭해 적용용 ID를 만듭니다. 또한 해석과 적용을 한 요청으로 합치면 잘못 해석된 조건이 즉시 저장되므로 `/preview`와 `/apply`를 분리했습니다. OpenAI가 반환한 JSON도 최종 권한이 아니며 Java 도메인 타입, 시간 범위, 장소 소속과 Trip 불변식을 모두 통과해야 합니다.
