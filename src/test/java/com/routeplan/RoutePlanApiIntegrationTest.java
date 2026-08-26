@@ -216,11 +216,61 @@ class RoutePlanApiIntegrationTest {
         Number itineraryId = JsonPath.read(
                 optimized.getResponse().getContentAsString(), "$.itineraryId"
         );
+        Number firstDayItemId = JsonPath.read(
+                optimized.getResponse().getContentAsString(), "$.items[0].itineraryItemId"
+        );
 
         mockMvc.perform(get("/api/v1/itineraries/{itineraryId}", itineraryId.longValue()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.days.length()").value(2))
                 .andExpect(jsonPath("$.days[1].returnArrivalTime").value("10:30:00"));
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/reoptimize", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceItineraryId":%d,
+                                  "currentDate":"2026-09-11",
+                                  "currentTime":"09:00",
+                                  "currentLatitude":37.566500,
+                                  "currentLongitude":126.978000,
+                                  "completedItemIds":[],
+                                  "reason":"USER_REQUEST"
+                                }
+                                """.formatted(itineraryId.longValue())))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("INVALID_REOPTIMIZATION_STATE"));
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/reoptimize", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceItineraryId":%d,
+                                  "currentDate":"2026-09-11",
+                                  "currentTime":"09:00",
+                                  "currentLatitude":37.566500,
+                                  "currentLongitude":126.978000,
+                                  "completedItemIds":[%d],
+                                  "reason":"USER_REQUEST",
+                                  "reasonDetail":"둘째 날 동선 변경"
+                                }
+                                """.formatted(
+                                itineraryId.longValue(), firstDayItemId.longValue()
+                        )))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.generationType").value("REOPTIMIZATION"))
+                .andExpect(jsonPath("$.reoptimizationStartDate").value("2026-09-11"))
+                .andExpect(jsonPath("$.reoptimizationStartTime").value("09:00:00"))
+                .andExpect(jsonPath("$.days.length()").value(2))
+                .andExpect(jsonPath("$.days[0].visitDate").value("2026-09-10"))
+                .andExpect(jsonPath("$.days[0].totalStayMinutes").value(90))
+                .andExpect(jsonPath("$.days[1].visitDate").value("2026-09-11"))
+                .andExpect(jsonPath("$.items[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.items[0].visitDate").value("2026-09-10"))
+                .andExpect(jsonPath("$.items[1].status").value("PLANNED"))
+                .andExpect(jsonPath("$.items[1].visitDate").value("2026-09-11"))
+                .andExpect(jsonPath("$.totalStayMinutes").value(180));
     }
 
     @Test
@@ -500,6 +550,7 @@ class RoutePlanApiIntegrationTest {
                 .andExpect(jsonPath("$.parentItineraryId").value(sourceItineraryId.longValue()))
                 .andExpect(jsonPath("$.changeReason").value("DELAY"))
                 .andExpect(jsonPath("$.changeReasonDetail").value("첫 장소에서 한 시간 지연"))
+                .andExpect(jsonPath("$.reoptimizationStartDate").value("2026-09-10"))
                 .andExpect(jsonPath("$.reoptimizationStartTime").value("11:00:00"))
                 .andExpect(jsonPath("$.reoptimizationStartLatitude").value(34.6654))
                 .andExpect(jsonPath("$.reoptimizationStartLongitude").value(135.5019))

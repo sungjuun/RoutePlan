@@ -15,6 +15,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -83,6 +84,7 @@ public class ItineraryController {
 
     public record ReoptimizeRequest(
             @NotNull @Positive Long sourceItineraryId,
+            LocalDate currentDate,
             @NotNull LocalTime currentTime,
             @NotNull @DecimalMin("-90") @DecimalMax("90") BigDecimal currentLatitude,
             @NotNull @DecimalMin("-180") @DecimalMax("180") BigDecimal currentLongitude,
@@ -94,6 +96,7 @@ public class ItineraryController {
         ReoptimizeCommand toCommand() {
             return new ReoptimizeCommand(
                     sourceItineraryId,
+                    currentDate,
                     currentTime,
                     currentLatitude,
                     currentLongitude,

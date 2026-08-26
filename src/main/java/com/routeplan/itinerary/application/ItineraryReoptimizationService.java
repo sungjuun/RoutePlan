@@ -4,13 +4,15 @@ import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
 import com.routeplan.itinerary.domain.Itinerary;
 import com.routeplan.itinerary.domain.ItineraryChangeReason;
+import com.routeplan.itinerary.domain.ItineraryDay;
 import com.routeplan.itinerary.domain.ItineraryItem;
 import com.routeplan.itinerary.domain.ItineraryItemStatus;
 import com.routeplan.itinerary.persistence.ItineraryRepository;
 import com.routeplan.optimization.algorithm.ExactSearchOptimizationEngine;
 import com.routeplan.optimization.algorithm.OptimizationEngineRegistry;
-import com.routeplan.optimization.constraint.ConstraintSchedule;
-import com.routeplan.optimization.constraint.ConstraintSchedulePlanner;
+import com.routeplan.optimization.constraint.DailySchedule;
+import com.routeplan.optimization.constraint.MultiDaySchedule;
+import com.routeplan.optimization.constraint.MultiDaySchedulePlanner;
 import com.routeplan.optimization.constraint.ScheduleCandidate;
 import com.routeplan.optimization.constraint.ScheduleRequest;
 import com.routeplan.optimization.domain.Location;
@@ -28,8 +30,10 @@ import com.routeplan.trip.domain.TripPlace;
 import com.routeplan.trip.persistence.TripPlaceRepository;
 import com.routeplan.trip.persistence.TripRepository;
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -51,7 +55,7 @@ public class ItineraryReoptimizationService {
     private final ItineraryRepository itineraryRepository;
     private final OptimizationEngineRegistry optimizationEngineRegistry;
     private final PlaceOpeningHourRepository openingHourRepository;
-    private final ConstraintSchedulePlanner schedulePlanner;
+    private final MultiDaySchedulePlanner schedulePlanner;
     private final RouteMatrixProvider routeMatrixProvider;
     private final TransactionTemplate readTransaction;
     private final TransactionTemplate writeTransaction;
@@ -62,7 +66,7 @@ public class ItineraryReoptimizationService {
             ItineraryRepository itineraryRepository,
             OptimizationEngineRegistry optimizationEngineRegistry,
             PlaceOpeningHourRepository openingHourRepository,
-            ConstraintSchedulePlanner schedulePlanner,
+            MultiDaySchedulePlanner schedulePlanner,
             RouteMatrixProvider routeMatrixProvider,
             PlatformTransactionManager transactionManager
     ) {
@@ -92,8 +96,8 @@ public class ItineraryReoptimizationService {
         );
         OptimizationResult result = optimizationEngineRegistry.get(algorithm)
                 .optimize(snapshot.input().optimizationRequest(), routeMatrix);
-        ConstraintSchedule schedule = schedulePlanner.plan(
-                snapshot.input().toScheduleRequest(result),
+        MultiDaySchedule schedule = schedulePlanner.plan(
+                snapshot.input().toScheduleRequests(result),
                 routeMatrix
         );
         return Objects.requireNonNull(writeTransaction.execute(status ->
@@ -108,29 +112,49 @@ public class ItineraryReoptimizationService {
     ) {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_NOT_FOUND));
-        if (!trip.getStartDate().equals(trip.getEndDate())) {
-            throw invalidState("다일 여행은 일자별 전체 재계산을 사용해 주세요.");
-        }
-        Itinerary source = itineraryRepository.findDetailedById(command.sourceItineraryId())
+        ReoptimizeCommand normalizedCommand = command.withCurrentDate(
+                command.currentDate() == null ? trip.getStartDate() : command.currentDate()
+        );
+        Itinerary source = itineraryRepository.findDetailedById(normalizedCommand.sourceItineraryId())
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.ITINERARY_NOT_FOUND));
         validateSource(tripId, source);
-        validateCurrentTime(trip, command.currentTime());
-        List<ItineraryItem> completedItems = completedPrefix(source, command.completedItemIds());
-        validateCompletedTimes(completedItems, command.currentTime());
+        validateCurrentDate(trip, normalizedCommand.currentDate());
+        validateCurrentTime(trip, normalizedCommand.currentTime());
+        List<ItineraryItem> completedItems = completedPrefix(
+                source, normalizedCommand.completedItemIds()
+        );
+        validateCompletedDates(source, completedItems, normalizedCommand.currentDate());
+        validateCompletedTimes(
+                completedItems, normalizedCommand.currentDate(), normalizedCommand.currentTime()
+        );
         Set<Long> completedPlaceIds = completedItems.stream()
                 .map(item -> item.getPlace().getId())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         List<TripPlace> tripPlaces = tripPlaceRepository.findAllByTripIdOrderByIdAsc(tripId);
-        ReoptimizationInput input = buildInput(trip, tripPlaces, completedPlaceIds, command);
+        ReoptimizationInput input = buildInput(
+                trip, tripPlaces, completedPlaceIds, normalizedCommand
+        );
         validateExactLimit(algorithm, input.optimizationRequest().candidates().size());
         return new ReoptimizationSnapshot(
                 source.getId(),
                 source.getVersion(),
-                command,
+                normalizedCommand,
                 completedPlaceIds,
                 completedItems.stream().map(CompletedVisit::from).toList(),
+                source.getDays().stream()
+                        .filter(day -> day.getVisitDate().isBefore(normalizedCommand.currentDate()))
+                        .map(FixedDay::from)
+                        .toList(),
                 input
         );
+    }
+
+    private void validateCurrentDate(Trip trip, LocalDate currentDate) {
+        if (currentDate == null
+                || currentDate.isBefore(trip.getStartDate())
+                || currentDate.isAfter(trip.getEndDate())) {
+            throw invalidState("현재 날짜는 여행 기간 안에 있어야 합니다.");
+        }
     }
 
     private void validateSource(Long tripId, Itinerary source) {
@@ -174,7 +198,39 @@ public class ItineraryReoptimizationService {
         return List.copyOf(sourceItems.subList(0, completedItemIds.size()));
     }
 
-    private void validateCompletedTimes(List<ItineraryItem> completedItems, LocalTime currentTime) {
+    private void validateCompletedDates(
+            Itinerary source,
+            List<ItineraryItem> completedItems,
+            LocalDate currentDate
+    ) {
+        if (source.getItems().stream().anyMatch(item -> item.getVisitDate() == null)) {
+            throw invalidState("방문일 정보가 없는 이전 일정은 재최적화할 수 없습니다.");
+        }
+        Set<Long> completedIds = completedItems.stream()
+                .map(ItineraryItem::getId)
+                .collect(Collectors.toSet());
+        if (source.getItems().stream()
+                .filter(item -> item.getVisitDate().isBefore(currentDate))
+                .anyMatch(item -> !completedIds.contains(item.getId()))) {
+            throw invalidState("지난 날짜의 일정 항목은 모두 완료 상태로 고정해야 합니다.");
+        }
+        if (completedItems.stream().anyMatch(item -> item.getVisitDate().isAfter(currentDate))) {
+            throw invalidState("현재 날짜 이후의 일정은 완료 처리할 수 없습니다.");
+        }
+        long expectedPastDays = source.getTrip().getStartDate().datesUntil(currentDate).count();
+        long storedPastDays = source.getDays().stream()
+                .filter(day -> day.getVisitDate().isBefore(currentDate))
+                .count();
+        if (storedPastDays != expectedPastDays) {
+            throw invalidState("일자별 합계가 없는 이전 일정은 다일 재최적화할 수 없습니다.");
+        }
+    }
+
+    private void validateCompletedTimes(
+            List<ItineraryItem> completedItems,
+            LocalDate currentDate,
+            LocalTime currentTime
+    ) {
         for (ItineraryItem item : completedItems) {
             if (item.getVisitDate() == null || item.getArrivalTime() == null
                     || item.getStartTime() == null || item.getEndTime() == null
@@ -183,7 +239,11 @@ public class ItineraryReoptimizationService {
                 throw invalidState("시간 정보가 없는 이전 일정은 재최적화할 수 없습니다.");
             }
         }
-        if (!completedItems.isEmpty() && currentTime.isBefore(completedItems.getLast().getEndTime())) {
+        ItineraryItem lastCurrentDay = completedItems.stream()
+                .filter(item -> item.getVisitDate().equals(currentDate))
+                .reduce((left, right) -> right)
+                .orElse(null);
+        if (lastCurrentDay != null && currentTime.isBefore(lastCurrentDay.getEndTime())) {
             throw invalidState("현재 시각은 마지막 완료 장소의 종료시각보다 빠를 수 없습니다.");
         }
     }
@@ -217,26 +277,36 @@ public class ItineraryReoptimizationService {
                 visitCandidates,
                 trip.getTransportMode()
         );
-        Map<Long, PlaceOpeningHour> openingHours = openingHours(remaining, trip.getStartDate());
-        List<ScheduleCandidate> scheduleCandidates = remaining.stream()
-                .map(tripPlace -> toScheduleCandidate(trip, tripPlace, openingHours))
-                .toList();
+        Map<OpeningHourKey, PlaceOpeningHour> openingHours = openingHours(remaining);
+        List<DailyCandidates> dailyCandidates = new ArrayList<>();
+        for (LocalDate date = command.currentDate(); !date.isAfter(trip.getEndDate()); date = date.plusDays(1)) {
+            LocalDate visitDate = date;
+            dailyCandidates.add(new DailyCandidates(
+                    visitDate,
+                    remaining.stream()
+                            .map(tripPlace -> toScheduleCandidate(
+                                    trip,
+                                    tripPlace,
+                                    openingHours.get(new OpeningHourKey(
+                                            tripPlace.getPlace().getId(), visitDate.getDayOfWeek()
+                                    ))
+                            ))
+                            .toList()
+            ));
+        }
         return new ReoptimizationInput(
                 trip.getId(),
-                trip.getStartDate(),
+                command.currentDate(),
                 trip.getDailyStartTime(),
                 command.currentTime(),
                 trip.getDailyEndTime(),
                 accommodation,
                 optimizationRequest,
-                scheduleCandidates
+                dailyCandidates
         );
     }
 
-    private Map<Long, PlaceOpeningHour> openingHours(
-            List<TripPlace> tripPlaces,
-            LocalDate visitDate
-    ) {
+    private Map<OpeningHourKey, PlaceOpeningHour> openingHours(List<TripPlace> tripPlaces) {
         if (tripPlaces.isEmpty()) {
             return Map.of();
         }
@@ -244,10 +314,12 @@ public class ItineraryReoptimizationService {
                 .map(tripPlace -> tripPlace.getPlace().getId())
                 .toList();
         return openingHourRepository
-                .findAllByPlaceIdInAndDayOfWeek(placeIds, visitDate.getDayOfWeek())
+                .findAllByPlaceIdIn(placeIds)
                 .stream()
                 .collect(Collectors.toMap(
-                        openingHour -> openingHour.getPlace().getId(),
+                        openingHour -> new OpeningHourKey(
+                                openingHour.getPlace().getId(), openingHour.getDayOfWeek()
+                        ),
                         Function.identity()
                 ));
     }
@@ -255,10 +327,9 @@ public class ItineraryReoptimizationService {
     private ScheduleCandidate toScheduleCandidate(
             Trip trip,
             TripPlace tripPlace,
-            Map<Long, PlaceOpeningHour> openingHours
+            PlaceOpeningHour openingHour
     ) {
         Place place = tripPlace.getPlace();
-        PlaceOpeningHour openingHour = openingHours.get(place.getId());
         return new ScheduleCandidate(
                 tripPlace.getId(),
                 place.getId(),
@@ -298,7 +369,7 @@ public class ItineraryReoptimizationService {
     private ItineraryView saveIfUnchanged(
             ReoptimizationSnapshot snapshot,
             OptimizationResult result,
-            ConstraintSchedule schedule,
+            MultiDaySchedule schedule,
             RouteMatrix routeMatrix
     ) {
         Trip trip = tripRepository.findByIdForUpdate(snapshot.input().tripId())
@@ -321,24 +392,48 @@ public class ItineraryReoptimizationService {
         }
 
         CompletedTotals completed = CompletedTotals.from(snapshot.completedVisits());
-        int totalTravel = Math.addExact(completed.travelMinutes(), schedule.totalTravelMinutes());
-        int totalWaiting = Math.addExact(completed.waitingMinutes(), schedule.totalWaitingMinutes());
+        CompletedTotals completedToday = CompletedTotals.from(snapshot.completedVisits().stream()
+                .filter(visit -> visit.visitDate().equals(snapshot.command().currentDate()))
+                .toList());
+        FixedDayTotals fixedPast = FixedDayTotals.from(snapshot.fixedDays());
+        long totalDistance = Math.addExact(
+                Math.addExact(fixedPast.distanceMeters(), completedToday.distanceMeters()),
+                schedule.totalDistanceMeters()
+        );
+        int totalTravel = Math.addExact(
+                Math.addExact(fixedPast.travelMinutes(), completedToday.travelMinutes()),
+                schedule.totalTravelMinutes()
+        );
+        int totalStay = Math.addExact(
+                Math.addExact(fixedPast.stayMinutes(), completedToday.stayMinutes()),
+                schedule.totalStayMinutes()
+        );
+        int totalWaiting = Math.addExact(
+                Math.addExact(fixedPast.waitingMinutes(), completedToday.waitingMinutes()),
+                schedule.totalWaitingMinutes()
+        );
         int totalPriority = Math.addExact(completed.priorityScore(), schedule.visitedPriorityScore());
         int optimizationScore = Math.max(
                 0,
                 totalPriority * 10_000 - totalTravel * 5 - totalWaiting * 2
         );
+        long totalReturnDistance = Math.addExact(
+                fixedPast.returnDistanceMeters(), schedule.returnTravelDistanceMeters()
+        );
+        int totalReturnTravel = Math.addExact(
+                fixedPast.returnTravelMinutes(), schedule.returnTravelMinutes()
+        );
         Itinerary itinerary = Itinerary.create(
                 trip,
                 snapshot.sourceVersion() + 1,
                 result.algorithm(),
-                Math.addExact(completed.distanceMeters(), schedule.totalDistanceMeters()),
+                totalDistance,
                 totalTravel,
                 optimizationScore,
-                Math.addExact(completed.stayMinutes(), schedule.totalStayMinutes()),
+                totalStay,
                 totalWaiting,
-                schedule.returnTravelDistanceMeters(),
-                schedule.returnTravelMinutes(),
+                totalReturnDistance,
+                totalReturnTravel,
                 schedule.returnArrivalTime(),
                 true,
                 routeMatrix.dataType(),
@@ -350,22 +445,52 @@ public class ItineraryReoptimizationService {
                 routeMatrix.cacheMissCount(),
                 routeMatrix.cacheFailureCount()
         );
+        snapshot.fixedDays().forEach(day -> itinerary.addDay(
+                day.visitDate(),
+                day.dayNumber(),
+                day.totalDistanceMeters(),
+                day.travelMinutes(),
+                day.stayMinutes(),
+                day.waitingMinutes(),
+                day.returnDistanceMeters(),
+                day.returnTravelMinutes(),
+                day.returnArrivalTime(),
+                true
+        ));
+        DailySchedule currentDay = schedule.days().getFirst();
         itinerary.addDay(
-                trip.getStartDate(),
-                1,
-                Math.addExact(completed.distanceMeters(), schedule.totalDistanceMeters()),
-                totalTravel,
-                Math.addExact(completed.stayMinutes(), schedule.totalStayMinutes()),
-                totalWaiting,
-                schedule.returnTravelDistanceMeters(),
-                schedule.returnTravelMinutes(),
-                schedule.returnArrivalTime(),
+                currentDay.visitDate(),
+                Math.toIntExact(java.time.temporal.ChronoUnit.DAYS.between(
+                        trip.getStartDate(), currentDay.visitDate()
+                ) + 1),
+                Math.addExact(completedToday.distanceMeters(), currentDay.totalDistanceMeters()),
+                Math.addExact(completedToday.travelMinutes(), currentDay.totalTravelMinutes()),
+                Math.addExact(completedToday.stayMinutes(), currentDay.totalStayMinutes()),
+                Math.addExact(completedToday.waitingMinutes(), currentDay.totalWaitingMinutes()),
+                currentDay.returnTravelDistanceMeters(),
+                currentDay.returnTravelMinutes(),
+                currentDay.returnArrivalTime(),
                 true
         );
+        schedule.days().stream().skip(1).forEach(day -> itinerary.addDay(
+                day.visitDate(),
+                Math.toIntExact(java.time.temporal.ChronoUnit.DAYS.between(
+                        trip.getStartDate(), day.visitDate()
+                ) + 1),
+                day.totalDistanceMeters(),
+                day.totalTravelMinutes(),
+                day.totalStayMinutes(),
+                day.totalWaitingMinutes(),
+                day.returnTravelDistanceMeters(),
+                day.returnTravelMinutes(),
+                day.returnArrivalTime(),
+                true
+        ));
         itinerary.markReoptimized(
                 source,
                 snapshot.command().reason(),
                 snapshot.command().reasonDetail(),
+                snapshot.command().currentDate(),
                 snapshot.command().currentTime(),
                 snapshot.command().currentLatitude(),
                 snapshot.command().currentLongitude()
@@ -425,6 +550,7 @@ public class ItineraryReoptimizationService {
 
     public record ReoptimizeCommand(
             Long sourceItineraryId,
+            LocalDate currentDate,
             LocalTime currentTime,
             BigDecimal currentLatitude,
             BigDecimal currentLongitude,
@@ -437,6 +563,19 @@ public class ItineraryReoptimizationService {
             completedItemIds = completedItemIds == null
                     ? null : List.copyOf(completedItemIds);
         }
+
+        private ReoptimizeCommand withCurrentDate(LocalDate value) {
+            return new ReoptimizeCommand(
+                    sourceItineraryId,
+                    value,
+                    currentTime,
+                    currentLatitude,
+                    currentLongitude,
+                    completedItemIds,
+                    reason,
+                    reasonDetail
+            );
+        }
     }
 
     private record ReoptimizationInput(
@@ -447,25 +586,32 @@ public class ItineraryReoptimizationService {
             LocalTime dailyEndTime,
             Location accommodation,
             OptimizationRequest optimizationRequest,
-            List<ScheduleCandidate> scheduleCandidates
+            List<DailyCandidates> dailyCandidates
     ) {
 
         private ReoptimizationInput {
-            scheduleCandidates = List.copyOf(scheduleCandidates);
+            dailyCandidates = List.copyOf(dailyCandidates);
         }
 
-        private ScheduleRequest toScheduleRequest(OptimizationResult result) {
-            return new ScheduleRequest(
-                    visitDate,
-                    optimizationStartTime,
-                    dailyEndTime,
-                    optimizationRequest.startLocation(),
-                    accommodation,
-                    optimizationRequest.transportMode(),
-                    result.algorithm(),
-                    scheduleCandidates,
-                    result.stops().stream().map(stop -> stop.tripPlaceId()).toList()
-            );
+        private List<ScheduleRequest> toScheduleRequests(OptimizationResult result) {
+            List<Long> proposedOrder = result.stops().stream()
+                    .map(stop -> stop.tripPlaceId())
+                    .toList();
+            return dailyCandidates.stream()
+                    .map(day -> new ScheduleRequest(
+                            day.visitDate(),
+                            day.visitDate().equals(visitDate)
+                                    ? optimizationStartTime : tripDailyStartTime,
+                            dailyEndTime,
+                            day.visitDate().equals(visitDate)
+                                    ? optimizationRequest.startLocation() : accommodation,
+                            accommodation,
+                            optimizationRequest.transportMode(),
+                            result.algorithm(),
+                            day.candidates(),
+                            proposedOrder
+                    ))
+                    .toList();
         }
     }
 
@@ -475,12 +621,51 @@ public class ItineraryReoptimizationService {
             ReoptimizeCommand command,
             Set<Long> completedPlaceIds,
             List<CompletedVisit> completedVisits,
+            List<FixedDay> fixedDays,
             ReoptimizationInput input
     ) {
 
         private ReoptimizationSnapshot {
             completedPlaceIds = Set.copyOf(completedPlaceIds);
             completedVisits = List.copyOf(completedVisits);
+            fixedDays = List.copyOf(fixedDays);
+        }
+    }
+
+    private record DailyCandidates(LocalDate visitDate, List<ScheduleCandidate> candidates) {
+
+        private DailyCandidates {
+            candidates = List.copyOf(candidates);
+        }
+    }
+
+    private record OpeningHourKey(Long placeId, DayOfWeek dayOfWeek) {
+    }
+
+    private record FixedDay(
+            LocalDate visitDate,
+            int dayNumber,
+            long totalDistanceMeters,
+            int travelMinutes,
+            int stayMinutes,
+            int waitingMinutes,
+            long returnDistanceMeters,
+            int returnTravelMinutes,
+            LocalTime returnArrivalTime
+    ) {
+
+        private static FixedDay from(ItineraryDay day) {
+            return new FixedDay(
+                    day.getVisitDate(),
+                    day.getDayNumber(),
+                    day.getTotalDistanceMeters(),
+                    day.getEstimatedTravelMinutes(),
+                    day.getTotalStayMinutes(),
+                    day.getTotalWaitingMinutes(),
+                    day.getReturnTravelDistanceMeters(),
+                    day.getReturnTravelMinutes(),
+                    day.getReturnArrivalTime()
+            );
         }
     }
 
@@ -539,6 +724,36 @@ public class ItineraryReoptimizationService {
                 priority = Math.addExact(priority, visit.priority());
             }
             return new CompletedTotals(distance, travel, waiting, stay, priority);
+        }
+    }
+
+    private record FixedDayTotals(
+            long distanceMeters,
+            int travelMinutes,
+            int waitingMinutes,
+            int stayMinutes,
+            long returnDistanceMeters,
+            int returnTravelMinutes
+    ) {
+
+        private static FixedDayTotals from(List<FixedDay> days) {
+            long distance = 0;
+            int travel = 0;
+            int waiting = 0;
+            int stay = 0;
+            long returnDistance = 0;
+            int returnTravel = 0;
+            for (FixedDay day : days) {
+                distance = Math.addExact(distance, day.totalDistanceMeters());
+                travel = Math.addExact(travel, day.travelMinutes());
+                waiting = Math.addExact(waiting, day.waitingMinutes());
+                stay = Math.addExact(stay, day.stayMinutes());
+                returnDistance = Math.addExact(returnDistance, day.returnDistanceMeters());
+                returnTravel = Math.addExact(returnTravel, day.returnTravelMinutes());
+            }
+            return new FixedDayTotals(
+                    distance, travel, waiting, stay, returnDistance, returnTravel
+            );
         }
     }
 }

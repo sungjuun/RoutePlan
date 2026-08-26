@@ -71,6 +71,9 @@ public class Itinerary {
     @Column(name = "reoptimization_start_time")
     private LocalTime reoptimizationStartTime;
 
+    @Column(name = "reoptimization_start_date")
+    private LocalDate reoptimizationStartDate;
+
     @Column(name = "reoptimization_start_latitude", precision = 9, scale = 6)
     private BigDecimal reoptimizationStartLatitude;
 
@@ -299,13 +302,15 @@ public class Itinerary {
             Itinerary parentItinerary,
             ItineraryChangeReason changeReason,
             String changeReasonDetail,
+            LocalDate reoptimizationStartDate,
             LocalTime reoptimizationStartTime,
             BigDecimal reoptimizationStartLatitude,
             BigDecimal reoptimizationStartLongitude
     ) {
-        if (parentItinerary == null || changeReason == null || reoptimizationStartTime == null
+        if (parentItinerary == null || changeReason == null || reoptimizationStartDate == null
+                || reoptimizationStartTime == null
                 || reoptimizationStartLatitude == null || reoptimizationStartLongitude == null) {
-            throw new IllegalArgumentException("재최적화 계보와 현재 위치·시각은 필수입니다.");
+            throw new IllegalArgumentException("재최적화 계보와 현재 날짜·위치·시각은 필수입니다.");
         }
         if (!parentItinerary.getTrip().getId().equals(trip.getId())) {
             throw new IllegalArgumentException("부모 일정은 같은 여행에 속해야 합니다.");
@@ -313,11 +318,16 @@ public class Itinerary {
         if (parentItinerary.getVersion() + 1 != version) {
             throw new IllegalArgumentException("재최적화 버전은 부모 일정의 다음 버전이어야 합니다.");
         }
+        if (reoptimizationStartDate.isBefore(trip.getStartDate())
+                || reoptimizationStartDate.isAfter(trip.getEndDate())) {
+            throw new IllegalArgumentException("재최적화 시작 날짜는 여행 기간 안에 있어야 합니다.");
+        }
         Location.of(reoptimizationStartLatitude, reoptimizationStartLongitude);
         this.generationType = ItineraryGenerationType.REOPTIMIZATION;
         this.parentItinerary = parentItinerary;
         this.changeReason = changeReason;
         this.changeReasonDetail = normalizeDetail(changeReasonDetail);
+        this.reoptimizationStartDate = reoptimizationStartDate;
         this.reoptimizationStartTime = reoptimizationStartTime;
         this.reoptimizationStartLatitude = reoptimizationStartLatitude;
         this.reoptimizationStartLongitude = reoptimizationStartLongitude;
@@ -412,6 +422,10 @@ public class Itinerary {
 
     public LocalTime getReoptimizationStartTime() {
         return reoptimizationStartTime;
+    }
+
+    public LocalDate getReoptimizationStartDate() {
+        return reoptimizationStartDate;
     }
 
     public BigDecimal getReoptimizationStartLatitude() {
