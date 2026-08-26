@@ -20,6 +20,7 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
@@ -210,6 +211,54 @@ public class TripService {
         trip.markDraft();
     }
 
+    @Transactional
+    public TripResult applyStructuredConstraints(
+            Long tripId,
+            ApplyStructuredConstraintsCommand command
+    ) {
+        Trip trip = getTripForUpdate(tripId);
+        List<TripPlace> tripPlaces = tripPlaceRepository.findAllByTripIdOrderByIdAsc(tripId);
+        Map<Long, TripPlace> placesById = tripPlaces.stream()
+                .collect(Collectors.toMap(
+                        tripPlace -> tripPlace.getPlace().getId(),
+                        Function.identity()
+                ));
+        if (command.placeConstraints() == null) {
+            throw new IllegalArgumentException("장소 제약 목록은 필수입니다.");
+        }
+        HashSet<Long> requestedIds = new HashSet<>();
+        for (ApplyPlaceConstraintCommand placeCommand : command.placeConstraints()) {
+            if (!requestedIds.add(placeCommand.placeId())) {
+                throw new IllegalArgumentException("같은 장소의 제약을 중복 적용할 수 없습니다.");
+            }
+            TripPlace tripPlace = placesById.get(placeCommand.placeId());
+            if (tripPlace == null) {
+                throw new RoutePlanException(ErrorCode.TRIP_PLACE_NOT_FOUND);
+            }
+            tripPlace.updateConstraints(
+                    placeCommand.priority(),
+                    placeCommand.mustVisit(),
+                    placeCommand.preferredStartTime(),
+                    placeCommand.preferredEndTime(),
+                    placeCommand.minimumStayMinutes(),
+                    placeCommand.maximumStayMinutes()
+            );
+        }
+        trip.update(
+                trip.getName(),
+                trip.getStartDate(),
+                trip.getEndDate(),
+                trip.getAccommodationName(),
+                trip.getAccommodationLatitude(),
+                trip.getAccommodationLongitude(),
+                command.transportMode(),
+                command.dailyStartTime(),
+                command.dailyEndTime(),
+                command.pace()
+        );
+        return toResult(trip, tripPlaces);
+    }
+
     private Trip getTrip(Long tripId) {
         return tripRepository.findById(tripId)
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_NOT_FOUND));
@@ -302,6 +351,26 @@ public class TripService {
     }
 
     public record UpdateTripPlaceCommand(
+            int priority,
+            boolean mustVisit,
+            LocalTime preferredStartTime,
+            LocalTime preferredEndTime,
+            Integer minimumStayMinutes,
+            Integer maximumStayMinutes
+    ) {
+    }
+
+    public record ApplyStructuredConstraintsCommand(
+            LocalTime dailyStartTime,
+            LocalTime dailyEndTime,
+            TripPace pace,
+            TransportMode transportMode,
+            List<ApplyPlaceConstraintCommand> placeConstraints
+    ) {
+    }
+
+    public record ApplyPlaceConstraintCommand(
+            Long placeId,
             int priority,
             boolean mustVisit,
             LocalTime preferredStartTime,

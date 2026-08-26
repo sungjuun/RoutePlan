@@ -30,6 +30,8 @@ server:
   shutdown: graceful
 
 routeplan:
+  ai:
+    provider: ${ROUTEPLAN_AI_PROVIDER:RULE_BASED}
   place:
     provider: ${ROUTEPLAN_PLACE_PROVIDER:DISABLED}
   route:
@@ -46,3 +48,9 @@ routeplan:
     routes-base-url: ${GOOGLE_ROUTES_BASE_URL:https://routes.googleapis.com}
     connect-timeout: 2s
     request-timeout: 8s
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-5.4-mini}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+    connect-timeout: 2s
+    request-timeout: 15s

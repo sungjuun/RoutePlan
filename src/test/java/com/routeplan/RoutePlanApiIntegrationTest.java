@@ -512,6 +512,155 @@ class RoutePlanApiIntegrationTest {
                 .andExpect(jsonPath("$.returnArrivalTime").value("13:00:00"));
     }
 
+    @Test
+    void previewsAndAppliesValidatedNaturalLanguageConstraints() throws Exception {
+        long userId = postAndReadId("/api/v1/users", """
+                {"nickname":"natural-language-tester"}
+                """);
+        long osakaCastleId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"자연어 오사카성",
+                  "latitude":34.687300,
+                  "longitude":135.526200,
+                  "category":"ATTRACTION"
+                }
+                """);
+        long ramenId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"자연어 이치란 라멘",
+                  "latitude":34.668700,
+                  "longitude":135.501300,
+                  "category":"FOOD"
+                }
+                """);
+        long outsideTripPlaceId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"다른 여행의 장소",
+                  "latitude":34.680000,
+                  "longitude":135.510000,
+                  "category":"CAFE"
+                }
+                """);
+        long tripId = postAndReadId("/api/v1/trips", """
+                {
+                  "userId":%d,
+                  "name":"자연어 조건 여행",
+                  "startDate":"2026-09-10",
+                  "endDate":"2026-09-10",
+                  "dailyStartTime":"09:00",
+                  "dailyEndTime":"20:00",
+                  "accommodationName":"난바 숙소",
+                  "accommodationLatitude":34.665400,
+                  "accommodationLongitude":135.501900,
+                  "transportMode":"WALKING",
+                  "pace":"STANDARD"
+                }
+                """.formatted(userId));
+        addPlace(tripId, osakaCastleId);
+        addPlace(tripId, ramenId);
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/natural-language/preview", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "text":"오전 10시에 출발하고 저녁 7시까지 여행할래. 자연어 오사카성은 꼭 가야 해. 점심은 자연어 이치란 라멘을 먹고 싶어. 대중교통을 이용하고 많이 걷고 싶지 않아. 일정은 여유롭게 해줘."
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("RULE_BASED"))
+                .andExpect(jsonPath("$.structuredConstraints.walkingPreference").value("LOW"))
+                .andExpect(jsonPath("$.trip.after.dailyStartTime").value("10:00:00"))
+                .andExpect(jsonPath("$.trip.after.dailyEndTime").value("19:00:00"))
+                .andExpect(jsonPath("$.trip.after.pace").value("RELAXED"))
+                .andExpect(jsonPath("$.trip.after.transportMode").value("PUBLIC_TRANSIT"))
+                .andExpect(jsonPath("$.places.length()").value(2))
+                .andExpect(jsonPath("$.places[0].after.mustVisit").value(true))
+                .andExpect(jsonPath("$.places[0].after.priority").value(100))
+                .andExpect(jsonPath("$.places[1].after.preferredStartTime").value("11:30:00"))
+                .andExpect(jsonPath("$.places[1].after.preferredEndTime").value("14:00:00"))
+                .andExpect(jsonPath("$.hasChanges").value(true));
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/natural-language/apply", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "trip":{
+                                    "dailyStartTime":"10:00",
+                                    "dailyEndTime":"19:00",
+                                    "pace":"RELAXED",
+                                    "transportMode":"PUBLIC_TRANSIT"
+                                  },
+                                  "places":[
+                                    {
+                                      "placeId":%d,
+                                      "priority":100,
+                                      "mustVisit":true,
+                                      "preferredStartTime":null,
+                                      "preferredEndTime":null,
+                                      "minimumStayMinutes":null,
+                                      "maximumStayMinutes":null
+                                    },
+                                    {
+                                      "placeId":%d,
+                                      "priority":70,
+                                      "mustVisit":false,
+                                      "preferredStartTime":null,
+                                      "preferredEndTime":null,
+                                      "minimumStayMinutes":null,
+                                      "maximumStayMinutes":null
+                                    }
+                                  ]
+                                }
+                                """.formatted(osakaCastleId, outsideTripPlaceId)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRIP_PLACE_NOT_FOUND"));
+        mockMvc.perform(get("/api/v1/trips/{tripId}", tripId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dailyStartTime").value("09:00:00"))
+                .andExpect(jsonPath("$.places[0].priority").value(50));
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/natural-language/apply", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "trip":{
+                                    "dailyStartTime":"10:00",
+                                    "dailyEndTime":"19:00",
+                                    "pace":"RELAXED",
+                                    "transportMode":"PUBLIC_TRANSIT"
+                                  },
+                                  "places":[
+                                    {
+                                      "placeId":%d,
+                                      "priority":100,
+                                      "mustVisit":true,
+                                      "preferredStartTime":null,
+                                      "preferredEndTime":null,
+                                      "minimumStayMinutes":null,
+                                      "maximumStayMinutes":null
+                                    },
+                                    {
+                                      "placeId":%d,
+                                      "priority":70,
+                                      "mustVisit":false,
+                                      "preferredStartTime":"11:30",
+                                      "preferredEndTime":"14:00",
+                                      "minimumStayMinutes":null,
+                                      "maximumStayMinutes":null
+                                    }
+                                  ]
+                                }
+                                """.formatted(osakaCastleId, ramenId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dailyStartTime").value("10:00:00"))
+                .andExpect(jsonPath("$.dailyEndTime").value("19:00:00"))
+                .andExpect(jsonPath("$.pace").value("RELAXED"))
+                .andExpect(jsonPath("$.transportMode").value("PUBLIC_TRANSIT"))
+                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.places[0].mustVisit").value(true))
+                .andExpect(jsonPath("$.places[1].preferredStartTime").value("11:30:00"));
+    }
+
     private long postAndReadId(String path, String body) throws Exception {
         MvcResult result = mockMvc.perform(post(path)
                         .contentType(MediaType.APPLICATION_JSON)
