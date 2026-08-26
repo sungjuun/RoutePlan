@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Compass, LoaderCircle, MapPinned, Route, Settings2, UsersRound } from 'lucide-react'
+import { Compass, LoaderCircle, MapPinned, MessageSquareText, Route, Settings2, UsersRound } from 'lucide-react'
 import { ApiError, api } from './api/client'
 import { AppHeader } from './components/AppHeader'
 import { CommunityWorkspace } from './components/CommunityWorkspace'
 import { ItineraryWorkspace } from './components/ItineraryWorkspace'
+import { NaturalLanguageWorkspace } from './components/NaturalLanguageWorkspace'
 import { PlaceWorkspace } from './components/PlaceWorkspace'
 import { TripSetup } from './components/TripSetup'
 import { Toast } from './components/Toast'
 import { clearTripReference, loadWorkspace, saveWorkspace } from './lib/storage'
 import type { Itinerary, Place, Trip, User } from './types'
 
-type Section = 'places' | 'itinerary' | 'settings' | 'community'
+type Section = 'places' | 'itinerary' | 'settings' | 'community' | 'natural-language'
 
 interface Notice {
   kind: 'success' | 'error' | 'info'
@@ -200,6 +201,13 @@ export function App() {
             <span><strong>일정 보기</strong><small>{itinerary ? `버전 ${itinerary.version}` : '계산 전'}</small></span>
           </button>
           <button
+            className={section === 'natural-language' ? 'active' : ''}
+            onClick={() => setSection('natural-language')}
+          >
+            <span><MessageSquareText size={19} /></span>
+            <span><strong>자연어 조건</strong><small>말로 취향 설정</small></span>
+          </button>
+          <button
             className={section === 'settings' ? 'active' : ''}
             onClick={() => setSection('settings')}
           >
@@ -242,6 +250,15 @@ export function App() {
               trip={trip}
               embedded
               onUpdated={handleTripUpdated}
+              onError={reportError}
+            />
+          )}
+          {section === 'natural-language' && (
+            <NaturalLanguageWorkspace
+              trip={trip}
+              onTripChanged={handleTripChanged}
+              onGoToPlaces={() => setSection('places')}
+              onGoToItinerary={() => setSection('itinerary')}
               onError={reportError}
             />
           )}

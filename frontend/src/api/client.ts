@@ -1,8 +1,10 @@
 import type {
   ApiErrorBody,
+  ApplyNaturalLanguageConstraintsInput,
   CopyRouteInput,
   CreateTripInput,
   Itinerary,
+  NaturalLanguagePreview,
   OptimizationAlgorithm,
   Place,
   PlaceSearchResult,
@@ -188,4 +190,18 @@ export const api = {
 
   copySharedRoute: (routeId: number, input: CopyRouteInput) =>
     request<Trip>(`/routes/${routeId}/copy`, json('POST', input)),
+
+  previewNaturalLanguageConstraints: (tripId: number, text: string) =>
+    request<NaturalLanguagePreview>(
+      `/trips/${tripId}/natural-language/preview`,
+      json('POST', { text }),
+    ),
+
+  applyNaturalLanguageConstraints: (
+    tripId: number,
+    input: ApplyNaturalLanguageConstraintsInput,
+  ) => request<Trip>(
+    `/trips/${tripId}/natural-language/apply`,
+    json('POST', input),
+  ),
 }

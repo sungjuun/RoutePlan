@@ -12,6 +12,9 @@ export type ItineraryChangeReason =
   | 'OTHER'
 export type SharedRouteVisibility = 'PUBLIC' | 'UNLISTED'
 export type SharedRouteSort = 'LATEST' | 'POPULAR'
+export type WalkingPreference = 'LOW' | 'STANDARD' | 'HIGH'
+export type PlacePreference = 'MUST_VISIT' | 'PREFERRED' | 'OPTIONAL'
+export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER'
 
 export interface User {
   id: number
@@ -283,4 +286,65 @@ export interface CopyRouteInput {
   accommodationLongitude: number
   transportMode: TransportMode
   pace: TripPace
+}
+
+export interface NaturalLanguagePlaceConstraint {
+  placeName: string | null
+  preference: PlacePreference | null
+  preferredStartTime: string | null
+  preferredEndTime: string | null
+  minimumStayMinutes: number | null
+  maximumStayMinutes: number | null
+  mealType: MealType | null
+}
+
+export interface StructuredTravelConstraints {
+  dailyStartTime: string | null
+  dailyEndTime: string | null
+  pace: TripPace | null
+  transportMode: TransportMode | null
+  walkingPreference: WalkingPreference | null
+  placeConstraints: NaturalLanguagePlaceConstraint[]
+  notes: string[]
+}
+
+export interface NaturalLanguageTripSettings {
+  dailyStartTime: string
+  dailyEndTime: string
+  pace: TripPace
+  transportMode: TransportMode
+}
+
+export interface NaturalLanguagePlaceSettings {
+  placeId: number
+  placeName: string
+  priority: number
+  mustVisit: boolean
+  preferredStartTime: string | null
+  preferredEndTime: string | null
+  minimumStayMinutes: number | null
+  maximumStayMinutes: number | null
+}
+
+export interface NaturalLanguagePreview {
+  originalText: string
+  provider: string
+  structuredConstraints: StructuredTravelConstraints
+  trip: {
+    before: NaturalLanguageTripSettings
+    after: NaturalLanguageTripSettings
+    changed: boolean
+  }
+  places: Array<{
+    before: NaturalLanguagePlaceSettings
+    after: NaturalLanguagePlaceSettings
+    changed: boolean
+  }>
+  warnings: string[]
+  hasChanges: boolean
+}
+
+export interface ApplyNaturalLanguageConstraintsInput {
+  trip: NaturalLanguageTripSettings
+  places: Array<Omit<NaturalLanguagePlaceSettings, 'placeName'>>
 }

@@ -70,4 +70,35 @@ describe('API client', () => {
     expect((error as ApiError).body.code).toBe('NETWORK_ERROR')
     expect((error as ApiError).message).toBe('요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.')
   })
+
+  it('sends natural language text only to the preview endpoint', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      originalText: '여유롭게 해줘',
+      provider: 'RULE_BASED',
+      structuredConstraints: {
+        dailyStartTime: null,
+        dailyEndTime: null,
+        pace: 'RELAXED',
+        transportMode: null,
+        walkingPreference: null,
+        placeConstraints: [],
+        notes: [],
+      },
+      trip: {
+        before: { dailyStartTime: '09:00:00', dailyEndTime: '20:00:00', pace: 'STANDARD', transportMode: 'WALKING' },
+        after: { dailyStartTime: '09:00:00', dailyEndTime: '20:00:00', pace: 'RELAXED', transportMode: 'WALKING' },
+        changed: true,
+      },
+      places: [],
+      warnings: [],
+      hasChanges: true,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+
+    await api.previewNaturalLanguageConstraints(11, '여유롭게 해줘')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/trips/11/natural-language/preview',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ text: '여유롭게 해줘' }) }),
+    )
+  })
 })
