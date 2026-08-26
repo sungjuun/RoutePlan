@@ -61,6 +61,7 @@ function itinerary(version: number, items: ItineraryItem[]): Itinerary {
     routeCacheFailureCount: 0,
     routeCacheHitRatio: 0,
     createdAt: '2026-09-10T00:00:00Z',
+    days: [],
     items,
     exclusions: [],
   }

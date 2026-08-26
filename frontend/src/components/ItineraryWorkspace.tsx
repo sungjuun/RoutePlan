@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
   BedDouble,
+  CalendarDays,
   Check,
   CircleDot,
   Clock3,
@@ -54,10 +55,15 @@ export function ItineraryWorkspace(props: Props) {
   const [algorithm, setAlgorithm] = useState<OptimizationAlgorithm>(itinerary?.algorithm ?? 'NEAREST_NEIGHBOR_2_OPT')
   const [tab, setTab] = useState<ItineraryTab>('route')
   const [calculating, setCalculating] = useState(false)
+  const multiDay = trip.startDate !== trip.endDate
 
   useEffect(() => {
     if (itinerary) setAlgorithm(itinerary.algorithm)
   }, [itinerary])
+
+  useEffect(() => {
+    if (multiDay && tab === 'reoptimize') setTab('route')
+  }, [multiDay, tab])
 
   const optimize = async () => {
     setCalculating(true)
@@ -79,9 +85,9 @@ export function ItineraryWorkspace(props: Props) {
       <section className="content-section empty-itinerary-section">
         <div className="empty-itinerary-copy">
           <span className="eyebrow">READY TO PLAN</span>
-          <h1>{trip.places.length > 0 ? '선택한 장면을 하나의 하루로' : '먼저 가고 싶은 곳을 담아주세요'}</h1>
+          <h1>{trip.places.length > 0 ? '선택한 장면을 여행 날짜마다' : '먼저 가고 싶은 곳을 담아주세요'}</h1>
           <p>{trip.places.length > 0
-            ? `${trip.places.length}곳의 영업시간과 머무는 시간, 숙소 복귀까지 함께 계산합니다.`
+            ? `${trip.places.length}곳의 날짜별 영업시간과 머무는 시간, 매일 숙소 복귀까지 함께 계산합니다.`
             : '장소가 한 곳 이상 있어야 실행 가능한 일정을 만들 수 있습니다.'}</p>
         </div>
         <div className="planner-launch-card">
@@ -111,17 +117,21 @@ export function ItineraryWorkspace(props: Props) {
             </span>
           </div>
           <h1>{trip.name}</h1>
-          <p>{dateLabel(trip.startDate)} · {trip.accommodationName}에서 출발</p>
+          <p>{dateLabel(trip.startDate)}{multiDay ? ` – ${dateLabel(trip.endDate)}` : ''} · {trip.accommodationName}에서 출발</p>
         </div>
         <div className="title-actions">
           <button className="button button-ghost" onClick={onGoToPlaces}><Plus size={16} /> 장소 변경</button>
-          <button className="button button-primary" onClick={() => setTab('reoptimize')}><TimerReset size={17} /> 남은 일정 다시 짜기</button>
+          {multiDay ? (
+            <button className="button button-primary" onClick={() => void optimize()} disabled={calculating}><RefreshCw size={17} /> {calculating ? '계산 중…' : '전체 일정 다시 계산'}</button>
+          ) : (
+            <button className="button button-primary" onClick={() => setTab('reoptimize')}><TimerReset size={17} /> 남은 일정 다시 짜기</button>
+          )}
         </div>
       </div>
 
       <div className="itinerary-tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'route'} className={tab === 'route' ? 'active' : ''} onClick={() => setTab('route')}><RouteIcon size={17} /> 일정과 지도</button>
-        <button role="tab" aria-selected={tab === 'reoptimize'} className={tab === 'reoptimize' ? 'active' : ''} onClick={() => setTab('reoptimize')}><RefreshCw size={17} /> 재최적화</button>
+        {!multiDay && <button role="tab" aria-selected={tab === 'reoptimize'} className={tab === 'reoptimize' ? 'active' : ''} onClick={() => setTab('reoptimize')}><RefreshCw size={17} /> 재최적화</button>}
         <button role="tab" aria-selected={tab === 'compare'} className={tab === 'compare' ? 'active' : ''} onClick={() => setTab('compare')} disabled={!previousItinerary}><GitCompareArrows size={17} /> 버전 비교</button>
       </div>
 
@@ -184,6 +194,19 @@ function RouteView({
   optimize: () => Promise<void>
 }) {
   const completedCount = minimumCompletedCount(itinerary)
+  const days = itinerary.days.length > 0 ? itinerary.days : [{
+    dayNumber: 1,
+    visitDate: trip.startDate,
+    totalDistanceMeters: itinerary.totalDistanceMeters,
+    estimatedTravelMinutes: itinerary.estimatedTravelMinutes,
+    totalStayMinutes: itinerary.totalStayMinutes,
+    totalWaitingMinutes: itinerary.totalWaitingMinutes,
+    returnTravelDistanceMeters: itinerary.returnTravelDistanceMeters,
+    returnTravelMinutes: itinerary.returnTravelMinutes,
+    returnArrivalTime: itinerary.returnArrivalTime,
+    returnedToAccommodation: itinerary.closedTour,
+  }]
+  const multiDay = days.length > 1
   const visit = (item: Itinerary['items'][number]) => (
     <div className={`timeline-item ${item.status === 'COMPLETED' ? 'timeline-completed' : ''}`} key={item.itineraryItemId}>
       <div className="timeline-time"><strong>{timeLabel(item.startTime)}</strong><span>{timeLabel(item.endTime)}</span></div>
@@ -201,35 +224,51 @@ function RouteView({
         <Metric icon={<Navigation size={18} />} label="총 이동" value={distanceLabel(itinerary.totalDistanceMeters)} note={durationLabel(itinerary.estimatedTravelMinutes)} />
         <Metric icon={<MapPin size={18} />} label="방문 장소" value={`${itinerary.items.length}곳`} note={itinerary.exclusions.length ? `${itinerary.exclusions.length}곳 제외` : '모두 포함'} />
         <Metric icon={<Clock3 size={18} />} label="머무는 시간" value={durationLabel(itinerary.totalStayMinutes)} note={itinerary.totalWaitingMinutes ? `대기 ${durationLabel(itinerary.totalWaitingMinutes)}` : '대기 없음'} />
-        <Metric icon={<Gauge size={18} />} label="숙소 도착" value={timeLabel(itinerary.returnArrivalTime)} note={`복귀 ${durationLabel(itinerary.returnTravelMinutes)}`} />
+        <Metric icon={<Gauge size={18} />} label={multiDay ? '숙소 복귀' : '숙소 도착'} value={multiDay ? `${days.length}일 완료` : timeLabel(itinerary.returnArrivalTime)} note={`복귀 이동 ${durationLabel(itinerary.returnTravelMinutes)}`} />
       </div>
 
       <div className="route-layout">
         <div className="timeline-panel panel">
-          <div className="panel-title"><div><span className="eyebrow">YOUR DAY</span><h2>시간표</h2></div><span>{itinerary.items.length + (itinerary.generationType === 'REOPTIMIZATION' ? 3 : 2)}개의 장면</span></div>
+          <div className="panel-title"><div><span className="eyebrow">YOUR TRIP</span><h2>{multiDay ? '일자별 시간표' : '시간표'}</h2></div><span>{days.length}일 · {itinerary.items.length}곳</span></div>
           <div className="timeline">
-            <div className="timeline-item timeline-hotel">
-              <div className="timeline-time">{timeLabel(trip.dailyStartTime)}</div>
-              <div className="timeline-line"><span><BedDouble size={16} /></span><i></i></div>
-              <div className="timeline-copy"><strong>{trip.accommodationName}</strong><small>오늘의 출발점</small></div>
-            </div>
-            {itinerary.items.slice(0, completedCount).map(visit)}
-            {itinerary.generationType === 'REOPTIMIZATION' && (
-              <div className="timeline-item timeline-current">
-                <div className="timeline-time"><strong>{timeLabel(itinerary.reoptimizationStartTime)}</strong></div>
-                <div className="timeline-line"><span><LocateFixed size={15} /></span><i></i></div>
-                <div className="timeline-copy">
-                  <strong>현재 위치에서 다시 출발</strong>
-                  <small>여기부터 남은 일정을 새로 계산했습니다</small>
-                </div>
-              </div>
-            )}
-            {itinerary.items.slice(completedCount).map(visit)}
-            <div className="timeline-item timeline-hotel timeline-return">
-              <div className="timeline-time"><strong>{timeLabel(itinerary.returnArrivalTime)}</strong></div>
-              <div className="timeline-line"><span><BedDouble size={16} /></span></div>
-              <div className="timeline-copy"><strong>{trip.accommodationName}</strong><small>하루 종료 전 숙소 복귀 완료</small></div>
-            </div>
+            {days.map((day) => {
+              const dayItems = itinerary.items.filter((item) => item.visitDate === day.visitDate)
+              return (
+                <section className="timeline-day" key={day.visitDate}>
+                  <div className="timeline-day-head">
+                    <span><CalendarDays size={15} /> DAY {day.dayNumber}</span>
+                    <strong>{dateLabel(day.visitDate)}</strong>
+                    <small>{dayItems.length}곳 · 이동 {durationLabel(day.estimatedTravelMinutes)}</small>
+                  </div>
+                  <div className="timeline-item timeline-hotel">
+                    <div className="timeline-time">{timeLabel(trip.dailyStartTime)}</div>
+                    <div className="timeline-line"><span><BedDouble size={16} /></span><i></i></div>
+                    <div className="timeline-copy"><strong>{trip.accommodationName}</strong><small>DAY {day.dayNumber} 출발점</small></div>
+                  </div>
+                  {dayItems.map((item) => {
+                    const itemIndex = itinerary.items.findIndex((candidate) => candidate.itineraryItemId === item.itineraryItemId)
+                    return (
+                      <Fragment key={item.itineraryItemId}>
+                        {itinerary.generationType === 'REOPTIMIZATION' && itemIndex === completedCount && (
+                          <div className="timeline-item timeline-current">
+                            <div className="timeline-time"><strong>{timeLabel(itinerary.reoptimizationStartTime)}</strong></div>
+                            <div className="timeline-line"><span><LocateFixed size={15} /></span><i></i></div>
+                            <div className="timeline-copy"><strong>현재 위치에서 다시 출발</strong><small>여기부터 남은 일정을 새로 계산했습니다</small></div>
+                          </div>
+                        )}
+                        {visit(item)}
+                      </Fragment>
+                    )
+                  })}
+                  {dayItems.length === 0 && <div className="timeline-day-empty">배정된 장소 없이 숙소에서 쉬는 날입니다.</div>}
+                  <div className="timeline-item timeline-hotel timeline-return">
+                    <div className="timeline-time"><strong>{timeLabel(day.returnArrivalTime)}</strong></div>
+                    <div className="timeline-line"><span><BedDouble size={16} /></span></div>
+                    <div className="timeline-copy"><strong>{trip.accommodationName}</strong><small>숙소 복귀 · {durationLabel(day.returnTravelMinutes)}</small></div>
+                  </div>
+                </section>
+              )
+            })}
           </div>
           {itinerary.exclusions.length > 0 && (
             <div className="exclusion-box">

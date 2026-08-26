@@ -103,6 +103,19 @@ export interface ItineraryExclusion {
   reason: 'CLOSED' | 'TIME_WINDOW' | 'DAILY_LIMIT'
 }
 
+export interface ItineraryDay {
+  dayNumber: number
+  visitDate: string
+  totalDistanceMeters: number
+  estimatedTravelMinutes: number
+  totalStayMinutes: number
+  totalWaitingMinutes: number
+  returnTravelDistanceMeters: number
+  returnTravelMinutes: number
+  returnArrivalTime: string
+  returnedToAccommodation: boolean
+}
+
 export interface Itinerary {
   itineraryId: number
   tripId: number
@@ -135,6 +148,7 @@ export interface Itinerary {
   routeCacheFailureCount: number
   routeCacheHitRatio: number
   createdAt: string
+  days: ItineraryDay[]
   items: ItineraryItem[]
   exclusions: ItineraryExclusion[]
 }

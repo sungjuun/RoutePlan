@@ -28,6 +28,13 @@ function tomorrow(): string {
   return date.toISOString().slice(0, 10)
 }
 
+function addDays(dateValue: string, days: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return ''
+  const [year, month, day] = dateValue.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day + days))
+  return date.toISOString().slice(0, 10)
+}
+
 export function TripSetup({
   user,
   trip,
@@ -39,7 +46,8 @@ export function TripSetup({
 }: Props) {
   const [nickname, setNickname] = useState(user?.nickname ?? '')
   const [name, setName] = useState(trip?.name ?? '')
-  const [date, setDate] = useState(trip?.startDate ?? tomorrow())
+  const [startDate, setStartDate] = useState(trip?.startDate ?? tomorrow())
+  const [endDate, setEndDate] = useState(trip?.endDate ?? trip?.startDate ?? tomorrow())
   const [dailyStartTime, setDailyStartTime] = useState((trip?.dailyStartTime ?? '09:00').slice(0, 5))
   const [dailyEndTime, setDailyEndTime] = useState((trip?.dailyEndTime ?? '20:00').slice(0, 5))
   const [accommodationName, setAccommodationName] = useState(trip?.accommodationName ?? '')
@@ -61,8 +69,8 @@ export function TripSetup({
       const input: CreateTripInput = {
         userId: activeUser.id,
         name,
-        startDate: date,
-        endDate: date,
+        startDate,
+        endDate,
         dailyStartTime,
         dailyEndTime,
         accommodationName,
@@ -98,8 +106,23 @@ export function TripSetup({
         <input value={name} onChange={(event) => setName(event.target.value)} maxLength={100} required placeholder="예: 서울의 오래된 골목을 걷는 날" />
       </label>
       <label className="field">
-        <span><CalendarDays size={15} /> 여행 날짜</span>
-        <input type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
+        <span><CalendarDays size={15} /> 여행 시작일</span>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(event) => {
+            const nextStart = event.target.value
+            setStartDate(nextStart)
+            if (endDate < nextStart) setEndDate(nextStart)
+            else if (endDate > addDays(nextStart, 13)) setEndDate(addDays(nextStart, 13))
+          }}
+          required
+        />
+      </label>
+      <label className="field">
+        <span><CalendarDays size={15} /> 여행 종료일</span>
+        <input type="date" min={startDate} max={addDays(startDate, 13)} value={endDate} onChange={(event) => setEndDate(event.target.value)} required />
+        <small>최대 14일까지 계획할 수 있어요.</small>
       </label>
       <div className="field time-range-field">
         <span><Clock3 size={15} /> 하루 시간</span>
@@ -171,7 +194,7 @@ export function TripSetup({
         <div className="section-heading">
           <span className="eyebrow">TRIP SETTINGS</span>
           <h1>여행의 기준을 조정하세요</h1>
-          <p>숙소나 하루 시간이 바뀌면 다음 최적화부터 새 조건이 적용됩니다.</p>
+          <p>여행 기간, 숙소나 하루 시간이 바뀌면 다음 최적화부터 새 조건이 적용됩니다.</p>
         </div>
         <div className="panel settings-panel">{form}</div>
       </section>
@@ -185,7 +208,7 @@ export function TripSetup({
         <div className="story-copy">
           <span className="eyebrow eyebrow-light">CONSTRAINT-AWARE TRAVEL</span>
           <h1>좋은 여행은<br />순서가 아니라<br /><em>호흡</em>에서 시작됩니다.</h1>
-          <p>가고 싶은 곳과 하루의 조건을 알려주세요. 이동과 기다림까지 계산해, 실제로 걸을 수 있는 하루를 만듭니다.</p>
+          <p>가고 싶은 곳과 여행의 조건을 알려주세요. 이동과 기다림까지 계산해, 매일 숙소로 돌아오는 흐름을 만듭니다.</p>
         </div>
         <div className="route-sketch" aria-hidden="true">
           <span className="route-stop stop-a">숙소</span><i></i><span className="route-stop stop-b">첫 장면</span><i></i><span className="route-stop stop-c">오후의 쉼</span>
@@ -194,8 +217,8 @@ export function TripSetup({
       <section className="onboarding-form-wrap">
         <div className="onboarding-form-head">
           <span>01 / 여행 만들기</span>
-          <h2>어떤 하루를 떠나볼까요?</h2>
-          <p>지금은 하루 여행에 집중합니다. 나중에 언제든 설정을 바꿀 수 있어요.</p>
+          <h2>어떤 여행을 떠나볼까요?</h2>
+          <p>하루부터 14일까지, 같은 숙소를 기준으로 일자별 일정을 만들어요.</p>
         </div>
         {form}
       </section>

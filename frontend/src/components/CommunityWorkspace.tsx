@@ -67,17 +67,21 @@ export function CommunityWorkspace(props: Props) {
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
+  const travelDays = Math.round(
+    (Date.parse(`${trip.endDate}T00:00:00Z`) - Date.parse(`${trip.startDate}T00:00:00Z`))
+      / 86_400_000,
+  ) + 1
 
   const loadRoutes = useCallback(async () => {
     setLoading(true)
     try {
-      setRoutes(await api.discoverRoutes({ region, travelDays: 1, sort, page, size: 12 }))
+      setRoutes(await api.discoverRoutes({ region, travelDays, sort, page, size: 12 }))
     } catch (error) {
       onError(error)
     } finally {
       setLoading(false)
     }
-  }, [onError, page, region, sort])
+  }, [onError, page, region, sort, travelDays])
 
   useEffect(() => {
     void loadRoutes()
@@ -398,14 +402,23 @@ function RouteDetail({
       </div>
 
       <div className="shared-route-timeline">
-        <div className="shared-route-stop hotel"><span><BedDouble size={14} /></span><div><strong>{route.accommodationName}</strong><small>{timeLabel(route.dailyStartTime)} 출발</small></div></div>
-        {route.items.map((item) => (
-          <div className="shared-route-stop" key={item.itemId}>
-            <span>{item.sequence}</span>
-            <div><strong>{item.placeName}{item.mustVisit && <em>꼭 가기</em>}</strong><small>{timeLabel(item.startTime)}–{timeLabel(item.endTime)} · {durationLabel(item.stayMinutes)} 머무름</small></div>
-          </div>
-        ))}
-        <div className="shared-route-stop hotel"><span><BedDouble size={14} /></span><div><strong>{route.accommodationName}</strong><small>{timeLabel(route.dailyEndTime)} 이전 복귀</small></div></div>
+        {[...Array(route.travelDays)].map((_, index) => {
+          const dayNumber = index + 1
+          const dayItems = route.items.filter((item) => item.dayNumber === dayNumber)
+          return (
+            <section className="shared-route-day" key={dayNumber}>
+              <div className="shared-route-day-head"><strong>DAY {dayNumber}</strong><span>{dayItems[0] ? dateLabel(dayItems[0].visitDate) : `${dayNumber}일차`}</span><small>{dayItems.length}곳</small></div>
+              <div className="shared-route-stop hotel"><span><BedDouble size={14} /></span><div><strong>{route.accommodationName}</strong><small>{timeLabel(route.dailyStartTime)} 출발</small></div></div>
+              {dayItems.map((item) => (
+                <div className="shared-route-stop" key={item.itemId}>
+                  <span>{item.sequence}</span>
+                  <div><strong>{item.placeName}{item.mustVisit && <em>꼭 가기</em>}</strong><small>{timeLabel(item.startTime)}–{timeLabel(item.endTime)} · {durationLabel(item.stayMinutes)} 머무름</small></div>
+                </div>
+              ))}
+              <div className="shared-route-stop hotel"><span><BedDouble size={14} /></span><div><strong>{route.accommodationName}</strong><small>{timeLabel(route.dailyEndTime)} 이전 복귀</small></div></div>
+            </section>
+          )
+        })}
       </div>
 
       <div className="community-social-bar">
@@ -494,7 +507,7 @@ function CopyRouteForm({
       <p>장소와 우선순위만 가져옵니다. 공개된 시간표를 그대로 복사하지 않습니다.</p>
       <div className="copy-route-grid">
         <label className="field field-wide"><span>새 여행 이름</span><input required maxLength={100} value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <label className="field"><span><CalendarDays size={14} /> 여행 날짜</span><input required type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
+        <label className="field"><span><CalendarDays size={14} /> 여행 시작일</span><input required type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /><small>원본과 같은 {route.travelDays}일 여행으로 복사됩니다.</small></label>
         <label className="field"><span><Clock3 size={14} /> 하루 시간</span><div className="inline-inputs"><input required type="time" value={dailyStartTime} onChange={(event) => setDailyStartTime(event.target.value)} /><span>–</span><input required type="time" value={dailyEndTime} onChange={(event) => setDailyEndTime(event.target.value)} /></div></label>
         <label className="field field-wide"><span><BedDouble size={14} /> 숙소 이름</span><input required maxLength={100} value={accommodationName} onChange={(event) => setAccommodationName(event.target.value)} /></label>
         <label className="field"><span>숙소 위도</span><input required type="number" step="0.000001" min="-90" max="90" value={latitude} onChange={(event) => setLatitude(event.target.value)} /></label>
@@ -503,7 +516,7 @@ function CopyRouteForm({
         <label className="field"><span>여행 강도</span><select value={pace} onChange={(event) => setPace(event.target.value as TripPace)}><option value="RELAXED">여유롭게</option><option value="STANDARD">보통</option><option value="ACTIVE">알차게</option></select></label>
         <label className="field field-wide"><span>계산 방식</span><select value={algorithm} onChange={(event) => setAlgorithm(event.target.value as OptimizationAlgorithm)}><option value="NEAREST_NEIGHBOR_2_OPT">균형 추천</option><option value="NEAREST_NEIGHBOR">빠른 계산</option>{route.placeCount <= 10 && <option value="EXACT_SEARCH">최적 경로</option>}</select></label>
       </div>
-      <div className="copy-route-summary"><Check size={16} /><span>{route.placeCount}곳 · {transportLabel(transportMode)} · {paceLabel(pace)}</span></div>
+      <div className="copy-route-summary"><Check size={16} /><span>{route.travelDays}일 · {route.placeCount}곳 · {transportLabel(transportMode)} · {paceLabel(pace)}</span></div>
       <button className="button button-primary button-large" disabled={submitting}>{submitting ? '복사하고 새 일정을 계산하는 중…' : '복사 후 재최적화'}</button>
       <small><Sparkles size={13} /> 새 Trip과 Itinerary로 저장되며 원본 루트는 바뀌지 않습니다.</small>
     </form>

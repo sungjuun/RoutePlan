@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import L, { type LatLngBoundsExpression, type LatLngExpression } from 'leaflet'
 import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from 'react-leaflet'
 import type { Itinerary, Place, Trip } from '../types'
@@ -33,22 +33,27 @@ function markerIcon(label: string, kind: 'stop' | 'hotel' | 'completed') {
 }
 
 export function MapPanel({ trip, itinerary, places = {}, compact = false }: Props) {
+  const [selectedDay, setSelectedDay] = useState(1)
+  const activeDay = itinerary?.days.some((day) => day.dayNumber === selectedDay) ? selectedDay : 1
+  const selectedDate = itinerary?.days.find((day) => day.dayNumber === activeDay)?.visitDate
   const accommodation = useMemo<LatLngExpression>(() => [
     Number(trip.accommodationLatitude),
     Number(trip.accommodationLongitude),
   ], [trip.accommodationLatitude, trip.accommodationLongitude])
   const stops = useMemo(() => {
     if (itinerary) {
-      return itinerary.items.flatMap((item) => {
+      return itinerary.items
+        .filter((item) => !selectedDate || item.visitDate === selectedDate)
+        .flatMap((item, index) => {
         const place = places[item.placeId] ?? trip.places.find((candidate) => candidate.placeId === item.placeId)
         return place ? [{
           id: item.placeId,
           name: item.placeName,
           position: [Number(place.latitude), Number(place.longitude)] as LatLngExpression,
-          sequence: item.sequence,
+          sequence: selectedDate ? index + 1 : item.sequence,
           completed: item.status === 'COMPLETED',
         }] : []
-      })
+        })
     }
     return trip.places.map((place, index) => ({
       id: place.placeId,
@@ -57,7 +62,7 @@ export function MapPanel({ trip, itinerary, places = {}, compact = false }: Prop
       sequence: index + 1,
       completed: false,
     }))
-  }, [itinerary, places, trip.places])
+  }, [itinerary, places, selectedDate, trip.places])
 
   const allPoints = useMemo(
     () => [accommodation, ...stops.map((stop) => stop.position)],
@@ -69,6 +74,13 @@ export function MapPanel({ trip, itinerary, places = {}, compact = false }: Prop
 
   return (
     <div className={`map-panel ${compact ? 'map-panel-compact' : ''}`}>
+      {itinerary && itinerary.days.length > 1 && (
+        <div className="map-day-switcher" aria-label="지도 표시 일자">
+          {itinerary.days.map((day) => (
+            <button key={day.dayNumber} className={activeDay === day.dayNumber ? 'active' : ''} onClick={() => setSelectedDay(day.dayNumber)}>DAY {day.dayNumber}</button>
+          ))}
+        </div>
+      )}
       <MapContainer
         center={accommodation}
         zoom={13}
@@ -101,7 +113,7 @@ export function MapPanel({ trip, itinerary, places = {}, compact = false }: Prop
       </MapContainer>
       <div className="map-legend">
         <span><i className="legend-hotel">H</i> 숙소</span>
-        <span><i className="legend-route"></i> {itinerary ? '일정 순서' : '선택한 장소'}</span>
+        <span><i className="legend-route"></i> {itinerary ? (selectedDate ? `DAY ${activeDay} 일정` : '일정 순서') : '선택한 장소'}</span>
       </div>
     </div>
   )

@@ -18,7 +18,7 @@ export function AppHeader({ trip, user, onNewTrip }: Props) {
       <div className="trip-context">
         <div>
           <strong>{trip.name}</strong>
-          <span><CalendarDays size={14} /> {dateLabel(trip.startDate)}</span>
+          <span><CalendarDays size={14} /> {dateLabel(trip.startDate)}{trip.startDate !== trip.endDate ? ` – ${dateLabel(trip.endDate)}` : ''}</span>
         </div>
         <span className="context-chip">{transportLabel(trip.transportMode)}</span>
         <span className="context-chip">{paceLabel(trip.pace)}</span>
