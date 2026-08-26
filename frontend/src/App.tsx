@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Compass, LoaderCircle, MapPinned, Route, Settings2 } from 'lucide-react'
+import { Compass, LoaderCircle, MapPinned, Route, Settings2, UsersRound } from 'lucide-react'
 import { ApiError, api } from './api/client'
 import { AppHeader } from './components/AppHeader'
+import { CommunityWorkspace } from './components/CommunityWorkspace'
 import { ItineraryWorkspace } from './components/ItineraryWorkspace'
 import { PlaceWorkspace } from './components/PlaceWorkspace'
 import { TripSetup } from './components/TripSetup'
@@ -9,7 +10,7 @@ import { Toast } from './components/Toast'
 import { clearTripReference, loadWorkspace, saveWorkspace } from './lib/storage'
 import type { Itinerary, Place, Trip, User } from './types'
 
-type Section = 'places' | 'itinerary' | 'settings'
+type Section = 'places' | 'itinerary' | 'settings' | 'community'
 
 interface Notice {
   kind: 'success' | 'error' | 'info'
@@ -140,6 +141,18 @@ export function App() {
     setSection('places')
   }
 
+  const handleRouteCopied = async (
+    nextTrip: Trip,
+    nextItinerary: Itinerary | null,
+    message: string,
+  ) => {
+    setTrip(nextTrip)
+    saveWorkspace({ user, tripId: nextTrip.id })
+    await loadItineraryContext(nextItinerary)
+    setSection(nextItinerary ? 'itinerary' : 'places')
+    notify('success', message)
+  }
+
   if (booting) {
     return (
       <main className="app-loading" aria-live="polite">
@@ -193,6 +206,13 @@ export function App() {
             <span><Settings2 size={19} /></span>
             <span><strong>여행 설정</strong><small>시간·숙소·이동</small></span>
           </button>
+          <button
+            className={section === 'community' ? 'active' : ''}
+            onClick={() => setSection('community')}
+          >
+            <span><UsersRound size={19} /></span>
+            <span><strong>루트 커뮤니티</strong><small>공개·탐색·가져오기</small></span>
+          </button>
         </nav>
 
         <main className="workspace-main">
@@ -222,6 +242,16 @@ export function App() {
               trip={trip}
               embedded
               onUpdated={handleTripUpdated}
+              onError={reportError}
+            />
+          )}
+          {section === 'community' && (
+            <CommunityWorkspace
+              user={user}
+              trip={trip}
+              itinerary={itinerary}
+              onTripCopied={handleRouteCopied}
+              onNotify={notify}
               onError={reportError}
             />
           )}

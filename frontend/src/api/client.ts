@@ -1,11 +1,17 @@
 import type {
   ApiErrorBody,
+  CopyRouteInput,
   CreateTripInput,
   Itinerary,
   OptimizationAlgorithm,
   Place,
   PlaceSearchResult,
   ReoptimizeInput,
+  PublishRouteInput,
+  RouteLikeResult,
+  SharedRouteDetail,
+  SharedRoutePage,
+  SharedRouteSort,
   Trip,
   TripPlaceConstraints,
   User,
@@ -40,7 +46,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     let body = fallback
     try {
-      body = (await response.json()) as ApiErrorBody
+      const parsed = (await response.json()) as Partial<ApiErrorBody>
+      if (typeof parsed.code === 'string' && typeof parsed.message === 'string') {
+        body = {
+          code: parsed.code,
+          message: parsed.message,
+          path: typeof parsed.path === 'string' ? parsed.path : path,
+          timestamp: typeof parsed.timestamp === 'string'
+            ? parsed.timestamp
+            : fallback.timestamp,
+          violations: Array.isArray(parsed.violations) ? parsed.violations : [],
+        }
+      }
     } catch {
       // Keep a user-safe fallback for non-JSON proxy or server errors.
     }
@@ -132,4 +149,43 @@ export const api = {
     algorithm: OptimizationAlgorithm,
     input: ReoptimizeInput,
   ) => request<Itinerary>(`/trips/${tripId}/reoptimize?algorithm=${algorithm}`, json('POST', input)),
+
+  publishRoute: (itineraryId: number, input: PublishRouteInput) =>
+    request<SharedRouteDetail>(`/itineraries/${itineraryId}/share`, json('POST', input)),
+
+  discoverRoutes: (input: {
+    region?: string
+    travelDays?: number
+    sort?: SharedRouteSort
+    page?: number
+    size?: number
+  } = {}) => {
+    const params = new URLSearchParams({
+      sort: input.sort ?? 'LATEST',
+      page: String(input.page ?? 0),
+      size: String(input.size ?? 12),
+    })
+    if (input.region?.trim()) params.set('region', input.region.trim())
+    if (input.travelDays != null) params.set('travelDays', String(input.travelDays))
+    return request<SharedRoutePage>(`/routes?${params}`)
+  },
+
+  getSharedRoute: (routeId: number, viewerUserId?: number) => {
+    const params = viewerUserId == null
+      ? ''
+      : `?${new URLSearchParams({ viewerUserId: String(viewerUserId) })}`
+    return request<SharedRouteDetail>(`/routes/${routeId}${params}`)
+  },
+
+  likeSharedRoute: (routeId: number, userId: number) =>
+    request<RouteLikeResult>(`/routes/${routeId}/likes`, json('POST', { userId })),
+
+  unlikeSharedRoute: (routeId: number, userId: number) =>
+    request<RouteLikeResult>(
+      `/routes/${routeId}/likes?${new URLSearchParams({ userId: String(userId) })}`,
+      { method: 'DELETE' },
+    ),
+
+  copySharedRoute: (routeId: number, input: CopyRouteInput) =>
+    request<Trip>(`/routes/${routeId}/copy`, json('POST', input)),
 }

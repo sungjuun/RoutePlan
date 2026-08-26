@@ -10,6 +10,8 @@ export type ItineraryChangeReason =
   | 'PLACE_REMOVED'
   | 'USER_REQUEST'
   | 'OTHER'
+export type SharedRouteVisibility = 'PUBLIC' | 'UNLISTED'
+export type SharedRouteSort = 'LATEST' | 'POPULAR'
 
 export interface User {
   id: number
@@ -185,4 +187,100 @@ export interface ReoptimizeInput {
 export interface WorkspaceReference {
   user: User | null
   tripId: number | null
+}
+
+export interface SharedRouteSummary {
+  routeId: number
+  ownerId: number
+  ownerNickname: string
+  title: string
+  description: string | null
+  region: string
+  travelDays: number
+  visibility: SharedRouteVisibility
+  sourceTripName: string
+  sourceStartDate: string
+  transportMode: TransportMode
+  pace: TripPace
+  placeCount: number
+  placePreview: string
+  totalDistanceMeters: number
+  estimatedTravelMinutes: number
+  optimizationScore: number
+  viewCount: number
+  copyCount: number
+  likeCount: number
+  publishedAt: string
+}
+
+export interface SharedRouteItem {
+  itemId: number
+  placeId: number
+  dayNumber: number
+  sequence: number
+  visitDate: string
+  placeName: string
+  latitude: number
+  longitude: number
+  category: string | null
+  arrivalTime: string
+  startTime: string
+  endTime: string
+  travelDistanceMeters: number
+  estimatedTravelMinutes: number
+  waitingMinutes: number
+  stayMinutes: number
+  priority: number
+  mustVisit: boolean
+}
+
+export interface SharedRouteDetail extends Omit<SharedRouteSummary, 'placePreview'> {
+  sourceTripId: number | null
+  sourceItineraryId: number | null
+  sourceItineraryVersion: number
+  dailyStartTime: string
+  dailyEndTime: string
+  accommodationName: string
+  accommodationLatitude: number
+  accommodationLongitude: number
+  algorithm: OptimizationAlgorithm
+  likedByViewer: boolean
+  items: SharedRouteItem[]
+}
+
+export interface SharedRoutePage {
+  content: SharedRouteSummary[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  first: boolean
+  last: boolean
+}
+
+export interface RouteLikeResult {
+  routeId: number
+  likeCount: number
+  liked: boolean
+}
+
+export interface PublishRouteInput {
+  userId: number
+  title: string
+  description: string | null
+  region: string
+  visibility: SharedRouteVisibility
+}
+
+export interface CopyRouteInput {
+  userId: number
+  name: string
+  startDate: string
+  dailyStartTime: string
+  dailyEndTime: string
+  accommodationName: string
+  accommodationLatitude: number
+  accommodationLongitude: number
+  transportMode: TransportMode
+  pace: TripPace
 }
