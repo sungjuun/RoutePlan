@@ -1,5 +1,6 @@
 package com.routeplan.ai.integration.openai;
 
+import static com.routeplan.integration.retry.ExternalRetryTestSupport.noDelayRetryExecutor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -103,6 +104,21 @@ class OpenAiTravelConstraintInterpreterTest {
                         assertThat(exception.failure()).isEqualTo(ExternalProviderFailure.RATE_LIMITED);
                         assertThat(exception.getMessage()).doesNotContain("secret-key");
                     });
+            assertThat(server.requests()).hasSize(3);
+        }
+    }
+
+    @Test
+    void doesNotRetryNonTransientClientFailure() throws Exception {
+        try (StubServer server = new StubServer()) {
+            server.respond(400, "{}");
+            OpenAiTravelConstraintInterpreter interpreter = interpreter(server, "secret-key");
+
+            assertThatThrownBy(() -> interpreter.interpret(context()))
+                    .isInstanceOfSatisfying(ExternalProviderException.class, exception ->
+                            assertThat(exception.failure())
+                                    .isEqualTo(ExternalProviderFailure.INVALID_RESPONSE));
+            assertThat(server.requests()).hasSize(1);
         }
     }
 
@@ -110,7 +126,10 @@ class OpenAiTravelConstraintInterpreterTest {
         OpenAiProperties properties = new OpenAiProperties();
         properties.setApiKey(apiKey);
         properties.setBaseUrl(server.baseUri());
-        return new OpenAiTravelConstraintInterpreter(new OpenAiHttpClient(properties), properties);
+        return new OpenAiTravelConstraintInterpreter(
+                new OpenAiHttpClient(properties, noDelayRetryExecutor(3)),
+                properties
+        );
     }
 
     private TravelInterpretationContext context() {

@@ -42,7 +42,11 @@ V11은 계산 기능을 운영 환경에서 진단할 수 있는 기반을 다�
 
 > 일정 생성 실패와 외부 Route 장애를 낮은 카디널리티 지표로 구분하고, 한 요청의 로그와 오류 응답을 같은 ID로 추적할 수 있는가?
 
-## 구현 범위 (V1–V11)
+V12는 짧은 외부 Provider 장애가 사용자 요청 전체의 실패로 이어지는 문제를 다룹니다.
+
+> 일시적인 Rate Limit·서버·네트워크 장애만 제한적으로 재시도하고, 영구 오류는 즉시 반환하면서 재시도 동작을 지표로 확인할 수 있는가?
+
+## 구현 범위 (V1–V12)
 
 ### 지원
 
@@ -103,6 +107,8 @@ V11은 계산 기능을 운영 환경에서 진단할 수 있는 기반을 다�
 - 재최적화 날짜 선택·날짜별 잠금·버전 간 방문 날짜 이동 비교 UI
 - Actuator liveness·readiness와 Prometheus 메트릭 endpoint
 - 최적화·재최적화 시간/성공/실패, Route API·Matrix·Cache 지표
+- Google·OpenAI 공통 지수 Backoff·Jitter·최대 시도 횟수 Retry
+- 외부 API 시도·재시도·소진 횟수의 Provider/Operation별 Micrometer 지표
 - 요청 Correlation ID 응답 헤더·오류 JSON·MDC 완료 로그 연계
 - Backend Testcontainers와 Frontend 테스트·Lint·Build GitHub Actions CI
 - PostgreSQL, Flyway, OpenAPI, Docker Compose
@@ -464,6 +470,9 @@ RoutePlan이 추가하는 Micrometer 지표는 다음과 같습니다. 태그에
 | `routeplan.route.matrix.build.duration` | 데이터 유형·이동수단별 Matrix 생성시간 |
 | `routeplan.route.api.calls`, `routeplan.route.api.failures` | 외부 Route 호출·실패 수 |
 | `routeplan.route.cache.hits/misses/failures` | Route Cache 결과 수 |
+| `routeplan.external.api.attempts` | Google Places·Routes와 OpenAI의 실제 HTTP 시도 결과 |
+| `routeplan.external.api.retries` | 일시적 오류 뒤 실행하기로 결정한 재시도 수 |
+| `routeplan.external.api.exhausted` | 최대 시도 횟수까지 복구되지 않은 요청 수 |
 
 지원 알고리즘은 다음과 같습니다. 쿼리 파라미터를 생략하면 기존과 동일하게 `NEAREST_NEIGHBOR`를 사용합니다.
 
@@ -583,7 +592,7 @@ OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=gpt-5.4-mini
 ```
 
-OpenAI 키는 `Authorization` 헤더에만 사용하고 응답·오류에 포함하지 않습니다. 15초 Timeout을 적용하며 429, 연결 실패, 잘못된 JSON 또는 미완료 응답을 기존 외부 Provider 오류 체계로 구분합니다. 자동 Retry는 아직 적용하지 않습니다.
+OpenAI 키는 `Authorization` 헤더에만 사용하고 응답·오류에 포함하지 않습니다. 15초 Timeout을 적용하며 429, 연결 실패, 잘못된 JSON 또는 미완료 응답을 기존 외부 Provider 오류 체계로 구분합니다.
 
 필요하면 이동수단별 TTL을 변경할 수 있습니다.
 
@@ -593,7 +602,20 @@ ROUTEPLAN_ROUTE_CACHE_DRIVING_TTL=15m
 ROUTEPLAN_ROUTE_CACHE_TRANSIT_TTL=5m
 ```
 
-API 키는 요청 헤더에만 사용하며 오류 메시지나 응답에 포함하지 않습니다. 키가 없거나 장소 검색 Provider가 비활성화된 경우 검색은 `503 EXTERNAL_PROVIDER_NOT_CONFIGURED`를 반환합니다. Google의 429는 `EXTERNAL_PROVIDER_RATE_LIMITED`, 연결·5xx는 `EXTERNAL_PROVIDER_UNAVAILABLE`, 잘못된 element는 `EXTERNAL_PROVIDER_INVALID_RESPONSE`로 구분합니다. 현재 자동 Retry는 적용하지 않습니다.
+Google·OpenAI 공통 Retry는 기본적으로 최초 요청을 포함해 최대 3번 시도합니다. 지수 Backoff에 Jitter를 적용하고 최대 대기시간으로 제한합니다.
+
+```dotenv
+ROUTEPLAN_EXTERNAL_RETRY_ENABLED=true
+ROUTEPLAN_EXTERNAL_RETRY_MAX_ATTEMPTS=3
+ROUTEPLAN_EXTERNAL_RETRY_INITIAL_DELAY=200ms
+ROUTEPLAN_EXTERNAL_RETRY_MAX_DELAY=2s
+ROUTEPLAN_EXTERNAL_RETRY_MULTIPLIER=2.0
+ROUTEPLAN_EXTERNAL_RETRY_JITTER=0.2
+```
+
+`408`, `429`, `5xx`, 연결 실패와 Timeout만 재시도합니다. 인증 오류, 그 밖의 `4xx`, JSON 직렬화·파싱 오류, 유효하지 않은 Provider 응답과 중단된 Thread는 재시도하지 않습니다. 최대 시도 횟수는 1–10이고 `enabled=false`이면 한 번만 호출합니다. 대기 중 Thread가 중단되면 interrupt 상태를 복원하고 즉시 실패합니다.
+
+API 키는 요청 헤더에만 사용하며 오류 메시지나 응답에 포함하지 않습니다. 키가 없거나 장소 검색 Provider가 비활성화된 경우 검색은 `503 EXTERNAL_PROVIDER_NOT_CONFIGURED`를 반환합니다. Google의 429는 `EXTERNAL_PROVIDER_RATE_LIMITED`, 연결·408·5xx는 `EXTERNAL_PROVIDER_UNAVAILABLE`, 일반 4xx와 잘못된 element는 `EXTERNAL_PROVIDER_INVALID_RESPONSE`로 구분합니다.
 
 ## Local Run
 
@@ -703,6 +725,8 @@ npm run build
 - Google Routes Matrix element index·duration 파싱
 - 대중교통 Matrix 100요소 요청 분할
 - 외부 429 오류 매핑과 API key 비노출
+- 일시적 5xx 성공 복구, 429 최대 시도 소진, 영구 4xx 비재시도
+- 지수 Backoff 상한, Thread interrupt 보존, Retry Micrometer 지표
 - 외부 Place ID의 멱등 가져오기
 - 일정별 Matrix 요소 수·Provider 호출 수 저장
 - 동일 Matrix 재요청의 100% Cache hit와 외부 호출 0회
@@ -778,6 +802,8 @@ V9  여러 날짜 장소 배분과 일자별 제약 최적화 ✓
 V10 현재 날짜 기준 다일 잔여 일정 재최적화 ✓
  ↓
 V11 Actuator·Micrometer·Correlation ID·GitHub Actions 운영 기반 ✓
+ ↓
+V12 외부 API Retry·지수 Backoff·Jitter·재시도 지표 ✓
 ```
 
 ## Performance Benchmark
@@ -837,7 +863,7 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - Google Places 검색 결과의 영업시간은 아직 자동으로 가져오지 않습니다.
 - Google Transit Matrix는 Trip 날짜·지역 시간대가 아니라 API 요청시각을 기본 출발시각으로 사용합니다.
 - 실제 Google API 키가 없어 실 API latency·비용·quota 동작은 아직 검증하지 못했습니다.
-- 외부 API는 Timeout과 오류 분류를 제공하지만 Retry와 Circuit Breaker는 아직 적용하지 않습니다.
+- 외부 API는 제한된 Retry를 제공하지만 Circuit Breaker와 Provider별 격리는 아직 적용하지 않습니다.
 - Redis Cache는 TTL 기반이며 재시작 후 보존을 요구하지 않는 파생 데이터입니다.
 - 동시에 같은 miss가 발생하는 Cache Stampede를 막는 분산 Lock은 아직 없습니다.
 - 51개 위치의 Cold 전체 방향 Matrix는 이동수단에 따라 Google 요청이 최대 35회 필요합니다.
@@ -885,3 +911,5 @@ V9에서 첫날 계산의 제외 결과를 즉시 확정하면 다음 날 영업
 V10에서 현재 시각만 받아 다일 일정을 다시 계산하면 이미 끝난 날짜의 장소까지 새 날짜로 이동하고 과거 일자 합계가 바뀔 수 있습니다. 요청에 `currentDate`를 추가하고 이전 날짜의 모든 항목과 `ItineraryDay` Snapshot을 고정했습니다. 현재 날짜는 완료한 연속 구간 뒤에서 시작하고, 미완료 장소만 남은 오늘과 이후 날짜에 다시 배분합니다. 새 버전에는 재계산 시작 날짜를 저장해 날짜가 이동한 방문도 이전 버전과 비교할 수 있습니다.
 
 V11 이전에는 Itinerary에 Matrix 측정값이 저장되어도 실패한 요청은 DB에 결과가 없어 원인을 집계할 수 없었고, 여러 로그가 같은 요청인지 연결할 ID도 없었습니다. 성공 결과의 Snapshot 측정은 그대로 유지하면서 Micrometer Timer/Counter를 orchestration 경계에 추가해 실패도 기록합니다. 요청별 Correlation ID는 검증된 헤더 또는 서버 UUID 하나를 응답·오류·MDC에 공유합니다. Trip ID처럼 값이 계속 늘어나는 정보는 메트릭 태그에서 제외해 Prometheus 시계열 폭증을 막습니다.
+
+V12 이전에는 Google·OpenAI 호출이 일시적 429·5xx·Timeout에도 한 번 만에 실패했습니다. 모든 오류를 재시도하면 잘못된 요청이나 인증 실패를 반복해 비용과 지연만 늘어나므로 HTTP 상태와 실패 유형을 먼저 분리했습니다. 재시도 가능한 실패만 최대 횟수 안에서 지수 Backoff와 Jitter로 다시 호출하고, 각 실제 시도·재시도 결정·최종 소진을 낮은 카디널리티 태그로 기록합니다.

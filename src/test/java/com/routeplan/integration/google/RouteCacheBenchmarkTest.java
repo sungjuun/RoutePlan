@@ -1,5 +1,6 @@
 package com.routeplan.integration.google;
 
+import static com.routeplan.integration.retry.ExternalRetryTestSupport.noDelayRetryExecutor;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -136,7 +137,7 @@ class RouteCacheBenchmarkTest {
         properties.setApiKey("benchmark-key");
         properties.setRoutesBaseUrl(server.baseUri());
         return new GoogleRoutesMatrixProvider(
-                new GoogleMapsHttpClient(properties),
+                new GoogleMapsHttpClient(properties, noDelayRetryExecutor(1)),
                 properties,
                 routeLegCache
         );

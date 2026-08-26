@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.routeplan.integration.google.ExternalProviderException;
 import com.routeplan.integration.google.ExternalProviderFailure;
+import com.routeplan.integration.retry.ExternalApiOperation;
+import com.routeplan.integration.retry.ExternalRetryExecutor;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,29 +20,44 @@ public class OpenAiHttpClient {
     private final OpenAiProperties properties;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final ExternalRetryExecutor retryExecutor;
 
     @Autowired
-    public OpenAiHttpClient(OpenAiProperties properties) {
+    public OpenAiHttpClient(
+            OpenAiProperties properties,
+            ExternalRetryExecutor retryExecutor
+    ) {
         this(
                 properties,
                 new ObjectMapper().findAndRegisterModules(),
-                HttpClient.newBuilder().connectTimeout(properties.getConnectTimeout()).build()
+                HttpClient.newBuilder().connectTimeout(properties.getConnectTimeout()).build(),
+                retryExecutor
         );
     }
 
     OpenAiHttpClient(
             OpenAiProperties properties,
             ObjectMapper objectMapper,
-            HttpClient httpClient
+            HttpClient httpClient,
+            ExternalRetryExecutor retryExecutor
     ) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
+        this.retryExecutor = retryExecutor;
     }
 
     public JsonNode createResponse(Object body) {
+        HttpRequest request = request(body);
+        return retryExecutor.execute(
+                ExternalApiOperation.OPENAI_RESPONSES,
+                () -> send(request)
+        );
+    }
+
+    private HttpRequest request(Object body) {
         try {
-            HttpRequest request = HttpRequest.newBuilder(
+            return HttpRequest.newBuilder(
                             properties.getBaseUrl().resolve("/v1/responses")
                     )
                     .timeout(properties.getRequestTimeout())
@@ -48,7 +65,21 @@ public class OpenAiHttpClient {
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (JsonProcessingException exception) {
+            throw new ExternalProviderException(
+                    ExternalProviderFailure.INVALID_RESPONSE,
+                    "OpenAI API JSON 처리에 실패했습니다.",
+                    exception
+            );
+        }
+    }
+
+    private JsonNode send(HttpRequest request) {
+        try {
+            HttpResponse<String> response = httpClient.send(
+                    request,
+                    HttpResponse.BodyHandlers.ofString()
+            );
             validateStatus(response.statusCode());
             JsonNode json = objectMapper.readTree(response.body());
             if (json == null || !json.isObject()) {
@@ -81,9 +112,21 @@ public class OpenAiHttpClient {
                     "OpenAI API 요청 한도를 초과했습니다."
             );
         }
+        if (statusCode == 408 || (statusCode >= 500 && statusCode < 600)) {
+            throw new ExternalProviderException(
+                    ExternalProviderFailure.UNAVAILABLE,
+                    "OpenAI API가 일시적 오류를 반환했습니다: HTTP " + statusCode
+            );
+        }
+        if (statusCode == 401 || statusCode == 403) {
+            throw new ExternalProviderException(
+                    ExternalProviderFailure.NOT_CONFIGURED,
+                    "OpenAI API 인증에 실패했습니다: HTTP " + statusCode
+            );
+        }
         throw new ExternalProviderException(
-                ExternalProviderFailure.UNAVAILABLE,
-                "OpenAI API가 오류를 반환했습니다: HTTP " + statusCode
+                ExternalProviderFailure.INVALID_RESPONSE,
+                "OpenAI API가 요청을 거부했습니다: HTTP " + statusCode
         );
     }
 

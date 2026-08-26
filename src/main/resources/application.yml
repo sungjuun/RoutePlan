@@ -61,6 +61,14 @@ logging:
     level: "%5p [cid:%X{correlationId:-none}]"
 
 routeplan:
+  external:
+    retry:
+      enabled: ${ROUTEPLAN_EXTERNAL_RETRY_ENABLED:true}
+      max-attempts: ${ROUTEPLAN_EXTERNAL_RETRY_MAX_ATTEMPTS:3}
+      initial-delay: ${ROUTEPLAN_EXTERNAL_RETRY_INITIAL_DELAY:200ms}
+      max-delay: ${ROUTEPLAN_EXTERNAL_RETRY_MAX_DELAY:2s}
+      multiplier: ${ROUTEPLAN_EXTERNAL_RETRY_MULTIPLIER:2.0}
+      jitter: ${ROUTEPLAN_EXTERNAL_RETRY_JITTER:0.2}
   ai:
     provider: ${ROUTEPLAN_AI_PROVIDER:RULE_BASED}
   place:

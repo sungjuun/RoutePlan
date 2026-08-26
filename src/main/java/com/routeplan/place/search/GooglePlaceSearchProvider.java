@@ -5,6 +5,7 @@ import com.routeplan.integration.google.ExternalProviderException;
 import com.routeplan.integration.google.ExternalProviderFailure;
 import com.routeplan.integration.google.GoogleMapsHttpClient;
 import com.routeplan.integration.google.GoogleMapsProperties;
+import com.routeplan.integration.retry.ExternalApiOperation;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.util.ArrayList;
@@ -43,7 +44,12 @@ public class GooglePlaceSearchProvider implements PlaceSearchProvider {
 
     @Override
     public List<PlaceSearchResult> search(PlaceSearchQuery query) {
-        JsonNode response = httpClient.post(endpoint, FIELD_MASK, requestBody(query));
+        JsonNode response = httpClient.post(
+                ExternalApiOperation.GOOGLE_PLACES,
+                endpoint,
+                FIELD_MASK,
+                requestBody(query)
+        );
         JsonNode places = response.get("places");
         if (places == null) {
             return List.of();

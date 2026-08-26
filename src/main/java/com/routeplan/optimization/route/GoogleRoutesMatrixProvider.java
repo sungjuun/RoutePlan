@@ -5,6 +5,7 @@ import com.routeplan.integration.google.ExternalProviderException;
 import com.routeplan.integration.google.ExternalProviderFailure;
 import com.routeplan.integration.google.GoogleMapsHttpClient;
 import com.routeplan.integration.google.GoogleMapsProperties;
+import com.routeplan.integration.retry.ExternalApiOperation;
 import com.routeplan.optimization.domain.Location;
 import com.routeplan.optimization.domain.RouteResult;
 import com.routeplan.optimization.route.cache.RouteCacheKey;
@@ -80,6 +81,7 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
                     continue;
                 }
                 JsonNode response = httpClient.post(
+                        ExternalApiOperation.GOOGLE_ROUTES,
                         endpoint,
                         FIELD_MASK,
                         requestBody(origins, destinations, transportMode)
