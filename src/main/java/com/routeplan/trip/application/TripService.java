@@ -18,6 +18,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,6 +65,62 @@ public class TripService {
                 command.pace() == null ? TripPace.STANDARD : command.pace()
         );
         return toResult(tripRepository.save(trip), List.of());
+    }
+
+    @Transactional
+    public TripResult createFromSnapshot(
+            CreateTripCommand command,
+            List<AddTripPlaceCommand> placeCommands
+    ) {
+        if (placeCommands == null || placeCommands.isEmpty()) {
+            throw new RoutePlanException(ErrorCode.TRIP_HAS_NO_PLACES);
+        }
+        if (placeCommands.size() > MAX_PLACES_PER_TRIP) {
+            throw new RoutePlanException(ErrorCode.TRIP_PLACE_LIMIT_EXCEEDED);
+        }
+        Map<Long, AddTripPlaceCommand> uniqueCommands = placeCommands.stream()
+                .collect(Collectors.toMap(
+                        AddTripPlaceCommand::placeId,
+                        Function.identity(),
+                        (left, right) -> {
+                            throw new RoutePlanException(ErrorCode.DUPLICATE_TRIP_PLACE);
+                        },
+                        LinkedHashMap::new
+                ));
+        User user = userRepository.findById(command.userId())
+                .orElseThrow(() -> new RoutePlanException(ErrorCode.USER_NOT_FOUND));
+        Map<Long, Place> placesById = placeRepository.findAllById(uniqueCommands.keySet()).stream()
+                .collect(Collectors.toMap(Place::getId, Function.identity()));
+        if (placesById.size() != uniqueCommands.size()) {
+            throw new RoutePlanException(ErrorCode.PLACE_NOT_FOUND);
+        }
+
+        Trip trip = tripRepository.save(Trip.create(
+                user,
+                command.name(),
+                command.startDate(),
+                command.endDate(),
+                command.accommodationName(),
+                command.accommodationLatitude(),
+                command.accommodationLongitude(),
+                command.transportMode(),
+                command.dailyStartTime() == null ? LocalTime.of(9, 0) : command.dailyStartTime(),
+                command.dailyEndTime() == null ? LocalTime.of(20, 0) : command.dailyEndTime(),
+                command.pace() == null ? TripPace.STANDARD : command.pace()
+        ));
+        List<TripPlace> tripPlaces = uniqueCommands.values().stream()
+                .map(placeCommand -> new TripPlace(
+                        trip,
+                        placesById.get(placeCommand.placeId()),
+                        placeCommand.priority(),
+                        placeCommand.mustVisit(),
+                        placeCommand.preferredStartTime(),
+                        placeCommand.preferredEndTime(),
+                        placeCommand.minimumStayMinutes(),
+                        placeCommand.maximumStayMinutes()
+                ))
+                .toList();
+        return toResult(trip, tripPlaceRepository.saveAll(tripPlaces));
     }
 
     @Transactional(readOnly = true)
