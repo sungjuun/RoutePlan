@@ -34,7 +34,6 @@ export function PublicHeader({
         <button onClick={onHome}>추천 루트</button>
         <button onClick={onCommunity}>커뮤니티</button>
         <button onClick={onMyTrip}>내 여행</button>
-        <button onClick={onProfile}>마이페이지</button>
       </nav>
       <div className="public-header-actions">
         {user ? (
