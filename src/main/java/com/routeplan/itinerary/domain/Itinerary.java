@@ -6,6 +6,7 @@ import com.routeplan.optimization.domain.Location;
 import com.routeplan.optimization.constraint.ExclusionReason;
 import com.routeplan.optimization.route.RouteDataType;
 import com.routeplan.trip.domain.Trip;
+import com.routeplan.weather.domain.WeatherCondition;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -290,10 +291,32 @@ public class Itinerary {
             int priority,
             boolean mustVisit
     ) {
+        addCompletedItem(
+                place, sequence, travelDistanceMeters, estimatedTravelMinutes,
+                visitDate, arrivalTime, startTime, endTime,
+                waitingMinutes, stayMinutes, priority, mustVisit, 0
+        );
+    }
+
+    public void addCompletedItem(
+            Place place,
+            int sequence,
+            long travelDistanceMeters,
+            int estimatedTravelMinutes,
+            LocalDate visitDate,
+            LocalTime arrivalTime,
+            LocalTime startTime,
+            LocalTime endTime,
+            int waitingMinutes,
+            int stayMinutes,
+            int priority,
+            boolean mustVisit,
+            int weatherScoreAdjustment
+    ) {
         items.add(new ItineraryItem(
                 this, place, sequence, travelDistanceMeters, estimatedTravelMinutes,
                 visitDate, arrivalTime, startTime, endTime,
-                waitingMinutes, stayMinutes, priority, mustVisit,
+                waitingMinutes, stayMinutes, priority, mustVisit, weatherScoreAdjustment,
                 ItineraryItemStatus.COMPLETED
         ));
     }
@@ -358,10 +381,32 @@ public class Itinerary {
             int priority,
             boolean mustVisit
     ) {
+        addItem(
+                place, sequence, travelDistanceMeters, estimatedTravelMinutes,
+                visitDate, arrivalTime, startTime, endTime,
+                waitingMinutes, stayMinutes, priority, mustVisit, 0
+        );
+    }
+
+    public void addItem(
+            Place place,
+            int sequence,
+            long travelDistanceMeters,
+            int estimatedTravelMinutes,
+            LocalDate visitDate,
+            LocalTime arrivalTime,
+            LocalTime startTime,
+            LocalTime endTime,
+            int waitingMinutes,
+            int stayMinutes,
+            int priority,
+            boolean mustVisit,
+            int weatherScoreAdjustment
+    ) {
         items.add(new ItineraryItem(
                 this, place, sequence, travelDistanceMeters, estimatedTravelMinutes,
                 visitDate, arrivalTime, startTime, endTime,
-                waitingMinutes, stayMinutes, priority, mustVisit
+                waitingMinutes, stayMinutes, priority, mustVisit, weatherScoreAdjustment
         ));
     }
 
@@ -385,10 +430,33 @@ public class Itinerary {
             LocalTime returnArrivalTime,
             boolean returnedToAccommodation
     ) {
+        addDay(
+                visitDate, dayNumber, totalDistanceMeters, estimatedTravelMinutes,
+                totalStayMinutes, totalWaitingMinutes, returnTravelDistanceMeters,
+                returnTravelMinutes, returnArrivalTime, returnedToAccommodation,
+                WeatherCondition.UNKNOWN, 0
+        );
+    }
+
+    public void addDay(
+            LocalDate visitDate,
+            int dayNumber,
+            long totalDistanceMeters,
+            int estimatedTravelMinutes,
+            int totalStayMinutes,
+            int totalWaitingMinutes,
+            long returnTravelDistanceMeters,
+            int returnTravelMinutes,
+            LocalTime returnArrivalTime,
+            boolean returnedToAccommodation,
+            WeatherCondition weatherCondition,
+            int precipitationProbability
+    ) {
         days.add(new ItineraryDay(
                 this, visitDate, dayNumber, totalDistanceMeters, estimatedTravelMinutes,
                 totalStayMinutes, totalWaitingMinutes, returnTravelDistanceMeters,
-                returnTravelMinutes, returnArrivalTime, returnedToAccommodation
+                returnTravelMinutes, returnArrivalTime, returnedToAccommodation,
+                weatherCondition, precipitationProbability
         ));
     }
 

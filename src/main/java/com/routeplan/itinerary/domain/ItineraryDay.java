@@ -1,7 +1,10 @@
 package com.routeplan.itinerary.domain;
 
+import com.routeplan.weather.domain.WeatherCondition;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -67,6 +70,13 @@ public class ItineraryDay {
     @Column(name = "returned_to_accommodation", nullable = false)
     private boolean returnedToAccommodation;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "weather_condition", nullable = false, length = 20)
+    private WeatherCondition weatherCondition;
+
+    @Column(name = "precipitation_probability", nullable = false)
+    private int precipitationProbability;
+
     protected ItineraryDay() {
     }
 
@@ -83,6 +93,29 @@ public class ItineraryDay {
             LocalTime returnArrivalTime,
             boolean returnedToAccommodation
     ) {
+        this(
+                itinerary, visitDate, dayNumber, totalDistanceMeters,
+                estimatedTravelMinutes, totalStayMinutes, totalWaitingMinutes,
+                returnTravelDistanceMeters, returnTravelMinutes, returnArrivalTime,
+                returnedToAccommodation, WeatherCondition.UNKNOWN, 0
+        );
+    }
+
+    ItineraryDay(
+            Itinerary itinerary,
+            LocalDate visitDate,
+            int dayNumber,
+            long totalDistanceMeters,
+            int estimatedTravelMinutes,
+            int totalStayMinutes,
+            int totalWaitingMinutes,
+            long returnTravelDistanceMeters,
+            int returnTravelMinutes,
+            LocalTime returnArrivalTime,
+            boolean returnedToAccommodation,
+            WeatherCondition weatherCondition,
+            int precipitationProbability
+    ) {
         if (itinerary == null || visitDate == null || returnArrivalTime == null) {
             throw new IllegalArgumentException("일자별 일정의 여행·날짜·복귀시각은 필수입니다.");
         }
@@ -90,6 +123,10 @@ public class ItineraryDay {
                 || totalStayMinutes < 0 || totalWaitingMinutes < 0
                 || returnTravelDistanceMeters < 0 || returnTravelMinutes < 0) {
             throw new IllegalArgumentException("일자별 일정 합계가 올바르지 않습니다.");
+        }
+        if (weatherCondition == null || precipitationProbability < 0
+                || precipitationProbability > 100) {
+            throw new IllegalArgumentException("일자별 날씨 Snapshot이 올바르지 않습니다.");
         }
         this.itinerary = itinerary;
         this.visitDate = visitDate;
@@ -102,6 +139,8 @@ public class ItineraryDay {
         this.returnTravelMinutes = returnTravelMinutes;
         this.returnArrivalTime = returnArrivalTime;
         this.returnedToAccommodation = returnedToAccommodation;
+        this.weatherCondition = weatherCondition;
+        this.precipitationProbability = precipitationProbability;
     }
 
     public LocalDate getVisitDate() {
@@ -142,5 +181,13 @@ public class ItineraryDay {
 
     public boolean isReturnedToAccommodation() {
         return returnedToAccommodation;
+    }
+
+    public WeatherCondition getWeatherCondition() {
+        return weatherCondition;
+    }
+
+    public int getPrecipitationProbability() {
+        return precipitationProbability;
     }
 }

@@ -54,7 +54,11 @@ V14는 실제 브라우저에서 여러 계정과 전체 사용자 흐름이 계
 
 > 공개 탐색부터 회원가입, 여행 생성·일정 계산·공개·좋아요·복사와 다른 사용자의 소유권 차단까지 배포 전에 반복 검증할 수 있는가?
 
-## 구현 범위 (V1–V14)
+V15는 날짜별 날씨에 따라 장소 선택 우선순위가 달라지는 여행을 다룹니다.
+
+> 비·눈에는 실내 장소를 우선하고 맑은 날에는 실외 장소를 우선하면서도, Must Visit과 이미 완료한 일정은 그대로 지킬 수 있는가?
+
+## 구현 범위 (V1–V15)
 
 ### 지원
 
@@ -117,6 +121,10 @@ V14는 실제 브라우저에서 여러 계정과 전체 사용자 흐름이 계
 - 현재 Trip 장소명 재매칭, 충돌 경고, 미리보기 후 명시적 적용
 - 자연어 조건 미리보기·변경 비교·적용 UI
 - 날짜별 영업시간을 반영한 다일 장소 배분과 다음 날 이월
+- 장소별 `INDOOR`·`OUTDOOR`·`MIXED` 환경 구분과 카테고리 기반 기본 추론
+- 여행 날짜별 날씨·강수확률 저장과 날씨 적합도 기반 장소 우선순위 보정
+- 비·눈·극한 날씨의 실내 우선, 맑은 날의 실외 우선 일정 생성·재최적화
+- 날짜 날씨와 장소별 날씨 점수 보정값을 Itinerary Snapshot으로 저장·표시
 - 일자별 이동·체류·대기·숙소 복귀 Snapshot 저장
 - 일자별 타임라인과 지도 DAY 전환, 다일 SharedRoute 공개·복사
 - 현재 날짜 기준 다일 잔여 일정 재최적화와 지난 날짜 Snapshot 고정
@@ -181,6 +189,7 @@ com.routeplan
 ├─ optimization    Spring/JPA와 분리된 경로·제약 일정 계산
 ├─ itinerary       최적화 orchestration과 결과 저장
 ├─ community       공개 Route Snapshot·탐색·좋아요·복사
+├─ weather         날짜별 예보·장소 환경 적합도 정책
 └─ ai              자연어 해석 Provider·검증·Trip 적용
 ```
 
@@ -220,6 +229,7 @@ flowchart LR
 → 여행 조건 입력
 → 장소 검색 또는 좌표 등록
 → Must Visit·Priority·시간창·체류시간 편집
+→ 날짜별 날씨·강수확률 설정
 → 알고리즘 선택과 일정 생성
 → 시간표·지도·제외 장소 확인
 → 완료 구간과 현재 위치 입력
@@ -241,6 +251,7 @@ erDiagram
     TRIPS ||--o{ TRIP_PLACES : contains
     PLACES ||--o{ TRIP_PLACES : selected
     PLACES ||--o{ PLACE_OPENING_HOURS : opens
+    TRIPS ||--o{ TRIP_WEATHER_FORECASTS : forecasts
     TRIPS ||--o{ ITINERARIES : generates
     ITINERARIES o|--o{ ITINERARIES : parent_of
     ITINERARIES ||--|{ ITINERARY_ITEMS : consists_of
@@ -268,6 +279,8 @@ erDiagram
 - Priority는 1–100, 체류시간은 1–1,440분
 - Trip의 하루 종료시간은 시작시간보다 늦어야 함
 - Trip은 종료일이 시작일보다 빠를 수 없고 최대 14일까지 허용
+- 같은 Trip의 날짜별 날씨는 한 건만 저장할 수 있고 여행 기간 안에 있어야 함
+- 날씨 상태와 강수확률 0–100, 장소 환경과 날씨 점수 보정값의 허용 범위 검증
 - 같은 Itinerary의 일자 번호와 방문일은 각각 중복될 수 없음
 - 같은 Itinerary는 SharedRoute로 한 번만 공개할 수 있음
 - SharedRoute의 장소 순서는 중복될 수 없고 Snapshot 항목이 한 개 이상이어야 함
@@ -357,6 +370,20 @@ score = 방문 Priority 합 × 10,000
 ```
 
 Priority가 핵심 선택 기준이고, 같은 방문 집합에서는 이동·대기 비용이 작은 경로를 선택합니다. 모든 값과 제외 내역은 Itinerary 버전에 Snapshot으로 저장됩니다.
+
+### 날씨 적합도
+
+V15는 원래 Priority를 변경하지 않고, 일정 후보를 평가할 때만 날짜 날씨와 장소 환경의 정수 보정값을 더합니다. Must Visit은 날씨와 관계없이 가장 먼저 처리합니다.
+
+| 날짜 날씨 | `INDOOR` | `MIXED` | `OUTDOOR` |
+|---|---:|---:|---:|
+| 맑음 | 0 | +5 | +10 |
+| 흐림 | +5 | +3 | 0 |
+| 비·눈 또는 강수확률 60% 이상 | +25 | 0 | -30 |
+| 극한 날씨 | +30 | -10 | -50 |
+| 미설정 | 0 | 0 | 0 |
+
+보정 우선순위는 `clamp(Priority + 날씨 보정값, 1, 150)`이며 일정 Score의 Priority 합에 사용합니다. 응답의 `visitedPriorityScore`는 사용자가 설정한 원래 Priority 합을 유지하고, 각 일정 항목의 `weatherScoreAdjustment`와 날짜별 날씨 Snapshot으로 결정 근거를 별도로 보여줍니다. 예보가 바뀌어도 이미 생성된 Itinerary와 과거·완료 구간은 변하지 않으며, 다시 최적화한 버전에만 새 예보가 반영됩니다.
 
 `EXACT_SEARCH`는 제약이 없는 V2 이동 경로에서는 전역 최적해를 보장합니다. 시간창 때문에 장소가 제외되거나 재배치되면 현재 V3의 우선순위 삽입 휴리스틱이 최종 결정을 내리므로 전체 제약 최적화 문제의 전역 최적해까지 보장하지는 않습니다.
 
@@ -464,6 +491,8 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 | `POST` | `/api/v1/trips/{tripId}/places` | Trip에 Place 추가 |
 | `PATCH` | `/api/v1/trips/{tripId}/places/{placeId}` | Must Visit·Priority·시간·체류 제약 교체 |
 | `DELETE` | `/api/v1/trips/{tripId}/places/{placeId}` | Trip에서 Place 제거 |
+| `GET` | `/api/v1/trips/{tripId}/weather` | 여행 기간에 저장한 날짜별 날씨 조회 |
+| `PUT` | `/api/v1/trips/{tripId}/weather` | 날짜별 날씨·강수확률 전체 교체 |
 | `POST` | `/api/v1/trips/{tripId}/optimize?algorithm=...` | 선택한 알고리즘으로 일정 생성 및 새 버전 저장 |
 | `POST` | `/api/v1/trips/{tripId}/reoptimize?algorithm=...` | 완료 구간을 고정하고 남은 일정만 새 버전으로 재계산 |
 | `GET` | `/api/v1/trips/{tripId}/itineraries/latest` | 최신 일정 조회 |
@@ -516,7 +545,7 @@ EXACT_SEARCH
 NEAREST_NEIGHBOR_2_OPT
 ```
 
-Trip 생성 시 `dailyStartTime`, `dailyEndTime`, `pace`를 생략하면 각각 `09:00`, `20:00`, `STANDARD`를 사용합니다. Place의 `averageStayMinutes` 기본값은 60분이고, TripPlace의 Priority 기본값은 50입니다.
+Trip 생성 시 `dailyStartTime`, `dailyEndTime`, `pace`를 생략하면 각각 `09:00`, `20:00`, `STANDARD`를 사용합니다. Place의 `averageStayMinutes` 기본값은 60분이고, TripPlace의 Priority 기본값은 50입니다. Place 환경을 생략하면 알려진 카테고리는 실내·실외로 추론하고 나머지는 `MIXED`로 저장합니다. 날짜별 날씨를 설정하지 않으면 `UNKNOWN`으로 처리해 기존 Priority에 영향을 주지 않습니다.
 
 ```json
 {
@@ -547,7 +576,7 @@ Trip 생성 시 `dailyStartTime`, `dailyEndTime`, `pace`를 생략하면 각각 
 }
 ```
 
-`currentDate`를 생략하면 기존 단일 날짜 요청과의 호환을 위해 Trip 시작일을 사용합니다. 변경 사유는 `DELAY`, `PLACE_ADDED`, `PLACE_REMOVED`, `USER_REQUEST`, `OTHER`를 지원합니다. 새 버전은 다음 규칙을 지킵니다.
+`currentDate`를 생략하면 기존 단일 날짜 요청과의 호환을 위해 Trip 시작일을 사용합니다. 변경 사유는 `DELAY`, `PLACE_ADDED`, `PLACE_REMOVED`, `WEATHER`, `USER_REQUEST`, `OTHER`를 지원합니다. 새 버전은 다음 규칙을 지킵니다.
 
 1. `currentDate` 이전 날짜는 모든 방문이 완료된 상태여야 하며, 장소·시각·이동비용·일자 요약을 그대로 복사합니다.
 2. 현재 날짜에서 완료한 연속 앞부분은 장소·시각·이동비용까지 그대로 복사하고 `COMPLETED`로 저장합니다.
@@ -743,7 +772,7 @@ npm run test:e2e:docker
 
 `test:e2e:docker`는 개발용 `localhost:3100`과 DB를 건드리지 않습니다. `routeplan-e2e` 프로젝트를 기본 포트 `3200`·`8280`·`55432`·`6479`에 띄우고, 테스트가 끝나면 전용 컨테이너와 DB 볼륨을 제거합니다. 이미 실행 중인 환경을 직접 검사할 때는 `E2E_BASE_URL`을 지정하고 `npm run test:e2e`를 사용합니다. 실패 시 `frontend/playwright-report`와 `frontend/test-results`에 Screenshot·Video·Trace·Compose 로그를 남깁니다.
 
-현재 기본 검증 묶음은 Backend 65개, Frontend 단위 테스트 19개, 브라우저 E2E 5개를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V9와 세션 인증·CSRF·소유권 경계를 함께 확인합니다.
+현재 기본 검증 묶음은 Backend 70개, Frontend 단위 테스트 20개, 브라우저 E2E 5개를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V10과 세션 인증·CSRF·소유권 경계를 함께 확인합니다.
 
 `.github/workflows/ci.yml`은 push와 pull request마다 Backend와 Frontend Job을 병렬 실행하고, 둘 다 통과하면 격리된 Docker 환경에서 Browser E2E Job을 실행합니다. Backend는 Java 21과 Testcontainers PostgreSQL로 전체 테스트를 수행하고, Frontend는 Node.js 22에서 고정된 lockfile로 설치한 뒤 단위 테스트, ESLint, 프로덕션 빌드를 모두 통과해야 합니다. Benchmark는 실행시간 변동과 비용 때문에 일반 CI에서 분리합니다.
 
@@ -767,6 +796,8 @@ npm run test:e2e:docker
 - 다일 SharedRoute 기간 보존 복사
 - 여행 강도별 체류시간
 - 높은 Priority 장소 보존과 낮은 Priority 장소 제외
+- 비 오는 날 실내 우선·맑은 날 실외 우선 다일 배치와 날씨 점수 Snapshot
+- 날짜별 날씨 교체 API의 여행 소유권 차단과 기간·강수확률 검증
 - 휴무일 Must Visit의 구조화된 422 충돌 응답
 - Google Places 요청 body·API key·Field Mask 계약
 - Google Routes Matrix element index·duration 파싱
@@ -861,6 +892,8 @@ V12 외부 API Retry·지수 Backoff·Jitter·재시도 지표 ✓
 V13 세션 인증·소유권 보호·공개 추천 메인·내 여행·마이페이지 ✓
  ↓
 V14 Playwright 데스크톱·모바일 사용자 흐름·소유권 E2E·CI ✓
+ ↓
+V15 장소 환경·날짜별 날씨·날씨 대응 일정 생성과 재최적화 ✓
 ```
 
 ## Performance Benchmark
@@ -930,6 +963,9 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 프론트 지도 선은 실제 도로 Geometry가 아니라 방문 순서를 잇는 시각화입니다.
 - 다일 장소 배분은 날짜 순차 휴리스틱이며 날짜·장소 조합의 전역 최적해를 보장하지 않습니다.
 - 다일 재최적화도 날짜 순차 휴리스틱을 사용하며, 현재 날짜의 완료 상태는 기준 일정의 연속된 앞부분만 지원합니다.
+- 날짜별 날씨는 사용자가 직접 입력하며 외부 실시간 예보 Provider, 지역 시간대, 예보 자동 갱신은 아직 지원하지 않습니다.
+- 날씨 적합도는 장소 환경 세 종류와 고정 보정표를 사용하는 결정적 휴리스틱이며 온도·습도·미세먼지·운영 중단은 반영하지 않습니다.
+- 외부 장소의 환경은 제한된 카테고리 사전으로 추론하므로 실제 실내·실외 여부와 다를 수 있으며 사용자가 수정하는 API는 아직 없습니다.
 - 계정 이메일 검증, 비밀번호 재설정, OAuth 로그인과 로그인 시도 Rate Limit은 아직 지원하지 않습니다.
 - 기본 `HttpSession`은 단일 Backend 메모리에 있으므로 다중 인스턴스 배포 전에는 외부 Session Store와 만료 정책을 구성해야 합니다.
 - Route 복사 시 방문 장소·Priority·Must Visit만 옮기며 공개 당시 선호 시간창은 복사하지 않습니다.
@@ -971,3 +1007,5 @@ V11 이전에는 Itinerary에 Matrix 측정값이 저장되어도 실패한 요�
 V12 이전에는 Google·OpenAI 호출이 일시적 429·5xx·Timeout에도 한 번 만에 실패했습니다. 모든 오류를 재시도하면 잘못된 요청이나 인증 실패를 반복해 비용과 지연만 늘어나므로 HTTP 상태와 실패 유형을 먼저 분리했습니다. 재시도 가능한 실패만 최대 횟수 안에서 지수 Backoff와 Jitter로 다시 호출하고, 각 실제 시도·재시도 결정·최종 소진을 낮은 카디널리티 태그로 기록합니다.
 
 V13 이전에는 요청 본문의 `userId`만으로 다른 사용자의 Trip을 조회하거나 변경할 수 있었습니다. V13에서는 이메일과 적응형 비밀번호 해시를 가진 계정, 서버 `HttpSession`, CSRF 보호를 추가하고 모든 개인 리소스의 소유자를 인증 Principal에서 결정합니다. 공개 Route 목록·상세만 비회원에게 열어 두고 좋아요·복사·공개·여행 편집은 로그인 사용자로 제한했습니다. 프론트도 로컬 사용자 객체를 제거하고 공개 추천 메인 → 커뮤니티 탐색 → 로그인 → 개인 작업공간 흐름으로 분리했습니다.
+
+V15 이전에는 비 오는 날 공원과 박물관의 Priority가 같으면 날씨와 무관하게 경로 순서만으로 결정됐습니다. 장소의 원래 Priority를 덮어쓰면 예보가 바뀔 때 사용자 선호를 복원하기 어렵기 때문에, 환경 적합도를 별도 점수로 계산하고 결과 항목에 Snapshot으로 남겼습니다. 날짜별 예보 저장은 Trip을 `DRAFT`로 되돌리지만 기존 Itinerary는 수정하지 않으며, 사용자가 계산 또는 `WEATHER` 사유 재최적화를 실행할 때 새 버전에만 반영합니다.

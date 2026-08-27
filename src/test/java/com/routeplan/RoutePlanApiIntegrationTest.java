@@ -831,6 +831,117 @@ class RoutePlanApiIntegrationTest {
                 .andExpect(jsonPath("$.places[1].preferredStartTime").value("11:30:00"));
     }
 
+    @Test
+    void storesOwnedWeatherAndMovesOutdoorPlaceToTheClearDay() throws Exception {
+        long ownerId = postAndReadId("/api/v1/users", """
+                {"nickname":"weather-owner"}
+                """);
+        long outdoorId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"날씨 테스트 정원",
+                  "latitude":37.570000,
+                  "longitude":126.980000,
+                  "category":"park",
+                  "averageStayMinutes":90,
+                  "environment":"OUTDOOR"
+                }
+                """);
+        long indoorId = postAndReadId("/api/v1/places", """
+                {
+                  "name":"날씨 테스트 미술관",
+                  "latitude":37.570000,
+                  "longitude":126.980000,
+                  "category":"museum",
+                  "averageStayMinutes":90,
+                  "environment":"INDOOR"
+                }
+                """);
+        long tripId = postAndReadId("/api/v1/trips", """
+                {
+                  "name":"날씨 기반 서울 여행",
+                  "startDate":"2026-09-10",
+                  "endDate":"2026-09-11",
+                  "dailyStartTime":"09:00",
+                  "dailyEndTime":"11:00",
+                  "accommodationName":"서울 숙소",
+                  "accommodationLatitude":37.570000,
+                  "accommodationLongitude":126.980000,
+                  "transportMode":"WALKING",
+                  "pace":"STANDARD"
+                }
+                """);
+        addPlace(tripId, outdoorId);
+        addPlace(tripId, indoorId);
+
+        mockMvc.perform(put("/api/v1/trips/{tripId}/weather", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "forecasts":[{
+                                    "forecastDate":"2026-09-10",
+                                    "condition":"RAIN",
+                                    "precipitationProbability":101
+                                  }]
+                                }
+                """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put("/api/v1/trips/{tripId}/weather", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "forecasts":[{
+                                    "forecastDate":"2026-09-12",
+                                    "condition":"RAIN",
+                                    "precipitationProbability":80
+                                  }]
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put("/api/v1/trips/{tripId}/weather", tripId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "forecasts":[
+                                    {
+                                      "forecastDate":"2026-09-10",
+                                      "condition":"RAIN",
+                                      "precipitationProbability":80
+                                    },
+                                    {
+                                      "forecastDate":"2026-09-11",
+                                      "condition":"CLEAR",
+                                      "precipitationProbability":0
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].condition").value("RAIN"))
+                .andExpect(jsonPath("$[1].condition").value("CLEAR"));
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", tripId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.days[0].weatherCondition").value("RAIN"))
+                .andExpect(jsonPath("$.days[0].precipitationProbability").value(80))
+                .andExpect(jsonPath("$.days[1].weatherCondition").value("CLEAR"))
+                .andExpect(jsonPath("$.items[0].placeId").value(indoorId))
+                .andExpect(jsonPath("$.items[0].environment").value("INDOOR"))
+                .andExpect(jsonPath("$.items[0].weatherScoreAdjustment").value(25))
+                .andExpect(jsonPath("$.items[1].placeId").value(outdoorId))
+                .andExpect(jsonPath("$.items[1].environment").value("OUTDOOR"))
+                .andExpect(jsonPath("$.items[1].weatherScoreAdjustment").value(10));
+
+        long guestId = postAndReadId("/api/v1/users", """
+                {"nickname":"weather-guest"}
+                """);
+        assertThat(guestId).isNotEqualTo(ownerId);
+        mockMvc.perform(get("/api/v1/trips/{tripId}/weather", tripId))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
     private long postAndReadId(String path, String body) throws Exception {
         if ("/api/v1/users".equals(path)) {
             String nickname = JsonPath.read(body, "$.nickname");

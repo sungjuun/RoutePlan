@@ -69,7 +69,8 @@ public class MultiDaySchedulePlanner {
                         visit.tripPlaceId(), visit.placeId(), sequence++, visit.visitDate(),
                         visit.arrivalTime(), visit.startTime(), visit.endTime(),
                         visit.travelDistanceMeters(), visit.travelMinutes(), visit.waitingMinutes(),
-                        visit.stayMinutes(), visit.priority(), visit.mustVisit()
+                        visit.stayMinutes(), visit.priority(), visit.mustVisit(),
+                        visit.weatherScoreAdjustment()
                 );
                 visits.add(sequenced);
                 sequencedVisits.add(sequenced);
@@ -132,8 +133,14 @@ public class MultiDaySchedulePlanner {
                 ))
                 .toList();
         int priorityScore = visits.stream().mapToInt(ScheduledVisit::priority).sum();
+        int weatherAdjustedPriorityScore = visits.stream()
+                .mapToInt(visit -> Math.max(
+                        1,
+                        Math.min(150, visit.priority() + visit.weatherScoreAdjustment())
+                ))
+                .sum();
         int optimizationScore = Math.max(
-                0, priorityScore * 10_000 - totalTravel * 5 - totalWaiting * 2
+                0, weatherAdjustedPriorityScore * 10_000 - totalTravel * 5 - totalWaiting * 2
         );
         return new MultiDaySchedule(
                 days,

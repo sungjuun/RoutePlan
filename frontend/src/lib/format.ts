@@ -50,7 +50,27 @@ export function reasonLabel(value: string | null): string {
     DELAY: '일정 지연',
     PLACE_ADDED: '장소 추가',
     PLACE_REMOVED: '장소 삭제',
+    WEATHER: '날씨 변경',
     USER_REQUEST: '사용자 요청',
     OTHER: '기타 변경',
+  }[value] ?? value
+}
+
+export function environmentLabel(value: string): string {
+  return {
+    INDOOR: '실내',
+    OUTDOOR: '실외',
+    MIXED: '실내·실외',
+  }[value] ?? value
+}
+
+export function weatherLabel(value: string): string {
+  return {
+    UNKNOWN: '예보 없음',
+    CLEAR: '맑음',
+    CLOUDY: '흐림',
+    RAIN: '비',
+    SNOW: '눈',
+    EXTREME: '위험 기상',
   }[value] ?? value
 }

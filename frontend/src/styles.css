@@ -697,6 +697,34 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; letter-spacing: -.03
 .toast button { border: 0; color: inherit; background: transparent; padding: 3px; cursor: pointer; }
 @keyframes toast-in { from { transform: translateY(14px); opacity: 0; } }
 
+/* Weather-aware planning */
+.weather-planner { width: 100%; padding: 16px; border: 1px solid #dfe6df; border-radius: 16px; background: linear-gradient(145deg, #f7fbf8, #fffdf8); }
+.weather-planner-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; text-align: left; }
+.weather-planner-icon { width: 36px; height: 36px; flex: 0 0 auto; border-radius: 11px; display: flex; align-items: center; justify-content: center; color: #477765; background: #e1f0e7; }
+.weather-planner-head > div { display: flex; flex-direction: column; gap: 2px; }
+.weather-planner-head strong { font-size: 12px; }
+.weather-planner-head small, .weather-loading { color: #75837e; font-size: 9px; line-height: 1.5; }
+.weather-day-list { display: grid; gap: 7px; }
+.weather-day-row { display: grid; grid-template-columns: 1.15fr .85fr; gap: 8px; padding: 9px; border: 1px solid #e8ebe6; border-radius: 11px; background: rgba(255,255,255,.78); }
+.weather-day-row label { display: flex; flex-direction: column; align-items: stretch; gap: 5px; color: #75817d; font-size: 8px; text-align: left; }
+.weather-day-row select, .weather-day-row input { min-width: 0; height: 34px; border: 1px solid #d9dfd9; border-radius: 8px; padding: 0 9px; color: var(--ink); background: white; font: inherit; font-size: 10px; outline: none; }
+.weather-rain-field > span { display: flex; align-items: center; gap: 4px; }
+.weather-rain-field > div { display: grid; grid-template-columns: 1fr 18px; align-items: center; }
+.weather-rain-field input { width: 100%; }
+.weather-rain-field > div > span { color: #7e8985; font-size: 9px; text-align: center; }
+.weather-planner-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 11px; }
+.weather-planner-actions > small { display: flex; align-items: center; gap: 4px; color: #71817b; font-size: 8px; text-align: left; }
+.weather-config { margin: 0 0 18px; padding: 0; overflow: hidden; }
+.weather-config > summary { list-style: none; cursor: pointer; padding: 13px 16px; display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; }
+.weather-config > summary::-webkit-details-marker { display: none; }
+.weather-config > summary span { margin-left: auto; color: #82908b; font-size: 8px; font-weight: 600; }
+.weather-config[open] > summary { border-bottom: 1px solid var(--line); }
+.weather-config .weather-planner { border: 0; border-radius: 0; background: #fbfcf9; }
+.day-weather { grid-column: 1 / -1; width: fit-content; display: inline-flex; align-items: center; gap: 4px; margin: -3px 0 0; padding: 4px 7px; border-radius: 99px; color: #687a73; background: #e6ece8; font-size: 8px; font-style: normal; font-weight: 800; }
+.day-weather.weather-rain, .day-weather.weather-snow, .day-weather.weather-extreme { color: #426a78; background: #e4f0f5; }
+.timeline-copy em.weather-up { color: #47765d; background: #e3f2e8; }
+.timeline-copy em.weather-down { color: #4e6f7d; background: #e5f0f4; }
+
 @media (max-width: 1180px) {
   .app-header { grid-template-columns: 190px 1fr auto; }
   .profile-name, .trip-context .context-chip { display: none; }
@@ -797,4 +825,8 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; letter-spacing: -.03
   .natural-language-form-footer { align-items: stretch; flex-direction: column; }
   .natural-language-form-footer .button { width: 100%; }
   .interpreted-setting-row { grid-template-columns: 76px 1fr 15px 1fr; }
+  .weather-day-row { grid-template-columns: 1fr; }
+  .weather-planner-actions { align-items: stretch; flex-direction: column; }
+  .weather-planner-actions .button { width: 100%; }
+  .weather-config > summary span { display: none; }
 }

@@ -3,6 +3,7 @@ package com.routeplan.trip.application;
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
 import com.routeplan.place.domain.Place;
+import com.routeplan.place.domain.PlaceEnvironment;
 import com.routeplan.place.persistence.PlaceRepository;
 import com.routeplan.trip.domain.TransportMode;
 import com.routeplan.trip.domain.Trip;
@@ -288,6 +289,7 @@ public class TripService {
                             place.getLongitude(),
                             place.getCategory(),
                             place.getAverageStayMinutes(),
+                            place.getEnvironment(),
                             tripPlace.getPriority(),
                             tripPlace.isMustVisit(),
                             tripPlace.getPreferredStartTime(),
@@ -446,6 +448,7 @@ public class TripService {
             BigDecimal longitude,
             String category,
             int averageStayMinutes,
+            PlaceEnvironment environment,
             int priority,
             boolean mustVisit,
             LocalTime preferredStartTime,

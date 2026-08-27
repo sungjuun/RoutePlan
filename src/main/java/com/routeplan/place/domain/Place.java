@@ -2,6 +2,8 @@ package com.routeplan.place.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -37,6 +39,10 @@ public class Place {
     @Column(name = "average_stay_minutes", nullable = false)
     private int averageStayMinutes;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private PlaceEnvironment environment;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -53,7 +59,8 @@ public class Place {
             BigDecimal latitude,
             BigDecimal longitude,
             String category,
-            int averageStayMinutes
+            int averageStayMinutes,
+            PlaceEnvironment environment
     ) {
         this.name = requireText(name, "장소 이름", 150);
         this.latitude = requireCoordinate(latitude, "위도", new BigDecimal("-90"), new BigDecimal("90"));
@@ -63,6 +70,7 @@ public class Place {
             throw new IllegalArgumentException("평균 체류시간은 1분 이상 1,440분 이하여야 합니다.");
         }
         this.averageStayMinutes = averageStayMinutes;
+        this.environment = environment == null ? PlaceEnvironment.infer(category) : environment;
     }
 
     public static Place create(String name, BigDecimal latitude, BigDecimal longitude, String category) {
@@ -76,7 +84,18 @@ public class Place {
             String category,
             int averageStayMinutes
     ) {
-        return new Place(name, latitude, longitude, category, averageStayMinutes);
+        return create(name, latitude, longitude, category, averageStayMinutes, null);
+    }
+
+    public static Place create(
+            String name,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            String category,
+            int averageStayMinutes,
+            PlaceEnvironment environment
+    ) {
+        return new Place(name, latitude, longitude, category, averageStayMinutes, environment);
     }
 
     public static Place createExternal(
@@ -87,7 +106,23 @@ public class Place {
             String category,
             int averageStayMinutes
     ) {
-        Place place = new Place(name, latitude, longitude, category, averageStayMinutes);
+        return createExternal(
+                externalPlaceId, name, latitude, longitude, category, averageStayMinutes, null
+        );
+    }
+
+    public static Place createExternal(
+            String externalPlaceId,
+            String name,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            String category,
+            int averageStayMinutes,
+            PlaceEnvironment environment
+    ) {
+        Place place = new Place(
+                name, latitude, longitude, category, averageStayMinutes, environment
+        );
         place.externalPlaceId = requireText(externalPlaceId, "외부 장소 ID", 200);
         return place;
     }
@@ -152,6 +187,10 @@ public class Place {
 
     public int getAverageStayMinutes() {
         return averageStayMinutes;
+    }
+
+    public PlaceEnvironment getEnvironment() {
+        return environment;
     }
 
     public Instant getCreatedAt() {

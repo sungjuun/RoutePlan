@@ -33,6 +33,7 @@ const trip: Trip = {
     latitude: 34.6873,
     longitude: 135.5262,
     category: 'ATTRACTION',
+    environment: 'OUTDOOR',
     averageStayMinutes: 90,
     priority: 50,
     mustVisit: false,

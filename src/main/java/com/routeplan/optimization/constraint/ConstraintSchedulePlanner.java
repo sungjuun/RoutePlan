@@ -46,6 +46,9 @@ public class ConstraintSchedulePlanner {
         List<ScheduleCandidate> candidates = request.candidates().stream()
                 .sorted(Comparator
                         .comparing(ScheduleCandidate::mustVisit).reversed()
+                        .thenComparing(Comparator.comparingInt(
+                                ScheduleCandidate::weatherAdjustedPriority
+                        ).reversed())
                         .thenComparing(Comparator.comparingInt(ScheduleCandidate::priority).reversed())
                         .thenComparingInt(candidate -> proposedRank.getOrDefault(
                                 candidate.tripPlaceId(), Integer.MAX_VALUE
@@ -220,6 +223,7 @@ public class ConstraintSchedulePlanner {
         int totalStay = 0;
         int totalWaiting = 0;
         int priorityScore = 0;
+        int weatherAdjustedPriorityScore = 0;
         List<ScheduledVisit> visits = new ArrayList<>(order.size());
 
         for (int index = 0; index < order.size(); index++) {
@@ -257,13 +261,18 @@ public class ConstraintSchedulePlanner {
                     waiting,
                     candidate.stayMinutes(),
                     candidate.priority(),
-                    candidate.mustVisit()
+                    candidate.mustVisit(),
+                    candidate.weatherScoreAdjustment()
             ));
             totalDistance = Math.addExact(totalDistance, leg.distanceMeters());
             totalTravel = Math.addExact(totalTravel, leg.estimatedTravelMinutes());
             totalStay = Math.addExact(totalStay, candidate.stayMinutes());
             totalWaiting = Math.addExact(totalWaiting, waiting);
             priorityScore = Math.addExact(priorityScore, candidate.priority());
+            weatherAdjustedPriorityScore = Math.addExact(
+                    weatherAdjustedPriorityScore,
+                    candidate.weatherAdjustedPriority()
+            );
             currentMinute = endMinute;
             currentLocation = candidate.location();
         }
@@ -281,7 +290,7 @@ public class ConstraintSchedulePlanner {
         totalTravel = Math.addExact(totalTravel, returnLeg.estimatedTravelMinutes());
         int optimizationScore = Math.max(
                 0,
-                priorityScore * 10_000 - totalTravel * 5 - totalWaiting * 2
+                weatherAdjustedPriorityScore * 10_000 - totalTravel * 5 - totalWaiting * 2
         );
         return Attempt.success(new Evaluation(
                 List.copyOf(order),

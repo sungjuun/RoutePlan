@@ -4,6 +4,7 @@ import com.routeplan.place.application.PlaceService;
 import com.routeplan.place.application.PlaceService.PlaceResult;
 import com.routeplan.place.application.PlaceService.OpeningHourResult;
 import com.routeplan.place.application.PlaceService.ImportPlaceResult;
+import com.routeplan.place.domain.PlaceEnvironment;
 import com.routeplan.place.search.PlaceSearchQuery;
 import com.routeplan.place.search.PlaceSearchResult;
 import com.routeplan.optimization.domain.Location;
@@ -47,7 +48,8 @@ public class PlaceController {
                 request.latitude(),
                 request.longitude(),
                 request.category(),
-                request.averageStayMinutes() == null ? 60 : request.averageStayMinutes()
+                request.averageStayMinutes() == null ? 60 : request.averageStayMinutes(),
+                request.environment()
         );
         return ResponseEntity.created(URI.create("/api/v1/places/" + result.id())).body(result);
     }
@@ -89,7 +91,8 @@ public class PlaceController {
                 request.latitude(),
                 request.longitude(),
                 request.category(),
-                request.averageStayMinutes() == null ? 60 : request.averageStayMinutes()
+                request.averageStayMinutes() == null ? 60 : request.averageStayMinutes(),
+                request.environment()
         );
         if (!result.created()) {
             return ResponseEntity.ok(result.place());
@@ -124,7 +127,8 @@ public class PlaceController {
             @NotNull @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
             @NotNull @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
             @Size(max = 50) String category,
-            @Min(1) @Max(1_440) Integer averageStayMinutes
+            @Min(1) @Max(1_440) Integer averageStayMinutes,
+            PlaceEnvironment environment
     ) {
     }
 
@@ -141,7 +145,8 @@ public class PlaceController {
             @NotNull @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
             @NotNull @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
             @Size(max = 50) String category,
-            @Min(1) @Max(1_440) Integer averageStayMinutes
+            @Min(1) @Max(1_440) Integer averageStayMinutes,
+            PlaceEnvironment environment
     ) {
     }
 }

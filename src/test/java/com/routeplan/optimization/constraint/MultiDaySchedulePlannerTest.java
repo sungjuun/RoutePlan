@@ -72,6 +72,40 @@ class MultiDaySchedulePlannerTest {
         });
     }
 
+    @Test
+    void movesOutdoorPlaceToClearDayWhenFirstDayIsRainy() {
+        ScheduleCandidate rainyOutdoor = candidate(
+                1, 101, "야외 정원", 70, false, false, -30
+        );
+        ScheduleCandidate rainyIndoor = candidate(
+                2, 102, "실내 미술관", 70, false, false, 25
+        );
+        ScheduleCandidate clearOutdoor = candidate(
+                1, 101, "야외 정원", 70, false, false, 10
+        );
+        ScheduleCandidate clearIndoor = candidate(
+                2, 102, "실내 미술관", 70, false, false, 0
+        );
+
+        MultiDaySchedule schedule = planner.plan(
+                List.of(
+                        request(FIRST_DAY, List.of(rainyOutdoor, rainyIndoor)),
+                        request(FIRST_DAY.plusDays(1), List.of(clearOutdoor, clearIndoor))
+                ),
+                routes
+        );
+
+        assertThat(schedule.days().get(0).visits())
+                .extracting(ScheduledVisit::placeId)
+                .containsExactly(102L);
+        assertThat(schedule.days().get(1).visits())
+                .extracting(ScheduledVisit::placeId)
+                .containsExactly(101L);
+        assertThat(schedule.visits())
+                .extracting(ScheduledVisit::weatherScoreAdjustment)
+                .containsExactly(25, 10);
+    }
+
     private ScheduleRequest request(LocalDate date, List<ScheduleCandidate> candidates) {
         return new ScheduleRequest(
                 date,
@@ -94,6 +128,18 @@ class MultiDaySchedulePlannerTest {
             boolean mustVisit,
             boolean closed
     ) {
+        return candidate(tripPlaceId, placeId, name, priority, mustVisit, closed, 0);
+    }
+
+    private ScheduleCandidate candidate(
+            long tripPlaceId,
+            long placeId,
+            String name,
+            int priority,
+            boolean mustVisit,
+            boolean closed,
+            int weatherScoreAdjustment
+    ) {
         return new ScheduleCandidate(
                 tripPlaceId,
                 placeId,
@@ -106,7 +152,8 @@ class MultiDaySchedulePlannerTest {
                 closed,
                 null,
                 null,
-                90
+                90,
+                weatherScoreAdjustment
         );
     }
 }

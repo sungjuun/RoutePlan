@@ -10,6 +10,8 @@ import com.routeplan.itinerary.domain.ItineraryItemStatus;
 import com.routeplan.optimization.constraint.ExclusionReason;
 import com.routeplan.optimization.domain.OptimizationAlgorithm;
 import com.routeplan.optimization.route.RouteDataType;
+import com.routeplan.place.domain.PlaceEnvironment;
+import com.routeplan.weather.domain.WeatherCondition;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -115,7 +117,9 @@ public record ItineraryView(
             long returnTravelDistanceMeters,
             int returnTravelMinutes,
             LocalTime returnArrivalTime,
-            boolean returnedToAccommodation
+            boolean returnedToAccommodation,
+            WeatherCondition weatherCondition,
+            int precipitationProbability
     ) {
 
         static Day from(ItineraryDay day) {
@@ -129,7 +133,9 @@ public record ItineraryView(
                     day.getReturnTravelDistanceMeters(),
                     day.getReturnTravelMinutes(),
                     day.getReturnArrivalTime(),
-                    day.isReturnedToAccommodation()
+                    day.isReturnedToAccommodation(),
+                    day.getWeatherCondition(),
+                    day.getPrecipitationProbability()
             );
         }
     }
@@ -149,6 +155,8 @@ public record ItineraryView(
             Integer stayMinutes,
             Integer priority,
             Boolean mustVisit,
+            PlaceEnvironment environment,
+            int weatherScoreAdjustment,
             ItineraryItemStatus status
     ) {
 
@@ -168,6 +176,8 @@ public record ItineraryView(
                     item.getStayMinutes(),
                     item.getPriority(),
                     item.getMustVisit(),
+                    item.getPlace().getEnvironment(),
+                    item.getWeatherScoreAdjustment(),
                     item.getStatus()
             );
         }

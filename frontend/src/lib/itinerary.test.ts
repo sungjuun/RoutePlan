@@ -13,6 +13,7 @@ function item(
     itineraryItemId,
     placeId,
     placeName: `장소 ${placeId}`,
+    environment: 'MIXED',
     sequence,
     travelDistanceMeters: 0,
     estimatedTravelMinutes: 0,
@@ -24,6 +25,7 @@ function item(
     stayMinutes: 60,
     priority: 70,
     mustVisit: false,
+    weatherScoreAdjustment: 0,
     status,
   }
 }

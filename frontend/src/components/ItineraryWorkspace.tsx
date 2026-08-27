@@ -6,6 +6,7 @@ import {
   CalendarDays,
   Check,
   CircleDot,
+  CloudSun,
   Clock3,
   Gauge,
   GitCompareArrows,
@@ -21,7 +22,7 @@ import {
   WandSparkles,
 } from 'lucide-react'
 import { api } from '../api/client'
-import { dateLabel, distanceLabel, durationLabel, reasonLabel, timeLabel } from '../lib/format'
+import { dateLabel, distanceLabel, durationLabel, reasonLabel, timeLabel, weatherLabel } from '../lib/format'
 import { compareItineraries, minimumCompletedCount } from '../lib/itinerary'
 import type {
   Itinerary,
@@ -31,6 +32,7 @@ import type {
   Trip,
 } from '../types'
 import { MapPanel } from './MapPanel'
+import { WeatherPlanner } from './WeatherPlanner'
 
 interface Props {
   trip: Trip
@@ -88,6 +90,7 @@ export function ItineraryWorkspace(props: Props) {
         </div>
         <div className="planner-launch-card">
           <div className="launch-visual" aria-hidden="true"><span>H</span><i></i><span>1</span><i></i><span>2</span><i></i><span>H</span></div>
+          <WeatherPlanner trip={trip} onError={onError} />
           <AlgorithmPicker algorithm={algorithm} onChange={setAlgorithm} placeCount={trip.places.length} />
           {trip.places.length === 0 ? (
             <button className="button button-primary" onClick={onGoToPlaces}><Plus size={18} /> 장소 담으러 가기</button>
@@ -126,6 +129,11 @@ export function ItineraryWorkspace(props: Props) {
         <button role="tab" aria-selected={tab === 'reoptimize'} className={tab === 'reoptimize' ? 'active' : ''} onClick={() => setTab('reoptimize')}><RefreshCw size={17} /> 재최적화</button>
         <button role="tab" aria-selected={tab === 'compare'} className={tab === 'compare' ? 'active' : ''} onClick={() => setTab('compare')} disabled={!previousItinerary}><GitCompareArrows size={17} /> 버전 비교</button>
       </div>
+
+      <details className="weather-config panel">
+        <summary><CloudSun size={18} /> 날짜별 날씨 설정 <span>예보 변경 후 새 버전을 계산하세요</span></summary>
+        <WeatherPlanner trip={trip} onError={onError} compact />
+      </details>
 
       {tab === 'route' && (
         <RouteView
@@ -197,6 +205,8 @@ function RouteView({
     returnTravelMinutes: itinerary.returnTravelMinutes,
     returnArrivalTime: itinerary.returnArrivalTime,
     returnedToAccommodation: itinerary.closedTour,
+    weatherCondition: 'UNKNOWN' as const,
+    precipitationProbability: 0,
   }]
   const multiDay = days.length > 1
   const visit = (item: Itinerary['items'][number]) => (
@@ -204,7 +214,7 @@ function RouteView({
       <div className="timeline-time"><strong>{timeLabel(item.startTime)}</strong><span>{timeLabel(item.endTime)}</span></div>
       <div className="timeline-line"><span>{item.status === 'COMPLETED' ? <Check size={15} /> : item.sequence}</span><i></i></div>
       <div className="timeline-copy">
-        <div><strong>{item.placeName}</strong>{item.mustVisit && <em>꼭 가기</em>}</div>
+        <div><strong>{item.placeName}</strong>{item.mustVisit && <em>꼭 가기</em>}{item.weatherScoreAdjustment !== 0 && <em className={item.weatherScoreAdjustment > 0 ? 'weather-up' : 'weather-down'}>날씨 {item.weatherScoreAdjustment > 0 ? '+' : ''}{item.weatherScoreAdjustment}</em>}</div>
         <small>{durationLabel(item.stayMinutes)} 머무름 · 이동 {durationLabel(item.estimatedTravelMinutes)}{item.waitingMinutes > 0 ? ` · ${durationLabel(item.waitingMinutes)} 대기` : ''}</small>
       </div>
     </div>
@@ -231,6 +241,7 @@ function RouteView({
                     <span><CalendarDays size={15} /> DAY {day.dayNumber}</span>
                     <strong>{dateLabel(day.visitDate)}</strong>
                     <small>{dayItems.length}곳 · 이동 {durationLabel(day.estimatedTravelMinutes)}</small>
+                    <em className={`day-weather weather-${day.weatherCondition.toLowerCase()}`}><CloudSun size={13} /> {weatherLabel(day.weatherCondition)}{day.weatherCondition !== 'UNKNOWN' ? ` · 강수 ${day.precipitationProbability}%` : ''}</em>
                   </div>
                   <div className="timeline-item timeline-hotel">
                     <div className="timeline-time">{timeLabel(trip.dailyStartTime)}</div>
@@ -427,7 +438,7 @@ function ReoptimizationView({
           <div className="field location-field"><span><LocateFixed size={15} /> 현재 위치</span><button className="button button-ghost" onClick={locate}><LocateFixed size={16} /> {locating ? '확인 중…' : '내 위치 사용'}</button></div>
           <label className="field"><span>위도</span><input type="number" step="0.000001" min="-90" max="90" value={latitude} onChange={(event) => setLatitude(event.target.value)} /></label>
           <label className="field"><span>경도</span><input type="number" step="0.000001" min="-180" max="180" value={longitude} onChange={(event) => setLongitude(event.target.value)} /></label>
-          <label className="field"><span>변경 이유</span><select value={reason} onChange={(event) => setReason(event.target.value as ItineraryChangeReason)}><option value="DELAY">일정이 지연됐어요</option><option value="PLACE_ADDED">장소를 추가했어요</option><option value="PLACE_REMOVED">장소를 삭제했어요</option><option value="USER_REQUEST">순서를 바꾸고 싶어요</option><option value="OTHER">기타</option></select></label>
+          <label className="field"><span>변경 이유</span><select value={reason} onChange={(event) => setReason(event.target.value as ItineraryChangeReason)}><option value="DELAY">일정이 지연됐어요</option><option value="PLACE_ADDED">장소를 추가했어요</option><option value="PLACE_REMOVED">장소를 삭제했어요</option><option value="WEATHER">날씨가 바뀌었어요</option><option value="USER_REQUEST">순서를 바꾸고 싶어요</option><option value="OTHER">기타</option></select></label>
           <label className="field"><span>한 줄 메모</span><input value={detail} maxLength={500} onChange={(event) => setDetail(event.target.value)} placeholder="예: 점심 대기가 길었어요" /></label>
         </div>
       </div>

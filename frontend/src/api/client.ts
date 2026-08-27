@@ -8,6 +8,7 @@ import type {
   NaturalLanguagePreview,
   OptimizationAlgorithm,
   Place,
+  PlaceEnvironment,
   PlaceSearchResult,
   ReoptimizeInput,
   PublishRouteInput,
@@ -19,6 +20,8 @@ import type {
   Trip,
   TripSummary,
   TripPlaceConstraints,
+  TripWeatherForecast,
+  TripWeatherForecastInput,
 } from '../types'
 
 interface CsrfView {
@@ -143,6 +146,7 @@ export const api = {
     longitude: number
     category: string | null
     averageStayMinutes: number
+    environment: PlaceEnvironment
   }) => request<Place>('/places', json('POST', input)),
 
   getPlace: (placeId: number) => request<Place>(`/places/${placeId}`),
@@ -185,6 +189,15 @@ export const api = {
 
   removeTripPlace: (tripId: number, placeId: number) =>
     request<void>(`/trips/${tripId}/places/${placeId}`, { method: 'DELETE' }),
+
+  getTripWeather: (tripId: number) =>
+    request<TripWeatherForecast[]>(`/trips/${tripId}/weather`),
+
+  replaceTripWeather: (tripId: number, forecasts: TripWeatherForecastInput[]) =>
+    request<TripWeatherForecast[]>(
+      `/trips/${tripId}/weather`,
+      json('PUT', { forecasts }),
+    ),
 
   optimize: (tripId: number, algorithm: OptimizationAlgorithm) =>
     request<Itinerary>(`/trips/${tripId}/optimize?algorithm=${algorithm}`, { method: 'POST' }),

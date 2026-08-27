@@ -71,6 +71,9 @@ public class ItineraryItem {
     @Column(name = "must_visit")
     private Boolean mustVisit;
 
+    @Column(name = "weather_score_adjustment", nullable = false)
+    private int weatherScoreAdjustment;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ItineraryItemStatus status;
@@ -117,7 +120,7 @@ public class ItineraryItem {
         this(
                 itinerary, place, sequence, travelDistanceMeters, estimatedTravelMinutes,
                 visitDate, arrivalTime, startTime, endTime, waitingMinutes, stayMinutes,
-                priority, mustVisit, ItineraryItemStatus.PLANNED
+                priority, mustVisit, 0, ItineraryItemStatus.PLANNED
         );
     }
 
@@ -135,6 +138,30 @@ public class ItineraryItem {
             int stayMinutes,
             int priority,
             boolean mustVisit,
+            int weatherScoreAdjustment
+    ) {
+        this(
+                itinerary, place, sequence, travelDistanceMeters, estimatedTravelMinutes,
+                visitDate, arrivalTime, startTime, endTime, waitingMinutes, stayMinutes,
+                priority, mustVisit, weatherScoreAdjustment, ItineraryItemStatus.PLANNED
+        );
+    }
+
+    ItineraryItem(
+            Itinerary itinerary,
+            Place place,
+            int sequence,
+            long travelDistanceMeters,
+            int estimatedTravelMinutes,
+            LocalDate visitDate,
+            LocalTime arrivalTime,
+            LocalTime startTime,
+            LocalTime endTime,
+            int waitingMinutes,
+            int stayMinutes,
+            int priority,
+            boolean mustVisit,
+            int weatherScoreAdjustment,
             ItineraryItemStatus status
     ) {
         this(itinerary, place, sequence, travelDistanceMeters, estimatedTravelMinutes);
@@ -150,6 +177,9 @@ public class ItineraryItem {
         if (status == null) {
             throw new IllegalArgumentException("일정 항목 상태는 필수입니다.");
         }
+        if (weatherScoreAdjustment < -100 || weatherScoreAdjustment > 100) {
+            throw new IllegalArgumentException("날씨 점수 조정값이 올바르지 않습니다.");
+        }
         this.visitDate = visitDate;
         this.arrivalTime = arrivalTime;
         this.startTime = startTime;
@@ -158,6 +188,7 @@ public class ItineraryItem {
         this.stayMinutes = stayMinutes;
         this.priority = priority;
         this.mustVisit = mustVisit;
+        this.weatherScoreAdjustment = weatherScoreAdjustment;
         this.status = status;
     }
 
@@ -215,5 +246,9 @@ public class ItineraryItem {
 
     public ItineraryItemStatus getStatus() {
         return status;
+    }
+
+    public int getWeatherScoreAdjustment() {
+        return weatherScoreAdjustment;
     }
 }

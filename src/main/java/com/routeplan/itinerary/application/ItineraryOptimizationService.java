@@ -26,6 +26,10 @@ import com.routeplan.trip.domain.Trip;
 import com.routeplan.trip.domain.TripPlace;
 import com.routeplan.trip.persistence.TripPlaceRepository;
 import com.routeplan.trip.persistence.TripRepository;
+import com.routeplan.weather.domain.TripWeatherForecast;
+import com.routeplan.weather.domain.WeatherSnapshot;
+import com.routeplan.weather.domain.WeatherSuitabilityPolicy;
+import com.routeplan.weather.persistence.TripWeatherForecastRepository;
 import io.micrometer.core.instrument.Timer;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -51,6 +55,8 @@ public class ItineraryOptimizationService {
     private final PlaceOpeningHourRepository openingHourRepository;
     private final MultiDaySchedulePlanner schedulePlanner;
     private final RouteMatrixProvider routeMatrixProvider;
+    private final TripWeatherForecastRepository weatherRepository;
+    private final WeatherSuitabilityPolicy weatherPolicy;
     private final RoutePlanMetrics metrics;
     private final TransactionTemplate readTransaction;
     private final TransactionTemplate writeTransaction;
@@ -63,6 +69,8 @@ public class ItineraryOptimizationService {
             PlaceOpeningHourRepository openingHourRepository,
             MultiDaySchedulePlanner schedulePlanner,
             RouteMatrixProvider routeMatrixProvider,
+            TripWeatherForecastRepository weatherRepository,
+            WeatherSuitabilityPolicy weatherPolicy,
             RoutePlanMetrics metrics,
             PlatformTransactionManager transactionManager
     ) {
@@ -73,6 +81,8 @@ public class ItineraryOptimizationService {
         this.openingHourRepository = openingHourRepository;
         this.schedulePlanner = schedulePlanner;
         this.routeMatrixProvider = routeMatrixProvider;
+        this.weatherRepository = weatherRepository;
+        this.weatherPolicy = weatherPolicy;
         this.metrics = metrics;
         this.readTransaction = new TransactionTemplate(transactionManager);
         this.readTransaction.setReadOnly(true);
@@ -186,7 +196,9 @@ public class ItineraryOptimizationService {
                 day.returnTravelDistanceMeters(),
                 day.returnTravelMinutes(),
                 day.returnArrivalTime(),
-                true
+                true,
+                snapshot.weatherFor(day.visitDate()).condition(),
+                snapshot.weatherFor(day.visitDate()).precipitationProbability()
         ));
 
         Map<Long, Place> placesById = currentTripPlaces.stream()
@@ -204,7 +216,8 @@ public class ItineraryOptimizationService {
                 visit.waitingMinutes(),
                 visit.stayMinutes(),
                 visit.priority(),
-                visit.mustVisit()
+                visit.mustVisit(),
+                visit.weatherScoreAdjustment()
         ));
         schedule.exclusions().forEach(exclusion -> itinerary.addExclusion(
                 placesById.get(exclusion.placeId()),
@@ -259,9 +272,20 @@ public class ItineraryOptimizationService {
                         ),
                         Function.identity()
                 ));
+        Map<LocalDate, WeatherSnapshot> weatherByDate = weatherRepository
+                .findAllByTripIdOrderByForecastDateAsc(trip.getId())
+                .stream()
+                .collect(Collectors.toMap(
+                        TripWeatherForecast::getForecastDate,
+                        TripWeatherForecast::toSnapshot
+                ));
         List<DailyCandidates> dailyCandidates = new ArrayList<>();
         for (LocalDate date = trip.getStartDate(); !date.isAfter(trip.getEndDate()); date = date.plusDays(1)) {
             LocalDate visitDate = date;
+            WeatherSnapshot weather = weatherByDate.getOrDefault(
+                    visitDate,
+                    WeatherSnapshot.unknown()
+            );
             dailyCandidates.add(new DailyCandidates(
                     visitDate,
                     tripPlaces.stream()
@@ -270,9 +294,11 @@ public class ItineraryOptimizationService {
                                     tripPlace,
                                     openingHours.get(new OpeningHourKey(
                                             tripPlace.getPlace().getId(), visitDate.getDayOfWeek()
-                                    ))
+                                    )),
+                                    weather
                             ))
-                            .toList()
+                            .toList(),
+                    weather
             ));
         }
         return new OptimizationSnapshot(
@@ -289,7 +315,8 @@ public class ItineraryOptimizationService {
     private ScheduleCandidate toScheduleCandidate(
             Trip trip,
             TripPlace tripPlace,
-            PlaceOpeningHour openingHour
+            PlaceOpeningHour openingHour,
+            WeatherSnapshot weather
     ) {
         Place place = tripPlace.getPlace();
         return new ScheduleCandidate(
@@ -308,7 +335,8 @@ public class ItineraryOptimizationService {
                         place.getAverageStayMinutes(),
                         tripPlace.getMinimumStayMinutes(),
                         tripPlace.getMaximumStayMinutes()
-                )
+                ),
+                weatherPolicy.adjustment(weather, place.getEnvironment())
         );
     }
 
@@ -363,12 +391,25 @@ public class ItineraryOptimizationService {
                     && optimizationRequest.equals(other.optimizationRequest)
                     && dailyCandidates.equals(other.dailyCandidates);
         }
+
+        private WeatherSnapshot weatherFor(LocalDate visitDate) {
+            return dailyCandidates.stream()
+                    .filter(day -> day.visitDate().equals(visitDate))
+                    .map(DailyCandidates::weather)
+                    .findFirst()
+                    .orElseGet(WeatherSnapshot::unknown);
+        }
     }
 
-    private record DailyCandidates(LocalDate visitDate, List<ScheduleCandidate> candidates) {
+    private record DailyCandidates(
+            LocalDate visitDate,
+            List<ScheduleCandidate> candidates,
+            WeatherSnapshot weather
+    ) {
 
         private DailyCandidates {
             candidates = List.copyOf(candidates);
+            Objects.requireNonNull(weather, "날짜별 날씨는 필수입니다.");
         }
     }
 

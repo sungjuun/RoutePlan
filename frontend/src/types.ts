@@ -8,6 +8,7 @@ export type ItineraryChangeReason =
   | 'DELAY'
   | 'PLACE_ADDED'
   | 'PLACE_REMOVED'
+  | 'WEATHER'
   | 'USER_REQUEST'
   | 'OTHER'
 export type SharedRouteVisibility = 'PUBLIC' | 'UNLISTED'
@@ -15,6 +16,8 @@ export type SharedRouteSort = 'LATEST' | 'POPULAR'
 export type WalkingPreference = 'LOW' | 'STANDARD' | 'HIGH'
 export type PlacePreference = 'MUST_VISIT' | 'PREFERRED' | 'OPTIONAL'
 export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER'
+export type PlaceEnvironment = 'INDOOR' | 'OUTDOOR' | 'MIXED'
+export type WeatherCondition = 'UNKNOWN' | 'CLEAR' | 'CLOUDY' | 'RAIN' | 'SNOW' | 'EXTREME'
 
 export interface User {
   id: number
@@ -41,6 +44,7 @@ export interface TripPlace {
   longitude: number
   category: string | null
   averageStayMinutes: number
+  environment: PlaceEnvironment
   priority: number
   mustVisit: boolean
   preferredStartTime: string | null
@@ -90,6 +94,7 @@ export interface Place {
   longitude: number
   category: string | null
   averageStayMinutes: number
+  environment: PlaceEnvironment
   createdAt: string
   updatedAt: string
 }
@@ -119,6 +124,8 @@ export interface ItineraryItem {
   stayMinutes: number
   priority: number
   mustVisit: boolean
+  environment: PlaceEnvironment
+  weatherScoreAdjustment: number
   status: 'PLANNED' | 'COMPLETED'
 }
 
@@ -140,6 +147,21 @@ export interface ItineraryDay {
   returnTravelMinutes: number
   returnArrivalTime: string
   returnedToAccommodation: boolean
+  weatherCondition: WeatherCondition
+  precipitationProbability: number
+}
+
+export interface TripWeatherForecast {
+  forecastDate: string
+  condition: Exclude<WeatherCondition, 'UNKNOWN'>
+  precipitationProbability: number
+  updatedAt: string
+}
+
+export interface TripWeatherForecastInput {
+  forecastDate: string
+  condition: WeatherCondition
+  precipitationProbability: number
 }
 
 export interface Itinerary {

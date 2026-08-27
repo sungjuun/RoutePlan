@@ -52,6 +52,7 @@ export async function addManualPlace(page: Page, name: string): Promise<void> {
   const form = page.locator('.manual-place-form')
   await form.getByLabel('장소 이름', { exact: true }).fill(name)
   await form.getByLabel('카테고리', { exact: true }).fill('E2E 명소')
+  await form.getByLabel('공간 유형', { exact: true }).selectOption('OUTDOOR')
   await form.getByLabel('위도', { exact: true }).fill('37.5701')
   await form.getByLabel('경도', { exact: true }).fill('126.9820')
   await form.getByRole('button', { name: /이 장소 담기/ }).click()
@@ -61,7 +62,13 @@ export async function addManualPlace(page: Page, name: string): Promise<void> {
 export async function calculateItinerary(page: Page, tripName: string): Promise<void> {
   await page.getByRole('button', { name: '일정 만들기', exact: true }).click()
   await expect(page.getByRole('heading', { name: '선택한 장면을 여행 날짜마다' })).toBeVisible()
+  const weatherPlanner = page.getByRole('region', { name: '날짜별 날씨 설정' })
+  await weatherPlanner.getByRole('combobox', { name: /날씨/ }).first().selectOption('RAIN')
+  await weatherPlanner.getByRole('button', { name: '예보 저장' }).click()
+  await expect(weatherPlanner.getByRole('button', { name: '예보 저장됨' })).toBeVisible()
   await page.getByRole('button', { name: /내 일정 계산하기/ }).click()
   await expect(page.getByText('VERSION 1', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: tripName })).toBeVisible()
+  await expect(page.getByText('비 · 강수 80%', { exact: true })).toBeVisible()
+  await expect(page.getByText('날씨 -30', { exact: true })).toBeVisible()
 }

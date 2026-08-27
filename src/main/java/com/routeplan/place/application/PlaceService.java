@@ -3,6 +3,7 @@ package com.routeplan.place.application;
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
 import com.routeplan.place.domain.Place;
+import com.routeplan.place.domain.PlaceEnvironment;
 import com.routeplan.place.domain.PlaceOpeningHour;
 import com.routeplan.place.persistence.PlaceOpeningHourRepository;
 import com.routeplan.place.persistence.PlaceRepository;
@@ -47,7 +48,21 @@ public class PlaceService {
             String category,
             int averageStayMinutes
     ) {
-        Place place = Place.create(name, latitude, longitude, category, averageStayMinutes);
+        return create(name, latitude, longitude, category, averageStayMinutes, null);
+    }
+
+    @Transactional
+    public PlaceResult create(
+            String name,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            String category,
+            int averageStayMinutes,
+            PlaceEnvironment environment
+    ) {
+        Place place = Place.create(
+                name, latitude, longitude, category, averageStayMinutes, environment
+        );
         return PlaceResult.from(placeRepository.save(place));
     }
 
@@ -71,6 +86,21 @@ public class PlaceService {
             String category,
             int averageStayMinutes
     ) {
+        return importExternal(
+                externalPlaceId, name, latitude, longitude, category, averageStayMinutes, null
+        );
+    }
+
+    @Transactional
+    public ImportPlaceResult importExternal(
+            String externalPlaceId,
+            String name,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            String category,
+            int averageStayMinutes,
+            PlaceEnvironment environment
+    ) {
         return placeRepository.findByExternalPlaceId(externalPlaceId)
                 .map(place -> new ImportPlaceResult(PlaceResult.from(place), false))
                 .orElseGet(() -> {
@@ -80,7 +110,8 @@ public class PlaceService {
                             latitude,
                             longitude,
                             category,
-                            averageStayMinutes
+                            averageStayMinutes,
+                            environment
                     );
                     return new ImportPlaceResult(
                             PlaceResult.from(placeRepository.save(place)),
@@ -129,6 +160,7 @@ public class PlaceService {
             BigDecimal longitude,
             String category,
             int averageStayMinutes,
+            PlaceEnvironment environment,
             Instant createdAt,
             Instant updatedAt
     ) {
@@ -142,6 +174,7 @@ public class PlaceService {
                     place.getLongitude(),
                     place.getCategory(),
                     place.getAverageStayMinutes(),
+                    place.getEnvironment(),
                     place.getCreatedAt(),
                     place.getUpdatedAt()
             );

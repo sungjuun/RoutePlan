@@ -13,8 +13,8 @@ import {
   Trash2,
 } from 'lucide-react'
 import { ApiError, api } from '../api/client'
-import { categoryLabel, durationLabel } from '../lib/format'
-import type { PlaceSearchResult, Trip, TripPlace, TripPlaceConstraints } from '../types'
+import { categoryLabel, durationLabel, environmentLabel } from '../lib/format'
+import type { PlaceEnvironment, PlaceSearchResult, Trip, TripPlace, TripPlaceConstraints } from '../types'
 import { MapPanel } from './MapPanel'
 
 interface Props {
@@ -174,6 +174,7 @@ function ManualPlaceForm({ trip, onTripChanged, onError }: Pick<Props, 'trip' | 
   const [latitude, setLatitude] = useState(String(trip.accommodationLatitude))
   const [longitude, setLongitude] = useState(String(trip.accommodationLongitude))
   const [stayMinutes, setStayMinutes] = useState('60')
+  const [environment, setEnvironment] = useState<PlaceEnvironment>('MIXED')
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async (event: FormEvent) => {
@@ -186,6 +187,7 @@ function ManualPlaceForm({ trip, onTripChanged, onError }: Pick<Props, 'trip' | 
         longitude: Number(longitude),
         category: category.trim() || null,
         averageStayMinutes: Number(stayMinutes),
+        environment,
       })
       const nextTrip = await api.addTripPlace(trip.id, place.id, defaultConstraints)
       onTripChanged(nextTrip, `${place.name}을 여행에 담았습니다.`)
@@ -202,6 +204,7 @@ function ManualPlaceForm({ trip, onTripChanged, onError }: Pick<Props, 'trip' | 
       <label className="field field-wide"><span>장소 이름</span><input value={name} onChange={(event) => setName(event.target.value)} required maxLength={150} placeholder="예: 북촌 작은 책방" /></label>
       <label className="field"><span>카테고리</span><input value={category} onChange={(event) => setCategory(event.target.value)} maxLength={50} placeholder="카페, 미술관…" /></label>
       <label className="field"><span><Clock3 size={14} /> 평균 체류시간</span><div className="input-suffix"><input type="number" min="1" max="1440" value={stayMinutes} onChange={(event) => setStayMinutes(event.target.value)} required /><span>분</span></div></label>
+      <label className="field"><span>공간 유형</span><select aria-label="공간 유형" value={environment} onChange={(event) => setEnvironment(event.target.value as PlaceEnvironment)}><option value="INDOOR">실내</option><option value="OUTDOOR">실외</option><option value="MIXED">실내·실외 혼합</option></select></label>
       <label className="field"><span>위도</span><input type="number" step="0.000001" min="-90" max="90" value={latitude} onChange={(event) => setLatitude(event.target.value)} required /></label>
       <label className="field"><span>경도</span><input type="number" step="0.000001" min="-180" max="180" value={longitude} onChange={(event) => setLongitude(event.target.value)} required /></label>
       <button className="button button-primary field-wide" disabled={submitting}><Plus size={17} /> {submitting ? '추가하는 중…' : '이 장소 담기'}</button>
@@ -272,7 +275,7 @@ function SelectedPlaceCard({
     <article className={`selected-place-card ${expanded ? 'expanded' : ''}`}>
       <button className="place-card-summary" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
         <span className="place-index">{String(index + 1).padStart(2, '0')}</span>
-        <div className="place-card-copy"><strong>{place.name}</strong><span>{categoryLabel(place.category)} · 평균 {durationLabel(place.averageStayMinutes)}</span></div>
+        <div className="place-card-copy"><strong>{place.name}</strong><span>{categoryLabel(place.category)} · {environmentLabel(place.environment)} · 평균 {durationLabel(place.averageStayMinutes)}</span></div>
         <span className={`priority-badge priority-${preset}`}>{preset === 'must' ? '꼭 가기' : preset === 'prefer' ? '가급적 가기' : '시간 남으면'}</span>
         <PencilLine size={17} />
       </button>

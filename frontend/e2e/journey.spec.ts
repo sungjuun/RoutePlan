@@ -9,13 +9,13 @@ test.describe.serial('인증된 여행 생성과 공개 루트 재사용', () =>
   test('소유자가 여행을 만들고 계산한 일정을 공개한다', async ({ page }, testInfo) => {
     const seed = `${Date.now()}-${testInfo.workerIndex}-${testInfo.retry}`
     const account = testAccount(seed, 'owner')
-    const tripName = `V14 자동 여행 ${seed}`
-    const placeName = `V14 테스트 명소 ${seed}`
-    routeTitle = `V14 공개 루트 ${seed}`
+    const tripName = `V15 자동 여행 ${seed}`
+    const placeName = `V15 실외 명소 ${seed}`
+    routeTitle = `V15 공개 루트 ${seed}`
     routeRegion = `E2E-${seed}`
 
     await signUp(page, account)
-    ownerTripId = await createTrip(page, tripName, 'V14 서울 숙소')
+    ownerTripId = await createTrip(page, tripName, 'V15 서울 숙소')
     await addManualPlace(page, placeName)
     await calculateItinerary(page, tripName)
 
@@ -30,7 +30,7 @@ test.describe.serial('인증된 여행 생성과 공개 루트 재사용', () =>
     await page.getByRole('button', { name: /현재 일정 공개/ }).click()
     await page.getByLabel('루트 제목', { exact: true }).fill(routeTitle)
     await page.getByLabel('지역', { exact: true }).fill(routeRegion)
-    await page.getByLabel('한 줄 설명', { exact: true }).fill('Playwright가 생성한 V14 회귀 테스트 루트')
+    await page.getByLabel('한 줄 설명', { exact: true }).fill('Playwright가 생성한 V15 날씨 대응 회귀 테스트 루트')
     await page.getByRole('button', { name: '루트 공개하기', exact: true }).click()
     await expect(page.getByText('현재 일정의 Snapshot을 루트 커뮤니티에 공개했습니다.')).toBeVisible()
     await expect(page.locator('.community-detail').getByRole('heading', { name: routeTitle })).toBeVisible()
