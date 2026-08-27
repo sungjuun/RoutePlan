@@ -421,7 +421,7 @@ function RouteDetail({
       </div>
 
       <div className="community-social-bar">
-        <button className={route.likedByViewer ? 'liked' : ''} disabled={!user || liking} onClick={() => void toggleLike()}><Heart size={17} fill={route.likedByViewer ? 'currentColor' : 'none'} /> {route.likeCount.toLocaleString()}</button>
+        <button aria-label={route.likedByViewer ? '좋아요 취소' : '좋아요'} className={route.likedByViewer ? 'liked' : ''} disabled={!user || liking} onClick={() => void toggleLike()}><Heart size={17} fill={route.likedByViewer ? 'currentColor' : 'none'} /> {route.likeCount.toLocaleString()}</button>
         <span><Copy size={15} /> {route.copyCount.toLocaleString()}회 복사</span>
         <span><Eye size={15} /> {route.viewCount.toLocaleString()}회 조회</span>
       </div>

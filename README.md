@@ -50,7 +50,11 @@ V13은 브라우저가 전달한 사용자 ID를 신뢰하던 경계를 제거�
 
 > 안전한 세션 인증으로 여행 소유권을 강제하면서도, 비회원이 나라별 추천 루트와 커뮤니티를 먼저 둘러볼 수 있는가?
 
-## 구현 범위 (V1–V13)
+V14는 실제 브라우저에서 여러 계정과 전체 사용자 흐름이 계속 연결되는지 자동으로 검증합니다.
+
+> 공개 탐색부터 회원가입, 여행 생성·일정 계산·공개·좋아요·복사와 다른 사용자의 소유권 차단까지 배포 전에 반복 검증할 수 있는가?
+
+## 구현 범위 (V1–V14)
 
 ### 지원
 
@@ -124,6 +128,8 @@ V13은 브라우저가 전달한 사용자 ID를 신뢰하던 경계를 제거�
 - 외부 API 시도·재시도·소진 횟수의 Provider/Operation별 Micrometer 지표
 - 요청 Correlation ID 응답 헤더·오류 JSON·MDC 완료 로그 연계
 - Backend Testcontainers와 Frontend 테스트·Lint·Build GitHub Actions CI
+- Playwright Chromium 기반 데스크톱·모바일 전체 사용자 흐름 E2E
+- 전용 Docker 프로젝트·포트·DB 볼륨을 사용하는 격리 E2E 실행기
 - PostgreSQL, Flyway, OpenAPI, Docker Compose
 - JUnit 5, AssertJ, Testcontainers, Vitest 테스트
 
@@ -727,9 +733,19 @@ npm run lint
 npm run build
 ```
 
-현재 기본 검증 묶음은 Backend 65개와 Frontend 19개 테스트를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V9와 세션 인증·CSRF·소유권 경계를 함께 확인합니다.
+실제 브라우저 E2E는 Chromium을 한 번 설치한 뒤 전용 Docker 환경에서 실행합니다.
 
-`.github/workflows/ci.yml`은 push와 pull request마다 Backend와 Frontend Job을 병렬 실행합니다. Backend는 Java 21과 Testcontainers PostgreSQL로 전체 테스트를 수행하고, Frontend는 Node.js 22에서 고정된 lockfile로 설치한 뒤 단위 테스트, ESLint, 프로덕션 빌드를 모두 통과해야 합니다. Benchmark는 실행시간 변동과 비용 때문에 일반 CI에서 분리합니다.
+```bash
+cd frontend
+npx playwright install chromium
+npm run test:e2e:docker
+```
+
+`test:e2e:docker`는 개발용 `localhost:3100`과 DB를 건드리지 않습니다. `routeplan-e2e` 프로젝트를 기본 포트 `3200`·`8280`·`55432`·`6479`에 띄우고, 테스트가 끝나면 전용 컨테이너와 DB 볼륨을 제거합니다. 이미 실행 중인 환경을 직접 검사할 때는 `E2E_BASE_URL`을 지정하고 `npm run test:e2e`를 사용합니다. 실패 시 `frontend/playwright-report`와 `frontend/test-results`에 Screenshot·Video·Trace·Compose 로그를 남깁니다.
+
+현재 기본 검증 묶음은 Backend 65개, Frontend 단위 테스트 19개, 브라우저 E2E 5개를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V9와 세션 인증·CSRF·소유권 경계를 함께 확인합니다.
+
+`.github/workflows/ci.yml`은 push와 pull request마다 Backend와 Frontend Job을 병렬 실행하고, 둘 다 통과하면 격리된 Docker 환경에서 Browser E2E Job을 실행합니다. Backend는 Java 21과 Testcontainers PostgreSQL로 전체 테스트를 수행하고, Frontend는 Node.js 22에서 고정된 lockfile로 설치한 뒤 단위 테스트, ESLint, 프로덕션 빌드를 모두 통과해야 합니다. Benchmark는 실행시간 변동과 비용 때문에 일반 CI에서 분리합니다.
 
 테스트는 다음을 검증합니다.
 
@@ -780,6 +796,10 @@ npm run build
 - 커뮤니티 목록 렌더링과 인기순 전환
 - 공개 추천 검색, 로그인, 내 여행·마이페이지 사용자 흐름
 - 공개 모바일 메뉴 전환과 내 여행 API 실패 후 재시도
+- 비회원 추천 탐색과 내 여행 인증 경계의 실제 브라우저 흐름
+- 회원가입부터 여행 생성·좌표 장소 추가·일정 계산·새로고침 복구·공개까지의 E2E
+- 다른 사용자의 Trip 접근 차단과 공개 Route 좋아요·복사·재최적화 E2E
+- Pixel 5 Viewport의 모바일 메뉴·가로 폭·인증 경계 E2E
 - 한국어 자연어의 시간·여행 강도·이동수단·장소 우선순위 결정적 해석
 - 자연어 미리보기와 검토한 조건의 Trip 원자적 적용 API
 - OpenAI 요청의 Strict JSON Schema·`store=false`·API key 비노출 계약
@@ -839,6 +859,8 @@ V11 Actuator·Micrometer·Correlation ID·GitHub Actions 운영 기반 ✓
 V12 외부 API Retry·지수 Backoff·Jitter·재시도 지표 ✓
  ↓
 V13 세션 인증·소유권 보호·공개 추천 메인·내 여행·마이페이지 ✓
+ ↓
+V14 Playwright 데스크톱·모바일 사용자 흐름·소유권 E2E·CI ✓
 ```
 
 ## Performance Benchmark
