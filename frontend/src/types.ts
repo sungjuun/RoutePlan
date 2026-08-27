@@ -68,6 +68,20 @@ export interface Trip {
   places: TripPlace[]
 }
 
+export interface TripSummary {
+  id: number
+  name: string
+  startDate: string
+  endDate: string
+  accommodationName: string
+  transportMode: TransportMode
+  pace: TripPace
+  status: 'DRAFT' | 'OPTIMIZED'
+  placeCount: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Place {
   id: number
   externalPlaceId: string | null

@@ -95,6 +95,8 @@ V13은 브라우저가 전달한 사용자 ID를 신뢰하던 경계를 제거�
 - React 기반 여행 생성·장소 관리·일정 타임라인·지도 화면
 - 나라별 추천 루트와 인기 공개 루트를 먼저 보여주는 공개 메인 페이지
 - 비회원 공개 커뮤니티와 로그인·회원가입·사용자 메뉴 UI
+- 계정별 저장 여행 목록과 선택한 여행 작업공간 복구
+- 여행·완성 일정·저장 장소 현황을 보여주는 마이페이지
 - 현재 위치 기반 재최적화와 이전/현재 버전 비교 UI
 - 외부 검색 비활성 환경을 위한 수동 좌표 장소 등록
 - 브라우저 작업공간 복구와 반응형 모바일 UI
@@ -442,6 +444,7 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 | `POST` | `/api/v1/auth/login` | 세션 로그인 |
 | `POST` | `/api/v1/auth/logout` | 세션 로그아웃 |
 | `POST` | `/api/v1/trips` | 1–14일 Trip 생성 |
+| `GET` | `/api/v1/trips` | 로그인 사용자가 만든·가져온 Trip 목록 조회 |
 | `GET` | `/api/v1/trips/{tripId}` | Trip과 장소 조회 |
 | `PATCH` | `/api/v1/trips/{tripId}` | Trip 수정 |
 | `POST` | `/api/v1/places` | Place 등록 |
@@ -722,7 +725,7 @@ npm run lint
 npm run build
 ```
 
-현재 기본 검증 묶음은 Backend 65개와 Frontend 15개 테스트를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V9와 세션 인증·CSRF·소유권 경계를 함께 확인합니다.
+현재 기본 검증 묶음은 Backend 65개와 Frontend 17개 테스트를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V9와 세션 인증·CSRF·소유권 경계를 함께 확인합니다.
 
 `.github/workflows/ci.yml`은 push와 pull request마다 Backend와 Frontend Job을 병렬 실행합니다. Backend는 Java 21과 Testcontainers PostgreSQL로 전체 테스트를 수행하고, Frontend는 Node.js 22에서 고정된 lockfile로 설치한 뒤 단위 테스트, ESLint, 프로덕션 빌드를 모두 통과해야 합니다. Benchmark는 실행시간 변동과 비용 때문에 일반 CI에서 분리합니다.
 
@@ -900,7 +903,6 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 다일 장소 배분은 날짜 순차 휴리스틱이며 날짜·장소 조합의 전역 최적해를 보장하지 않습니다.
 - 다일 재최적화도 날짜 순차 휴리스틱을 사용하며, 현재 날짜의 완료 상태는 기준 일정의 연속된 앞부분만 지원합니다.
 - 계정 이메일 검증, 비밀번호 재설정, OAuth 로그인과 로그인 시도 Rate Limit은 아직 지원하지 않습니다.
-- 서버에 사용자별 Trip 목록 API가 없어 로그인 계정이라도 현재 브라우저에 보존된 마지막 작업공간 한 건만 바로 복구합니다.
 - 기본 `HttpSession`은 단일 Backend 메모리에 있으므로 다중 인스턴스 배포 전에는 외부 Session Store와 만료 정책을 구성해야 합니다.
 - Route 복사 시 방문 장소·Priority·Must Visit만 옮기며 공개 당시 선호 시간창은 복사하지 않습니다.
 - 조회수는 상세 요청마다 증가하며 사용자·세션별 중복 조회를 제거하지 않습니다.

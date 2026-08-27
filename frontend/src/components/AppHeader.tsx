@@ -8,10 +8,11 @@ interface Props {
   onNewTrip: () => void
   onHome: () => void
   onCommunity: () => void
+  onProfile: () => void
   onLogout: () => void
 }
 
-export function AppHeader({ trip, user, onNewTrip, onHome, onCommunity, onLogout }: Props) {
+export function AppHeader({ trip, user, onNewTrip, onHome, onCommunity, onProfile, onLogout }: Props) {
   return (
     <header className="app-header">
       <button className="wordmark header-wordmark" onClick={onHome}>
@@ -32,10 +33,10 @@ export function AppHeader({ trip, user, onNewTrip, onHome, onCommunity, onLogout
         <button className="button button-ghost button-small" onClick={onNewTrip}>
           <Plus size={16} /> 새 여행
         </button>
-        <span className="profile-button">
+        <button className="profile-button" onClick={onProfile} aria-label="마이페이지">
           <span>{user?.nickname?.slice(0, 1) ?? 'R'}</span>
           <span className="profile-name">{user?.nickname ?? '여행자'}</span>
-        </span>
+        </button>
         <button className="icon-button" onClick={onLogout} aria-label="로그아웃"><LogOut size={16} /></button>
       </div>
     </header>

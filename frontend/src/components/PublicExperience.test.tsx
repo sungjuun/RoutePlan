@@ -1,15 +1,18 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../api/client'
-import type { AuthSession, SharedRoutePage } from '../types'
+import type { AuthSession, SharedRoutePage, TripSummary } from '../types'
 import { AuthPage } from './AuthPage'
 import { LandingPage } from './LandingPage'
+import { MyPage } from './MyPage'
+import { MyTripsPage } from './MyTripsPage'
 
 vi.mock('../api/client', () => ({
   api: {
     discoverRoutes: vi.fn(),
     login: vi.fn(),
     signup: vi.fn(),
+    getTrips: vi.fn(),
   },
 }))
 
@@ -33,10 +36,25 @@ const authenticated: AuthSession = {
   },
 }
 
+const savedTrips: TripSummary[] = [{
+  id: 21,
+  name: '가져온 오사카 여행',
+  startDate: '2026-09-10',
+  endDate: '2026-09-12',
+  accommodationName: '난바 숙소',
+  transportMode: 'PUBLIC_TRANSIT',
+  pace: 'RELAXED',
+  status: 'OPTIMIZED',
+  placeCount: 5,
+  createdAt: '2026-08-27T00:00:00Z',
+  updatedAt: '2026-08-27T00:00:00Z',
+}]
+
 describe('public RoutePlan experience', () => {
   beforeEach(() => {
     vi.mocked(api.discoverRoutes).mockResolvedValue(emptyRoutes)
     vi.mocked(api.login).mockResolvedValue(authenticated)
+    vi.mocked(api.getTrips).mockResolvedValue(savedTrips)
   })
 
   it('opens country recommendations and searches community routes', async () => {
@@ -86,5 +104,32 @@ describe('public RoutePlan experience', () => {
       'routeplan12!',
     ))
     expect(onAuthenticated).toHaveBeenCalledWith(authenticated.user)
+  })
+
+  it('shows every saved trip and opens the selected workspace', async () => {
+    const onOpenTrip = vi.fn()
+    render(<MyTripsPage onOpenTrip={onOpenTrip} onNewTrip={vi.fn()} onError={vi.fn()} />)
+
+    expect(await screen.findByText('가져온 오사카 여행')).toBeInTheDocument()
+    expect(screen.getByText('5곳')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /가져온 오사카 여행/ }))
+    expect(onOpenTrip).toHaveBeenCalledWith(21)
+  })
+
+  it('shows account information and travel totals on my page', async () => {
+    render(
+      <MyPage
+        user={authenticated.user!}
+        onOpenTrips={vi.fn()}
+        onNewTrip={vi.fn()}
+        onLogout={vi.fn()}
+        onError={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('여행자님의 여행 공간')).toBeInTheDocument()
+    expect(screen.getByText('traveler@example.com')).toBeInTheDocument()
+    await waitFor(() => expect(api.getTrips).toHaveBeenCalled())
+    expect(screen.getByText('담은 장소')).toBeInTheDocument()
   })
 })

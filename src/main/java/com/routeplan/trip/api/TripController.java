@@ -6,6 +6,7 @@ import com.routeplan.trip.application.TripService;
 import com.routeplan.trip.application.TripService.CreateTripCommand;
 import com.routeplan.trip.application.TripService.AddTripPlaceCommand;
 import com.routeplan.trip.application.TripService.TripResult;
+import com.routeplan.trip.application.TripService.TripSummaryResult;
 import com.routeplan.trip.application.TripService.UpdateTripCommand;
 import com.routeplan.trip.application.TripService.UpdateTripPlaceCommand;
 import com.routeplan.trip.domain.TransportMode;
@@ -22,6 +23,7 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -52,6 +54,13 @@ public class TripController {
     ) {
         TripResult result = tripService.create(request.toCommand(principal.userId()));
         return ResponseEntity.created(URI.create("/api/v1/trips/" + result.id())).body(result);
+    }
+
+    @GetMapping
+    public List<TripSummaryResult> list(
+            @AuthenticationPrincipal RoutePlanPrincipal principal
+    ) {
+        return tripService.list(principal.userId());
     }
 
     @GetMapping("/{tripId}")

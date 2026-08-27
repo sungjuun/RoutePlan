@@ -6,19 +6,21 @@ import { AuthPage } from './components/AuthPage'
 import { CommunityWorkspace } from './components/CommunityWorkspace'
 import { ItineraryWorkspace } from './components/ItineraryWorkspace'
 import { LandingPage } from './components/LandingPage'
+import { MyPage } from './components/MyPage'
+import { MyTripsPage } from './components/MyTripsPage'
 import { NaturalLanguageWorkspace } from './components/NaturalLanguageWorkspace'
 import { PlaceWorkspace } from './components/PlaceWorkspace'
 import { PublicCommunityPage } from './components/PublicCommunityPage'
 import { PublicHeader } from './components/PublicHeader'
 import { TripSetup } from './components/TripSetup'
 import { Toast } from './components/Toast'
-import { clearTripReference, loadWorkspace, saveWorkspace } from './lib/storage'
+import { clearTripReference, saveWorkspace } from './lib/storage'
 import type { Itinerary, Place, Trip, User } from './types'
 
 type Section = 'places' | 'itinerary' | 'settings' | 'community' | 'natural-language'
-type PublicPage = 'home' | 'community' | 'auth' | 'create-trip' | 'workspace'
+type PublicPage = 'home' | 'community' | 'auth' | 'create-trip' | 'trips' | 'profile' | 'workspace'
 type AuthMode = 'login' | 'signup'
-type AfterAuth = 'home' | 'create-trip' | 'my-trip'
+type AfterAuth = 'home' | 'create-trip' | 'trips' | 'profile' | 'requested-trip'
 
 interface Notice {
   kind: 'success' | 'error' | 'info'
@@ -106,7 +108,7 @@ export function App() {
         if (requestedTripId != null) {
           if (session.user) await loadTrip(requestedTripId)
           else {
-            setAfterAuth('my-trip')
+            setAfterAuth('requested-trip')
             setAuthMode('login')
             setPage('auth')
             notify('info', '이 여행을 보려면 먼저 로그인해 주세요.')
@@ -153,14 +155,22 @@ export function App() {
     window.history.replaceState(null, '', window.location.pathname)
   }
 
-  const openMyTrip = async () => {
+  const openMyTrips = () => {
     if (!user) {
-      showAuth('login', 'my-trip')
+      showAuth('login', 'trips')
       return
     }
-    const storedTripId = loadWorkspace().tripId
-    if (storedTripId == null) createTrip()
-    else await loadTrip(storedTripId)
+    setPage('trips')
+    window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  const openProfile = () => {
+    if (!user) {
+      showAuth('login', 'profile')
+      return
+    }
+    setPage('profile')
+    window.history.replaceState(null, '', window.location.pathname)
   }
 
   const handleAuthenticated = async (nextUser: User) => {
@@ -170,13 +180,20 @@ export function App() {
       setPage('create-trip')
       return
     }
-    if (afterAuth === 'my-trip') {
-      const storedTripId = loadWorkspace().tripId
-      if (storedTripId != null) {
-        await loadTrip(storedTripId)
+    if (afterAuth === 'requested-trip') {
+      if (requestedTripId != null) {
+        await loadTrip(requestedTripId)
         return
       }
-      setPage('create-trip')
+      setPage('trips')
+      return
+    }
+    if (afterAuth === 'trips') {
+      setPage('trips')
+      return
+    }
+    if (afterAuth === 'profile') {
+      setPage('profile')
       return
     }
     setPage('home')
@@ -235,10 +252,12 @@ export function App() {
   if (page !== 'workspace') {
     return (
       <div className="public-shell">
-        <PublicHeader user={user} onHome={showHome} onCommunity={() => showCommunity()} onMyTrip={() => void openMyTrip()} onNewTrip={createTrip} onLogin={() => showAuth('login')} onSignup={() => showAuth('signup')} onLogout={() => void logout()} />
+        <PublicHeader user={user} onHome={showHome} onCommunity={() => showCommunity()} onMyTrip={openMyTrips} onProfile={openProfile} onNewTrip={createTrip} onLogin={() => showAuth('login')} onSignup={() => showAuth('signup')} onLogout={() => void logout()} />
         {page === 'home' && <LandingPage user={user} onExplore={showCommunity} onCreateTrip={createTrip} onError={reportError} />}
         {page === 'community' && <PublicCommunityPage user={user} initialRegion={communityRegion} onRequireAuth={() => showAuth('login', 'create-trip')} onCreateTrip={createTrip} onError={reportError} />}
         {page === 'create-trip' && <TripSetup onReady={handleTripReady} onError={reportError} />}
+        {page === 'trips' && <MyTripsPage onOpenTrip={(tripId) => void loadTrip(tripId)} onNewTrip={createTrip} onError={reportError} />}
+        {page === 'profile' && user && <MyPage user={user} onOpenTrips={openMyTrips} onNewTrip={createTrip} onLogout={() => void logout()} onError={reportError} />}
         <Toast notice={notice} onClose={() => setNotice(null)} />
       </div>
     )
@@ -248,7 +267,7 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <AppHeader trip={trip} user={user} onNewTrip={createTrip} onHome={showHome} onCommunity={() => setSection('community')} onLogout={() => void logout()} />
+      <AppHeader trip={trip} user={user} onNewTrip={createTrip} onHome={showHome} onCommunity={() => setSection('community')} onProfile={openProfile} onLogout={() => void logout()} />
       <div className="workspace-shell">
         <nav className="workspace-nav" aria-label="여행 작업 단계">
           <button className={section === 'places' ? 'active' : ''} onClick={() => setSection('places')}><span><MapPinned size={19} /></span><span><strong>장소 담기</strong><small>{trip.places.length}곳 선택됨</small></span></button>

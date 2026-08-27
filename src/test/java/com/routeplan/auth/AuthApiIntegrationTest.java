@@ -133,6 +133,17 @@ class AuthApiIntegrationTest {
                 .andReturn();
         Number tripId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
 
+        mockMvc.perform(get("/api/v1/trips").session(ownerSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(tripId.longValue()))
+                .andExpect(jsonPath("$[0].name").value("세션 소유권 여행"))
+                .andExpect(jsonPath("$[0].placeCount").value(0));
+
+        mockMvc.perform(get("/api/v1/trips").session(strangerSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
         mockMvc.perform(get("/api/v1/trips/{tripId}", tripId.longValue())
                         .session(strangerSession))
                 .andExpect(status().isForbidden())

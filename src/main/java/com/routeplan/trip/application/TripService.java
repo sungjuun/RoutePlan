@@ -11,6 +11,7 @@ import com.routeplan.trip.domain.TripPace;
 import com.routeplan.trip.domain.TripStatus;
 import com.routeplan.trip.persistence.TripPlaceRepository;
 import com.routeplan.trip.persistence.TripRepository;
+import com.routeplan.trip.persistence.TripRepository.TripListProjection;
 import com.routeplan.user.domain.User;
 import com.routeplan.user.persistence.UserRepository;
 import java.math.BigDecimal;
@@ -128,6 +129,13 @@ public class TripService {
     public TripResult get(Long tripId) {
         Trip trip = getTrip(tripId);
         return toResult(trip, tripPlaceRepository.findAllByTripIdOrderByIdAsc(tripId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<TripSummaryResult> list(Long userId) {
+        return tripRepository.findAllSummariesByUserId(userId).stream()
+                .map(TripSummaryResult::from)
+                .toList();
     }
 
     @Transactional
@@ -398,6 +406,37 @@ public class TripService {
             Instant updatedAt,
             List<TripPlaceResult> places
     ) {
+    }
+
+    public record TripSummaryResult(
+            Long id,
+            String name,
+            LocalDate startDate,
+            LocalDate endDate,
+            String accommodationName,
+            TransportMode transportMode,
+            TripPace pace,
+            TripStatus status,
+            long placeCount,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+
+        static TripSummaryResult from(TripListProjection trip) {
+            return new TripSummaryResult(
+                    trip.getId(),
+                    trip.getName(),
+                    trip.getStartDate(),
+                    trip.getEndDate(),
+                    trip.getAccommodationName(),
+                    trip.getTransportMode(),
+                    trip.getPace(),
+                    trip.getStatus(),
+                    trip.getPlaceCount(),
+                    trip.getCreatedAt(),
+                    trip.getUpdatedAt()
+            );
+        }
     }
 
     public record TripPlaceResult(

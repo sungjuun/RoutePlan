@@ -1,4 +1,4 @@
-import { Compass, LogOut, Plus, Route } from 'lucide-react'
+import { Compass, LogOut, Plus, Route, UserRound } from 'lucide-react'
 import type { User } from '../types'
 
 interface Props {
@@ -6,6 +6,7 @@ interface Props {
   onHome: () => void
   onCommunity: () => void
   onMyTrip: () => void
+  onProfile: () => void
   onNewTrip: () => void
   onLogin: () => void
   onSignup: () => void
@@ -17,6 +18,7 @@ export function PublicHeader({
   onHome,
   onCommunity,
   onMyTrip,
+  onProfile,
   onNewTrip,
   onLogin,
   onSignup,
@@ -32,6 +34,7 @@ export function PublicHeader({
         <button onClick={onHome}>추천 루트</button>
         <button onClick={onCommunity}>커뮤니티</button>
         <button onClick={onMyTrip}>내 여행</button>
+        <button onClick={onProfile}>마이페이지</button>
       </nav>
       <div className="public-header-actions">
         {user ? (
@@ -39,7 +42,8 @@ export function PublicHeader({
             <button className="button button-ghost button-small" onClick={onNewTrip}>
               <Plus size={15} /> 새 여행
             </button>
-            <span className="public-profile"><i>{user.nickname.slice(0, 1)}</i>{user.nickname}</span>
+            <button className="public-profile" onClick={onProfile}><i>{user.nickname.slice(0, 1)}</i>{user.nickname}</button>
+            <button className="icon-button public-profile-icon" onClick={onProfile} aria-label="마이페이지"><UserRound size={17} /></button>
             <button className="icon-button" onClick={onLogout} aria-label="로그아웃">
               <LogOut size={17} />
             </button>

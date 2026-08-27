@@ -17,6 +17,7 @@ import type {
   SharedRouteSort,
   SignupInput,
   Trip,
+  TripSummary,
   TripPlaceConstraints,
 } from '../types'
 
@@ -128,6 +129,8 @@ export const api = {
 
   createTrip: (input: CreateTripInput) =>
     request<Trip>('/trips', json('POST', input)),
+
+  getTrips: () => request<TripSummary[]>('/trips'),
 
   getTrip: (tripId: number) => request<Trip>(`/trips/${tripId}`),
 
