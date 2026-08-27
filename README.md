@@ -58,7 +58,11 @@ V15는 날짜별 날씨에 따라 장소 선택 우선순위가 달라지는 여
 
 > 비·눈에는 실내 장소를 우선하고 맑은 날에는 실외 장소를 우선하면서도, Must Visit과 이미 완료한 일정은 그대로 지킬 수 있는가?
 
-## 구현 범위 (V1–V15)
+V16은 여행 비용을 실제 일정 선택의 제약으로 연결합니다.
+
+> 고정비와 이미 방문한 장소의 비용을 보존하고 이후 Must Visit 비용까지 확보하면서, 선택 장소를 여행 전체 예산 안에 배치할 수 있는가?
+
+## 구현 범위 (V1–V16)
 
 ### 지원
 
@@ -125,6 +129,11 @@ V15는 날짜별 날씨에 따라 장소 선택 우선순위가 달라지는 여
 - 여행 날짜별 날씨·강수확률 저장과 날씨 적합도 기반 장소 우선순위 보정
 - 비·눈·극한 날씨의 실내 우선, 맑은 날의 실외 우선 일정 생성·재최적화
 - 날짜 날씨와 장소별 날씨 점수 보정값을 Itinerary Snapshot으로 저장·표시
+- 여행별 통화·총예산·고정비와 여행별 장소 예상 비용 입력
+- 정수 최소 통화 단위 금액 계산, 비용 미입력과 무료(0) 구분
+- 전체 여행 예산에서 미래 Must Visit 비용 예약, 선택 장소의 `BUDGET` 제외 사유
+- 비용·예산 Snapshot과 완료 비용을 보존하는 예산 변경 재최적화
+- 비용 입력 검증·미저장 계산 방지·예상 총비용·남은 예산 UI
 - 일자별 이동·체류·대기·숙소 복귀 Snapshot 저장
 - 일자별 타임라인과 지도 DAY 전환, 다일 SharedRoute 공개·복사
 - 현재 날짜 기준 다일 잔여 일정 재최적화와 지난 날짜 Snapshot 고정
@@ -190,6 +199,7 @@ com.routeplan
 ├─ itinerary       최적화 orchestration과 결과 저장
 ├─ community       공개 Route Snapshot·탐색·좋아요·복사
 ├─ weather         날짜별 예보·장소 환경 적합도 정책
+├─ budget          통화·비용 입력·여행 예산 Snapshot
 └─ ai              자연어 해석 Provider·검증·Trip 적용
 ```
 
@@ -230,6 +240,7 @@ flowchart LR
 → 장소 검색 또는 좌표 등록
 → Must Visit·Priority·시간창·체류시간 편집
 → 날짜별 날씨·강수확률 설정
+→ 통화·고정비·장소 예상 비용·총예산 설정 (선택)
 → 알고리즘 선택과 일정 생성
 → 시간표·지도·제외 장소 확인
 → 완료 구간과 현재 위치 입력
@@ -281,6 +292,8 @@ erDiagram
 - Trip은 종료일이 시작일보다 빠를 수 없고 최대 14일까지 허용
 - 같은 Trip의 날짜별 날씨는 한 건만 저장할 수 있고 여행 기간 안에 있어야 함
 - 날씨 상태와 강수확률 0–100, 장소 환경과 날씨 점수 보정값의 허용 범위 검증
+- 통화는 `KRW`·`JPY`·`USD`·`EUR`·`GBP`·`CNY`, 개별 금액은 0–1조 최소 통화 단위의 정수
+- 비용 미입력은 `NULL`, 무료는 `0`으로 구분하며 음수·범위 초과·소수 최소 단위는 거부
 - 같은 Itinerary의 일자 번호와 방문일은 각각 중복될 수 없음
 - 같은 Itinerary는 SharedRoute로 한 번만 공개할 수 있음
 - SharedRoute의 장소 순서는 중복될 수 없고 Snapshot 항목이 한 개 이상이어야 함
@@ -393,6 +406,20 @@ V9는 시작일부터 종료일까지 날짜 순서대로 하루 제약 계산�
 
 모든 날짜는 숙소에서 시작해 하루 종료 전 같은 숙소로 돌아오는 닫힌 일정입니다. 일자별 이동·체류·대기·복귀 합계는 `itinerary_days`에 저장하고, Itinerary 전체 합계는 모든 날짜의 값을 합산합니다. 이 방식은 결정적인 일자 순차 휴리스틱이며 장소를 날짜와 순서에 동시에 배치하는 전역 최적해를 보장하지 않습니다.
 
+### 여행 비용과 총예산
+
+V16의 금액은 여행마다 선택한 단일 통화의 최소 단위 정수입니다. 원화·엔화는 1원·1엔, 나머지 지원 통화는 0.01 단위를 사용합니다. 예를 들어 USD 12.30은 API에서 `1230`으로 주고받습니다. UI는 일반 금액을 입력받아 문자열·정수 연산으로 변환하므로 부동소수점 반올림으로 센트가 사라지지 않습니다.
+
+```text
+전체 예상 비용 = 여행 전체 고정비 + 선택한 방문 장소 비용 합
+잔여 방문 예산 = 총예산 - 고정비 - 완료된 방문의 비용 Snapshot
+선택 장소 여유분 = 잔여 방문 예산 - 아직 방문하지 않은 모든 Must Visit 비용
+```
+
+예산을 설정하면 모든 미완료 후보와 완료 구간에 비용 정보가 필요합니다. 미입력을 무료로 취급하지 않으며, 부족한 정보는 `422 COST_ESTIMATES_REQUIRED`로 반환합니다. 고정비·완료 비용·Must Visit 합이 예산을 넘으면 `422 INFEASIBLE_BUDGET`이며 일정을 저장하지 않습니다. 선택 장소는 기존 날씨 보정 Priority 순서로 처리하고, 동률이면 비용이 낮은 장소를 먼저 시도합니다. 이후 날짜에만 영업하는 Must Visit 비용도 미리 예약하므로 첫날 선택 장소가 그 예산을 쓰지 않습니다. 예산이 모자란 선택 장소에는 `BUDGET` 제외 사유를 저장하며 날짜가 바뀌어도 사용한 예산은 초기화하지 않습니다.
+
+예산을 비워 두면 비용은 표시만 하고 기존 일정 선택을 바꾸지 않습니다. 미입력 장소가 있으면 화면은 ‘입력된 비용 합계’와 미입력 개수를 표시합니다. `Itinerary.costSummary`는 계산 당시 통화·예산·고정비, 방문 비용 합, 전체 합계, 미입력 개수와 남은 예산을 반환하고, 각 항목은 `estimatedCostMinor`를 보존합니다. 재최적화는 완료 항목의 이전 비용을 그대로 쓰며, 완료 구간이 있는 상태에서 통화를 변경하면 `422 BUDGET_CURRENCY_MISMATCH`로 거부합니다. 고정비는 여행 전체 값으로 한 번만 합산합니다.
+
 ## 외부 지도 API와 Route Matrix
 
 ### Google Places Text Search
@@ -493,6 +520,8 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 | `DELETE` | `/api/v1/trips/{tripId}/places/{placeId}` | Trip에서 Place 제거 |
 | `GET` | `/api/v1/trips/{tripId}/weather` | 여행 기간에 저장한 날짜별 날씨 조회 |
 | `PUT` | `/api/v1/trips/{tripId}/weather` | 날짜별 날씨·강수확률 전체 교체 |
+| `GET` | `/api/v1/trips/{tripId}/budget` | 여행별 통화·예산·고정비·장소 비용 조회 |
+| `PUT` | `/api/v1/trips/{tripId}/budget` | 여행 소유자의 비용 설정 원자적 전체 교체 |
 | `POST` | `/api/v1/trips/{tripId}/optimize?algorithm=...` | 선택한 알고리즘으로 일정 생성 및 새 버전 저장 |
 | `POST` | `/api/v1/trips/{tripId}/reoptimize?algorithm=...` | 완료 구간을 고정하고 남은 일정만 새 버전으로 재계산 |
 | `GET` | `/api/v1/trips/{tripId}/itineraries/latest` | 최신 일정 조회 |
@@ -559,6 +588,24 @@ Trip 생성 시 `dailyStartTime`, `dailyEndTime`, `pace`를 생략하면 각각 
 }
 ```
 
+### 비용 설정 요청 예시
+
+`PUT /api/v1/trips/{tripId}/budget`는 현재 여행에 담긴 모든 Place ID를 포함해야 합니다. 다른 여행의 장소·누락·중복을 거부하고 통화·예산·모든 비용을 한 트랜잭션으로 교체합니다. `limitMinor: null`은 예산 제한 해제이며 장소의 `estimatedCostMinor: null`은 비용 미입력입니다. 저장 후 Trip은 `DRAFT`가 되고 기존 일정은 변경되지 않습니다.
+
+```json
+{
+  "currency": "KRW",
+  "limitMinor": 100000,
+  "fixedCostMinor": 20000,
+  "placeCosts": [
+    { "placeId": 1, "estimatedCostMinor": 15000 },
+    { "placeId": 2, "estimatedCostMinor": 0 }
+  ]
+}
+```
+
+장소 비용은 공용 Place 데이터가 아니라 개인 TripPlace에 저장합니다. 같은 장소를 사용하는 다른 여행이나 사용자에게 영향을 주지 않고, 공개 Route 공유·복사에는 개인 예산과 비용을 넣지 않습니다. 복사한 여행에서 직접 비용을 다시 설정합니다.
+
 ### 남은 일정 재최적화
 
 재최적화 전 필요한 장소를 Trip에 추가하거나 미방문 장소를 삭제한 다음, 최신 Itinerary를 기준으로 요청합니다. `completedItemIds`는 기준 일정의 앞에서부터 끊김 없이 완료한 항목 ID를 순서대로 전달합니다.
@@ -576,7 +623,7 @@ Trip 생성 시 `dailyStartTime`, `dailyEndTime`, `pace`를 생략하면 각각 
 }
 ```
 
-`currentDate`를 생략하면 기존 단일 날짜 요청과의 호환을 위해 Trip 시작일을 사용합니다. 변경 사유는 `DELAY`, `PLACE_ADDED`, `PLACE_REMOVED`, `WEATHER`, `USER_REQUEST`, `OTHER`를 지원합니다. 새 버전은 다음 규칙을 지킵니다.
+`currentDate`를 생략하면 기존 단일 날짜 요청과의 호환을 위해 Trip 시작일을 사용합니다. 변경 사유는 `DELAY`, `PLACE_ADDED`, `PLACE_REMOVED`, `WEATHER`, `BUDGET`, `USER_REQUEST`, `OTHER`를 지원합니다. 새 버전은 다음 규칙을 지킵니다.
 
 1. `currentDate` 이전 날짜는 모든 방문이 완료된 상태여야 하며, 장소·시각·이동비용·일자 요약을 그대로 복사합니다.
 2. 현재 날짜에서 완료한 연속 앞부분은 장소·시각·이동비용까지 그대로 복사하고 `COMPLETED`로 저장합니다.
@@ -772,7 +819,7 @@ npm run test:e2e:docker
 
 `test:e2e:docker`는 개발용 `localhost:3100`과 DB를 건드리지 않습니다. `routeplan-e2e` 프로젝트를 기본 포트 `3200`·`8280`·`55432`·`6479`에 띄우고, 테스트가 끝나면 전용 컨테이너와 DB 볼륨을 제거합니다. 이미 실행 중인 환경을 직접 검사할 때는 `E2E_BASE_URL`을 지정하고 `npm run test:e2e`를 사용합니다. 실패 시 `frontend/playwright-report`와 `frontend/test-results`에 Screenshot·Video·Trace·Compose 로그를 남깁니다.
 
-현재 기본 검증 묶음은 Backend 70개, Frontend 단위 테스트 20개, 브라우저 E2E 5개를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V10과 세션 인증·CSRF·소유권 경계를 함께 확인합니다.
+현재 기본 검증 묶음은 Backend 84개, Frontend 단위 테스트 27개, 브라우저 E2E 5개를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V11과 세션 인증·CSRF·소유권 경계를 함께 확인합니다.
 
 `.github/workflows/ci.yml`은 push와 pull request마다 Backend와 Frontend Job을 병렬 실행하고, 둘 다 통과하면 격리된 Docker 환경에서 Browser E2E Job을 실행합니다. Backend는 Java 21과 Testcontainers PostgreSQL로 전체 테스트를 수행하고, Frontend는 Node.js 22에서 고정된 lockfile로 설치한 뒤 단위 테스트, ESLint, 프로덕션 빌드를 모두 통과해야 합니다. Benchmark는 실행시간 변동과 비용 때문에 일반 CI에서 분리합니다.
 
@@ -798,6 +845,10 @@ npm run test:e2e:docker
 - 높은 Priority 장소 보존과 낮은 Priority 장소 제외
 - 비 오는 날 실내 우선·맑은 날 실외 우선 다일 배치와 날씨 점수 Snapshot
 - 날짜별 날씨 교체 API의 여행 소유권 차단과 기간·강수확률 검증
+- 미래 Must Visit 예산 예약, 다일 누적 예산과 무료·미입력 비용의 구분
+- 예산 초과·비용 미입력·음수·소수 최소 단위·범위 초과·외부 장소·권한 거부
+- 예산 변경 재최적화의 완료 비용 Snapshot 보존과 통화 변경 차단
+- 센트 정밀도·미저장 예산 계산 잠금·통화 변경 초기화·비용 입력 재시도 UI
 - 휴무일 Must Visit의 구조화된 422 충돌 응답
 - Google Places 요청 body·API key·Field Mask 계약
 - Google Routes Matrix element index·duration 파싱
@@ -829,6 +880,7 @@ npm run test:e2e:docker
 - 공개 모바일 메뉴 전환과 내 여행 API 실패 후 재시도
 - 비회원 추천 탐색과 내 여행 인증 경계의 실제 브라우저 흐름
 - 회원가입부터 여행 생성·좌표 장소 추가·일정 계산·새로고침 복구·공개까지의 E2E
+- 모바일 폭의 예산 입력, 비용 저장 후 예산 부족 장소 제외와 결과 합계 E2E
 - 다른 사용자의 Trip 접근 차단과 공개 Route 좋아요·복사·재최적화 E2E
 - Pixel 5 Viewport의 모바일 메뉴·가로 폭·인증 경계 E2E
 - 한국어 자연어의 시간·여행 강도·이동수단·장소 우선순위 결정적 해석
@@ -856,7 +908,7 @@ V4에서는 외부 Route API를 호출하는 동안 DB 트랜잭션이나 비관
 → 짧은 결과 저장 Transaction
 ```
 
-저장 직전에 Trip, TripPlace, Place 좌표·체류시간, 당일 영업시간을 다시 순수 입력 모델로 만들고 원래 Snapshot과 비교합니다. 재최적화는 최신 기준 버전도 다시 확인합니다. 달라졌다면 오래된 결과를 저장하지 않고 `409 OPTIMIZATION_INPUT_CHANGED` 또는 `409 REOPTIMIZATION_SOURCE_NOT_LATEST`를 반환합니다. `(trip_id, version)` unique constraint도 동시성의 마지막 방어선으로 유지합니다.
+저장 직전에 Trip, TripPlace, Place 좌표·체류시간, 날짜별 영업시간·날씨, 통화·예산·장소 비용을 다시 순수 입력 모델로 만들고 원래 Snapshot과 비교합니다. 재최적화는 최신 기준 버전도 다시 확인합니다. 달라졌다면 오래된 결과를 저장하지 않고 `409 OPTIMIZATION_INPUT_CHANGED` 또는 `409 REOPTIMIZATION_SOURCE_NOT_LATEST`를 반환합니다. `(trip_id, version)` unique constraint도 동시성의 마지막 방어선으로 유지합니다.
 
 자연어 `/preview`는 읽기만 수행하고 외부 OpenAI 호출 중 DB Lock을 유지하지 않습니다. `/apply`는 Trip을 비관적 Lock으로 다시 조회하고 요청의 모든 Place ID가 해당 Trip에 속하는지 확인한 뒤 Trip과 TripPlace를 한 트랜잭션으로 변경합니다. 모델 호출과 DB 변경이 같은 트랜잭션에 들어가지 않으며, 미리보기만으로는 상태가 바뀌지 않습니다.
 
@@ -894,6 +946,8 @@ V13 세션 인증·소유권 보호·공개 추천 메인·내 여행·마이페
 V14 Playwright 데스크톱·모바일 사용자 흐름·소유권 E2E·CI ✓
  ↓
 V15 장소 환경·날짜별 날씨·날씨 대응 일정 생성과 재최적화 ✓
+ ↓
+V16 통화·고정비·장소 비용·전체 예산 제약·비용 Snapshot 재최적화 ✓
 ```
 
 ## Performance Benchmark
@@ -966,6 +1020,10 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 날짜별 날씨는 사용자가 직접 입력하며 외부 실시간 예보 Provider, 지역 시간대, 예보 자동 갱신은 아직 지원하지 않습니다.
 - 날씨 적합도는 장소 환경 세 종류와 고정 보정표를 사용하는 결정적 휴리스틱이며 온도·습도·미세먼지·운영 중단은 반영하지 않습니다.
 - 외부 장소의 환경은 제한된 카테고리 사전으로 추론하므로 실제 실내·실외 여부와 다를 수 있으며 사용자가 수정하는 API는 아직 없습니다.
+- 비용은 사용자가 직접 입력한 예상값이며 실시간 입장료·교통요금, 환율 변환, 인원별 자동 곱셈, 실제 결제·지출 정산은 지원하지 않습니다. 여행 전체 기준으로 비용을 입력해야 합니다.
+- 예산 배치는 Priority 기반 결정적 휴리스틱으로 가능한 모든 장소 조합의 최대 만족도나 최소 비용을 보장하지 않습니다.
+- 예산은 여행 전체 한도이며 날짜별 한도·카테고리별 한도는 아직 없습니다. 고정비와 장소 비용에 동일 비용을 중복 입력하지 않아야 합니다.
+- 개인 예산과 비용은 SharedRoute 공개 Snapshot이나 복사에 포함하지 않습니다. 이전 버전에서 비용이 미입력인 완료 구간에는 예산을 적용할 수 없으므로 제한을 해제하거나 전체 새 일정을 계산해야 합니다.
 - 계정 이메일 검증, 비밀번호 재설정, OAuth 로그인과 로그인 시도 Rate Limit은 아직 지원하지 않습니다.
 - 기본 `HttpSession`은 단일 Backend 메모리에 있으므로 다중 인스턴스 배포 전에는 외부 Session Store와 만료 정책을 구성해야 합니다.
 - Route 복사 시 방문 장소·Priority·Must Visit만 옮기며 공개 당시 선호 시간창은 복사하지 않습니다.
@@ -1009,3 +1067,5 @@ V12 이전에는 Google·OpenAI 호출이 일시적 429·5xx·Timeout에도 한 
 V13 이전에는 요청 본문의 `userId`만으로 다른 사용자의 Trip을 조회하거나 변경할 수 있었습니다. V13에서는 이메일과 적응형 비밀번호 해시를 가진 계정, 서버 `HttpSession`, CSRF 보호를 추가하고 모든 개인 리소스의 소유자를 인증 Principal에서 결정합니다. 공개 Route 목록·상세만 비회원에게 열어 두고 좋아요·복사·공개·여행 편집은 로그인 사용자로 제한했습니다. 프론트도 로컬 사용자 객체를 제거하고 공개 추천 메인 → 커뮤니티 탐색 → 로그인 → 개인 작업공간 흐름으로 분리했습니다.
 
 V15 이전에는 비 오는 날 공원과 박물관의 Priority가 같으면 날씨와 무관하게 경로 순서만으로 결정됐습니다. 장소의 원래 Priority를 덮어쓰면 예보가 바뀔 때 사용자 선호를 복원하기 어렵기 때문에, 환경 적합도를 별도 점수로 계산하고 결과 항목에 Snapshot으로 남겼습니다. 날짜별 예보 저장은 Trip을 `DRAFT`로 되돌리지만 기존 Itinerary는 수정하지 않으며, 사용자가 계산 또는 `WEATHER` 사유 재최적화를 실행할 때 새 버전에만 반영합니다.
+
+V16에서 날짜별로 예산을 새로 적용하면 여행 총예산을 여러 번 쓸 수 있고, 첫날 선택 장소를 우선하면 둘째 날 Must Visit 비용이 사라질 수 있습니다. 여행 전체 잔액을 유지하고 남은 모든 Must Visit 비용을 예약한 뒤 선택 장소를 삽입합니다. 재최적화 때 완료한 방문의 현재 TripPlace 비용을 다시 읽으면 과거 비용이 바뀌므로, 원본 ItineraryItem 비용을 고정하고 고정비는 한 번만 계산합니다. 소수 금액은 서버에서 정수 최소 단위로 검증해 JSON 숫자의 조용한 절삭도 거부합니다.

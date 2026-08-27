@@ -1,5 +1,7 @@
 package com.routeplan.itinerary.domain;
 
+import com.routeplan.budget.domain.BudgetCurrency;
+import com.routeplan.budget.domain.BudgetSettings;
 import com.routeplan.place.domain.Place;
 import com.routeplan.optimization.domain.OptimizationAlgorithm;
 import com.routeplan.optimization.domain.Location;
@@ -31,6 +33,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.Map;
 import org.hibernate.annotations.CreationTimestamp;
 
 @Entity
@@ -137,6 +140,16 @@ public class Itinerary {
     @Column(name = "route_cache_failure_count", nullable = false)
     private int routeCacheFailureCount;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "budget_currency", nullable = false, length = 3)
+    private BudgetCurrency budgetCurrency = BudgetCurrency.KRW;
+
+    @Column(name = "budget_limit_minor")
+    private Long budgetLimitMinor;
+
+    @Column(name = "fixed_cost_minor", nullable = false)
+    private long fixedCostMinor;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -153,6 +166,18 @@ public class Itinerary {
     private final Set<ItineraryExclusion> exclusions = new LinkedHashSet<>();
 
     protected Itinerary() {
+    }
+
+    public BudgetSettings getBudgetSettings() {
+        return new BudgetSettings(budgetCurrency, budgetLimitMinor, fixedCostMinor);
+    }
+
+    public void recordBudget(BudgetSettings settings, Map<Long, Long> costsByPlaceId) {
+        if (id != null) throw new IllegalStateException("저장된 일정의 비용 Snapshot은 변경할 수 없습니다.");
+        this.budgetCurrency = settings.currency();
+        this.budgetLimitMinor = settings.limitMinor();
+        this.fixedCostMinor = settings.fixedCostMinor();
+        items.forEach(item -> item.recordEstimatedCost(costsByPlaceId.get(item.getPlace().getId())));
     }
 
     private Itinerary(

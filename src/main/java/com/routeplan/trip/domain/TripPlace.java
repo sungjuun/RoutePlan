@@ -1,5 +1,6 @@
 package com.routeplan.trip.domain;
 
+import com.routeplan.budget.domain.BudgetSettings;
 import com.routeplan.place.domain.Place;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -54,6 +55,9 @@ public class TripPlace {
 
     @Column(name = "maximum_stay_minutes")
     private Integer maximumStayMinutes;
+
+    @Column(name = "estimated_cost_minor")
+    private Long estimatedCostMinor;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -122,6 +126,15 @@ public class TripPlace {
         this.preferredEndTime = preferredEndTime;
         this.minimumStayMinutes = minimumStayMinutes;
         this.maximumStayMinutes = maximumStayMinutes;
+    }
+
+    public void updateEstimatedCost(Long amount) {
+        BudgetSettings.requireAmount(amount);
+        this.estimatedCostMinor = amount;
+    }
+
+    public Long getEstimatedCostMinor() {
+        return estimatedCostMinor;
     }
 
     public Long getId() {

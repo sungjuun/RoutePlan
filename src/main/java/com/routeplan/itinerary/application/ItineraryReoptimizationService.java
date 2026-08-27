@@ -1,5 +1,7 @@
 package com.routeplan.itinerary.application;
 
+import com.routeplan.budget.application.BudgetInput;
+import com.routeplan.optimization.constraint.ScheduleBudget;
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
 import com.routeplan.common.observability.RoutePlanMetrics;
@@ -43,6 +45,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -109,6 +112,8 @@ public class ItineraryReoptimizationService {
             ReoptimizationSnapshot snapshot = Objects.requireNonNull(
                     readTransaction.execute(status -> loadSnapshot(tripId, algorithm, command))
             );
+            ScheduleBudget budget = snapshot.scheduleBudget();
+            budget.validate(snapshot.input().dailyCandidates().getFirst().candidates());
             RouteMatrix routeMatrix = routeMatrixProvider.build(
                     locations(snapshot.input()),
                     snapshot.input().optimizationRequest().transportMode()
@@ -118,7 +123,8 @@ public class ItineraryReoptimizationService {
                     .optimize(snapshot.input().optimizationRequest(), routeMatrix);
             MultiDaySchedule schedule = schedulePlanner.plan(
                     snapshot.input().toScheduleRequests(result),
-                    routeMatrix
+                    routeMatrix,
+                    budget
             );
             ItineraryView itinerary = Objects.requireNonNull(writeTransaction.execute(status ->
                     saveIfUnchanged(snapshot, result, schedule, routeMatrix)
@@ -170,6 +176,10 @@ public class ItineraryReoptimizationService {
         List<ItineraryItem> completedItems = completedPrefix(
                 source, normalizedCommand.completedItemIds()
         );
+        if (!completedItems.isEmpty()
+                && source.getBudgetSettings().currency() != trip.getBudgetSettings().currency()) {
+            throw new RoutePlanException(ErrorCode.BUDGET_CURRENCY_MISMATCH);
+        }
         validateCompletedDates(source, completedItems, normalizedCommand.currentDate());
         validateCompletedTimes(
                 completedItems, normalizedCommand.currentDate(), normalizedCommand.currentTime()
@@ -362,7 +372,8 @@ public class ItineraryReoptimizationService {
                 trip.getDailyEndTime(),
                 accommodation,
                 optimizationRequest,
-                dailyCandidates
+                dailyCandidates,
+                BudgetInput.from(trip, remaining)
         );
     }
 
@@ -618,6 +629,15 @@ public class ItineraryReoptimizationService {
                 exclusion.priority(),
                 exclusion.reason()
         ));
+        Map<Long, Long> costSnapshots = new HashMap<>(snapshot.input().budget().costsByPlaceId());
+        snapshot.completedVisits().forEach(visit -> {
+            if (visit.estimatedCostMinor() == null) {
+                costSnapshots.remove(visit.placeId());
+            } else {
+                costSnapshots.put(visit.placeId(), visit.estimatedCostMinor());
+            }
+        });
+        itinerary.recordBudget(snapshot.input().budget().settings(), costSnapshots);
         trip.markOptimized();
         return ItineraryView.from(itineraryRepository.saveAndFlush(itinerary));
     }
@@ -664,7 +684,8 @@ public class ItineraryReoptimizationService {
             LocalTime dailyEndTime,
             Location accommodation,
             OptimizationRequest optimizationRequest,
-            List<DailyCandidates> dailyCandidates
+            List<DailyCandidates> dailyCandidates,
+            BudgetInput budget
     ) {
 
         private ReoptimizationInput {
@@ -715,6 +736,14 @@ public class ItineraryReoptimizationService {
             completedPlaceIds = Set.copyOf(completedPlaceIds);
             completedVisits = List.copyOf(completedVisits);
             fixedDays = List.copyOf(fixedDays);
+        }
+
+        private ScheduleBudget scheduleBudget() {
+            long completedCost = completedVisits.stream().map(CompletedVisit::estimatedCostMinor)
+                    .filter(Objects::nonNull).reduce(0L, Math::addExact);
+            boolean unknownCost = completedVisits.stream()
+                    .anyMatch(visit -> visit.estimatedCostMinor() == null);
+            return input.budget().remaining(completedCost, unknownCost);
         }
     }
 
@@ -777,7 +806,8 @@ public class ItineraryReoptimizationService {
             int stayMinutes,
             int priority,
             boolean mustVisit,
-            int weatherScoreAdjustment
+            int weatherScoreAdjustment,
+            Long estimatedCostMinor
     ) {
 
         private static CompletedVisit from(ItineraryItem item) {
@@ -794,7 +824,8 @@ public class ItineraryReoptimizationService {
                     item.getStayMinutes(),
                     item.getPriority(),
                     item.getMustVisit(),
-                    item.getWeatherScoreAdjustment()
+                    item.getWeatherScoreAdjustment(),
+                    item.getEstimatedCostMinor()
             );
         }
     }

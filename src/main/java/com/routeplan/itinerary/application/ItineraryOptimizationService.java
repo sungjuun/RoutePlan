@@ -1,5 +1,7 @@
 package com.routeplan.itinerary.application;
 
+import com.routeplan.budget.application.BudgetInput;
+import com.routeplan.optimization.constraint.ScheduleBudget;
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
 import com.routeplan.common.observability.RoutePlanMetrics;
@@ -95,6 +97,8 @@ public class ItineraryOptimizationService {
             OptimizationSnapshot snapshot = Objects.requireNonNull(
                     readTransaction.execute(status -> loadSnapshot(tripId, algorithm))
             );
+            ScheduleBudget budget = snapshot.budget().remaining(0, false);
+            budget.validate(snapshot.dailyCandidates().getFirst().candidates());
             RouteMatrix routeMatrix = routeMatrixProvider.build(
                     locations(snapshot.optimizationRequest()),
                     snapshot.optimizationRequest().transportMode()
@@ -104,7 +108,8 @@ public class ItineraryOptimizationService {
                     .optimize(snapshot.optimizationRequest(), routeMatrix);
             MultiDaySchedule schedule = schedulePlanner.plan(
                     snapshot.toScheduleRequests(result),
-                    routeMatrix
+                    routeMatrix,
+                    budget
             );
             ItineraryView itinerary = Objects.requireNonNull(writeTransaction.execute(status ->
                     saveIfUnchanged(snapshot, result, schedule, routeMatrix)
@@ -225,6 +230,7 @@ public class ItineraryOptimizationService {
                 exclusion.reason()
         ));
 
+        itinerary.recordBudget(snapshot.budget().settings(), snapshot.budget().costsByPlaceId());
         trip.markOptimized();
         return ItineraryView.from(itineraryRepository.saveAndFlush(itinerary));
     }
@@ -308,7 +314,8 @@ public class ItineraryOptimizationService {
                 trip.getDailyStartTime(),
                 trip.getDailyEndTime(),
                 optimizationRequest,
-                dailyCandidates
+                dailyCandidates,
+                BudgetInput.from(trip, tripPlaces)
         );
     }
 
@@ -356,7 +363,8 @@ public class ItineraryOptimizationService {
             LocalTime dailyStartTime,
             LocalTime dailyEndTime,
             OptimizationRequest optimizationRequest,
-            List<DailyCandidates> dailyCandidates
+            List<DailyCandidates> dailyCandidates,
+            BudgetInput budget
     ) {
 
         private OptimizationSnapshot {
@@ -389,7 +397,8 @@ public class ItineraryOptimizationService {
                     && dailyStartTime.equals(other.dailyStartTime)
                     && dailyEndTime.equals(other.dailyEndTime)
                     && optimizationRequest.equals(other.optimizationRequest)
-                    && dailyCandidates.equals(other.dailyCandidates);
+                    && dailyCandidates.equals(other.dailyCandidates)
+                    && budget.equals(other.budget);
         }
 
         private WeatherSnapshot weatherFor(LocalDate visitDate) {

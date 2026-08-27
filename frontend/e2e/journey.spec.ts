@@ -9,14 +9,15 @@ test.describe.serial('인증된 여행 생성과 공개 루트 재사용', () =>
   test('소유자가 여행을 만들고 계산한 일정을 공개한다', async ({ page }, testInfo) => {
     const seed = `${Date.now()}-${testInfo.workerIndex}-${testInfo.retry}`
     const account = testAccount(seed, 'owner')
-    const tripName = `V15 자동 여행 ${seed}`
-    const placeName = `V15 실외 명소 ${seed}`
-    routeTitle = `V15 공개 루트 ${seed}`
+    const tripName = `V16 자동 여행 ${seed}`
+    const placeName = `V16 실외 명소 ${seed}`
+    routeTitle = `V16 공개 루트 ${seed}`
     routeRegion = `E2E-${seed}`
 
     await signUp(page, account)
     ownerTripId = await createTrip(page, tripName, 'V15 서울 숙소')
     await addManualPlace(page, placeName)
+    await addManualPlace(page, `${placeName} 고가 체험`)
     await calculateItinerary(page, tripName)
 
     await page.reload()

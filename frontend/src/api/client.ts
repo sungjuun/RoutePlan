@@ -22,6 +22,8 @@ import type {
   TripPlaceConstraints,
   TripWeatherForecast,
   TripWeatherForecastInput,
+  TripBudget,
+  TripBudgetInput,
 } from '../types'
 
 interface CsrfView {
@@ -192,6 +194,11 @@ export const api = {
 
   getTripWeather: (tripId: number) =>
     request<TripWeatherForecast[]>(`/trips/${tripId}/weather`),
+
+  getTripBudget: (tripId: number) => request<TripBudget>(`/trips/${tripId}/budget`),
+
+  replaceTripBudget: (tripId: number, input: TripBudgetInput) =>
+    request<TripBudget>(`/trips/${tripId}/budget`, json('PUT', input)),
 
   replaceTripWeather: (tripId: number, forecasts: TripWeatherForecastInput[]) =>
     request<TripWeatherForecast[]>(

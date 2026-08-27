@@ -36,10 +36,23 @@ public class ConstraintSchedulePlanner {
         return plan(request, routeProvider, false);
     }
 
+    ConstraintSchedule planLenient(
+            ScheduleRequest request, RouteProvider routeProvider, ScheduleBudget optionalBudget
+    ) {
+        return plan(request, routeProvider, false, optionalBudget);
+    }
+
     private ConstraintSchedule plan(
             ScheduleRequest request,
             RouteProvider routeProvider,
             boolean enforceMustVisit
+    ) {
+        return plan(request, routeProvider, enforceMustVisit, ScheduleBudget.unlimited());
+    }
+
+    private ConstraintSchedule plan(
+            ScheduleRequest request, RouteProvider routeProvider,
+            boolean enforceMustVisit, ScheduleBudget optionalBudget
     ) {
         RouteCache routes = new RouteCache(routeProvider, request.transportMode());
         Map<Long, Integer> proposedRank = proposedRank(request.proposedTripPlaceOrder());
@@ -50,6 +63,8 @@ public class ConstraintSchedulePlanner {
                                 ScheduleCandidate::weatherAdjustedPriority
                         ).reversed())
                         .thenComparing(Comparator.comparingInt(ScheduleCandidate::priority).reversed())
+                        .thenComparingLong(candidate -> optionalBudget.availableMinor() == null
+                                ? 0 : optionalBudget.cost(candidate.placeId()))
                         .thenComparingInt(candidate -> proposedRank.getOrDefault(
                                 candidate.tripPlaceId(), Integer.MAX_VALUE
                         ))
@@ -59,6 +74,7 @@ public class ConstraintSchedulePlanner {
         List<ScheduleCandidate> selected = new ArrayList<>();
         List<ExcludedVisit> exclusions = new ArrayList<>();
         Evaluation selectedEvaluation = evaluate(request, selected, routes).success();
+        long selectedOptionalCost = 0;
 
         for (ScheduleCandidate candidate : candidates) {
             if (candidate.closed()) {
@@ -69,10 +85,22 @@ public class ConstraintSchedulePlanner {
                 continue;
             }
 
+            if (!candidate.mustVisit() && optionalBudget.availableMinor() != null
+                    && optionalBudget.cost(candidate.placeId())
+                    > optionalBudget.availableMinor() - selectedOptionalCost) {
+                exclusions.add(exclusion(candidate, ExclusionReason.BUDGET));
+                continue;
+            }
+
             Evaluation insertion = bestInsertion(request, selected, candidate, routes);
             if (insertion != null) {
                 selected = new ArrayList<>(insertion.order());
                 selectedEvaluation = insertion;
+                if (!candidate.mustVisit()) {
+                    selectedOptionalCost = Math.addExact(
+                            selectedOptionalCost, optionalBudget.cost(candidate.placeId())
+                    );
+                }
                 continue;
             }
 
@@ -388,6 +416,7 @@ public class ConstraintSchedulePlanner {
             case CLOSED -> candidate.placeName() + "은 여행일에 휴무입니다.";
             case TIME_WINDOW -> candidate.placeName() + "의 영업·선호시간과 체류시간이 충돌합니다.";
             case DAILY_LIMIT -> candidate.placeName() + "을 포함하면 하루 종료 전 숙소로 돌아올 수 없습니다.";
+            case BUDGET -> candidate.placeName() + "의 예상 비용이 남은 예산을 초과합니다.";
         };
     }
 

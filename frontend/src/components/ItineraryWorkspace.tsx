@@ -20,6 +20,7 @@ import {
   TimerReset,
   TriangleAlert,
   WandSparkles,
+  Wallet,
 } from 'lucide-react'
 import { api } from '../api/client'
 import { dateLabel, distanceLabel, durationLabel, reasonLabel, timeLabel, weatherLabel } from '../lib/format'
@@ -33,6 +34,9 @@ import type {
 } from '../types'
 import { MapPanel } from './MapPanel'
 import { WeatherPlanner } from './WeatherPlanner'
+import { BudgetPlanner } from './BudgetPlanner'
+import { BudgetSummary } from './BudgetSummary'
+import { moneyLabel } from '../lib/money'
 
 interface Props {
   trip: Trip
@@ -57,6 +61,7 @@ export function ItineraryWorkspace(props: Props) {
   const [algorithm, setAlgorithm] = useState<OptimizationAlgorithm>(itinerary?.algorithm ?? 'NEAREST_NEIGHBOR_2_OPT')
   const [tab, setTab] = useState<ItineraryTab>('route')
   const [calculating, setCalculating] = useState(false)
+  const [budgetBlocked, setBudgetBlocked] = useState(true)
   const multiDay = trip.startDate !== trip.endDate
 
   useEffect(() => {
@@ -64,6 +69,7 @@ export function ItineraryWorkspace(props: Props) {
   }, [itinerary])
 
   const optimize = async () => {
+    if (budgetBlocked) return
     setCalculating(true)
     try {
       await onItineraryChanged(
@@ -91,11 +97,12 @@ export function ItineraryWorkspace(props: Props) {
         <div className="planner-launch-card">
           <div className="launch-visual" aria-hidden="true"><span>H</span><i></i><span>1</span><i></i><span>2</span><i></i><span>H</span></div>
           <WeatherPlanner trip={trip} onError={onError} />
+          <BudgetPlanner trip={trip} onError={onError} onBlockedChange={setBudgetBlocked} />
           <AlgorithmPicker algorithm={algorithm} onChange={setAlgorithm} placeCount={trip.places.length} />
           {trip.places.length === 0 ? (
             <button className="button button-primary" onClick={onGoToPlaces}><Plus size={18} /> 장소 담으러 가기</button>
           ) : (
-            <button className="button button-primary button-large" onClick={() => void optimize()} disabled={calculating}>
+            <button className="button button-primary button-large" onClick={() => void optimize()} disabled={calculating || budgetBlocked}>
               <WandSparkles size={19} /> {calculating ? '실행 가능한 일정을 계산하는 중…' : '내 일정 계산하기'}
             </button>
           )}
@@ -134,6 +141,11 @@ export function ItineraryWorkspace(props: Props) {
         <summary><CloudSun size={18} /> 날짜별 날씨 설정 <span>예보 변경 후 새 버전을 계산하세요</span></summary>
         <WeatherPlanner trip={trip} onError={onError} compact />
       </details>
+      <details className="weather-config budget-config panel">
+        <summary><Wallet size={18} /> 여행 비용과 예산 설정 <span>{budgetBlocked ? '예산 설정을 확인하고 저장하세요' : '저장한 비용으로 새 버전을 계산하세요'}</span></summary>
+        <BudgetPlanner trip={trip} onError={onError} onBlockedChange={setBudgetBlocked} />
+      </details>
+      {budgetBlocked && <p className="budget-dirty">예산 설정을 불러오는 중이거나 저장하지 않은 변경이 있습니다. 예산 설정을 확인해 주세요.</p>}
 
       {tab === 'route' && (
         <RouteView
@@ -143,6 +155,7 @@ export function ItineraryWorkspace(props: Props) {
           algorithm={algorithm}
           setAlgorithm={setAlgorithm}
           calculating={calculating}
+          budgetBlocked={budgetBlocked}
           optimize={optimize}
         />
       )}
@@ -152,6 +165,7 @@ export function ItineraryWorkspace(props: Props) {
           algorithm={algorithm}
           onAlgorithmChange={setAlgorithm}
           onDone={() => setTab('route')}
+          budgetBlocked={budgetBlocked}
         />
       )}
       {tab === 'compare' && previousItinerary && (
@@ -183,6 +197,7 @@ function RouteView({
   algorithm,
   setAlgorithm,
   calculating,
+  budgetBlocked,
   optimize,
 }: {
   trip: Trip
@@ -191,6 +206,7 @@ function RouteView({
   algorithm: OptimizationAlgorithm
   setAlgorithm: (value: OptimizationAlgorithm) => void
   calculating: boolean
+  budgetBlocked: boolean
   optimize: () => Promise<void>
 }) {
   const completedCount = minimumCompletedCount(itinerary)
@@ -216,12 +232,14 @@ function RouteView({
       <div className="timeline-copy">
         <div><strong>{item.placeName}</strong>{item.mustVisit && <em>꼭 가기</em>}{item.weatherScoreAdjustment !== 0 && <em className={item.weatherScoreAdjustment > 0 ? 'weather-up' : 'weather-down'}>날씨 {item.weatherScoreAdjustment > 0 ? '+' : ''}{item.weatherScoreAdjustment}</em>}</div>
         <small>{durationLabel(item.stayMinutes)} 머무름 · 이동 {durationLabel(item.estimatedTravelMinutes)}{item.waitingMinutes > 0 ? ` · ${durationLabel(item.waitingMinutes)} 대기` : ''}</small>
+        <small className="visit-cost">{item.estimatedCostMinor == null ? '비용 미입력' : `예상 ${moneyLabel(item.estimatedCostMinor, itinerary.costSummary.currency)}`}</small>
       </div>
     </div>
   )
 
   return (
     <>
+      <BudgetSummary summary={itinerary.costSummary} />
       <div className="metric-strip">
         <Metric icon={<Navigation size={18} />} label="총 이동" value={distanceLabel(itinerary.totalDistanceMeters)} note={durationLabel(itinerary.estimatedTravelMinutes)} />
         <Metric icon={<MapPin size={18} />} label="방문 장소" value={`${itinerary.items.length}곳`} note={itinerary.exclusions.length ? `${itinerary.exclusions.length}곳 제외` : '모두 포함'} />
@@ -284,7 +302,7 @@ function RouteView({
           <MapPanel trip={trip} itinerary={itinerary} places={itineraryPlaces} />
           <div className="route-detail-card panel">
             <div><span className="route-source-dot"></span><span><strong>{itinerary.routeDataType === 'EXTERNAL_PROVIDER' ? '실제 도로 경로' : '좌표 기반 예상 경로'}</strong><small>Matrix {itinerary.routeMatrixElementCount.toLocaleString()}요소 · {itinerary.routeMatrixBuildMillis}ms</small></span></div>
-            <button className="button button-ghost button-small" onClick={() => void optimize()} disabled={calculating}>{calculating ? '계산 중…' : '전체 새 버전 계산'}</button>
+            <button className="button button-ghost button-small" onClick={() => void optimize()} disabled={calculating || budgetBlocked}>{calculating ? '계산 중…' : '전체 새 버전 계산'}</button>
           </div>
           <details className="algorithm-details panel">
             <summary>계산 방식 바꾸기 <ArrowRight size={15} /></summary>
@@ -308,7 +326,8 @@ function ReoptimizationView({
   onItineraryChanged,
   onError,
   onDone,
-}: Props & { algorithm: OptimizationAlgorithm; onAlgorithmChange: (value: OptimizationAlgorithm) => void; onDone: () => void }) {
+  budgetBlocked,
+}: Props & { algorithm: OptimizationAlgorithm; onAlgorithmChange: (value: OptimizationAlgorithm) => void; onDone: () => void; budgetBlocked: boolean }) {
   const statusMinimum = minimumCompletedCount(itinerary!)
   const travelDates = itinerary!.days.length > 0
     ? itinerary!.days.map((day) => day.visitDate)
@@ -383,6 +402,7 @@ function ReoptimizationView({
   }
 
   const submit = async () => {
+    if (budgetBlocked) return
     setSubmitting(true)
     try {
       const next = await api.reoptimize(trip.id, algorithm, {
@@ -438,7 +458,7 @@ function ReoptimizationView({
           <div className="field location-field"><span><LocateFixed size={15} /> 현재 위치</span><button className="button button-ghost" onClick={locate}><LocateFixed size={16} /> {locating ? '확인 중…' : '내 위치 사용'}</button></div>
           <label className="field"><span>위도</span><input type="number" step="0.000001" min="-90" max="90" value={latitude} onChange={(event) => setLatitude(event.target.value)} /></label>
           <label className="field"><span>경도</span><input type="number" step="0.000001" min="-180" max="180" value={longitude} onChange={(event) => setLongitude(event.target.value)} /></label>
-          <label className="field"><span>변경 이유</span><select value={reason} onChange={(event) => setReason(event.target.value as ItineraryChangeReason)}><option value="DELAY">일정이 지연됐어요</option><option value="PLACE_ADDED">장소를 추가했어요</option><option value="PLACE_REMOVED">장소를 삭제했어요</option><option value="WEATHER">날씨가 바뀌었어요</option><option value="USER_REQUEST">순서를 바꾸고 싶어요</option><option value="OTHER">기타</option></select></label>
+          <label className="field"><span>변경 이유</span><select value={reason} onChange={(event) => setReason(event.target.value as ItineraryChangeReason)}><option value="DELAY">일정이 지연됐어요</option><option value="PLACE_ADDED">장소를 추가했어요</option><option value="PLACE_REMOVED">장소를 삭제했어요</option><option value="WEATHER">날씨가 바뀌었어요</option><option value="BUDGET">예산이 바뀌었어요</option><option value="USER_REQUEST">순서를 바꾸고 싶어요</option><option value="OTHER">기타</option></select></label>
           <label className="field"><span>한 줄 메모</span><input value={detail} maxLength={500} onChange={(event) => setDetail(event.target.value)} placeholder="예: 점심 대기가 길었어요" /></label>
         </div>
       </div>
@@ -453,7 +473,7 @@ function ReoptimizationView({
           </ul>
         </div>
         <AlgorithmPicker algorithm={algorithm} onChange={onAlgorithmChange} placeCount={trip.places.length - completedCount} />
-        <button className="button button-primary button-large reopt-submit" disabled={submitting} onClick={() => void submit()}><RefreshCw size={18} /> {submitting ? '남은 일정을 계산하는 중…' : '이 지점부터 다시 계산'}</button>
+        <button className="button button-primary button-large reopt-submit" disabled={submitting || budgetBlocked} onClick={() => void submit()}><RefreshCw size={18} /> {submitting ? '남은 일정을 계산하는 중…' : '이 지점부터 다시 계산'}</button>
         <small className="safe-note"><Check size={14} /> 현재 버전 {itinerary!.version}와 지난 날짜는 수정하지 않습니다.</small>
       </aside>
     </div>
@@ -497,5 +517,5 @@ function VersionColumn({ title, itinerary, muted = false }: { title: string; iti
 }
 
 function exclusionLabel(reason: string): string {
-  return { CLOSED: '휴무일', TIME_WINDOW: '방문 시간 충돌', DAILY_LIMIT: '하루 시간 부족' }[reason] ?? reason
+  return { CLOSED: '휴무일', TIME_WINDOW: '방문 시간 충돌', DAILY_LIMIT: '하루 시간 부족', BUDGET: '예산 부족' }[reason] ?? reason
 }

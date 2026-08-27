@@ -1,5 +1,7 @@
 package com.routeplan.itinerary.application;
 
+import com.routeplan.budget.domain.BudgetCurrency;
+import com.routeplan.budget.domain.BudgetSettings;
 import com.routeplan.itinerary.domain.Itinerary;
 import com.routeplan.itinerary.domain.ItineraryItem;
 import com.routeplan.itinerary.domain.ItineraryDay;
@@ -51,6 +53,7 @@ public record ItineraryView(
         int routeCacheMissCount,
         int routeCacheFailureCount,
         double routeCacheHitRatio,
+        CostSummary costSummary,
         Instant createdAt,
         List<Day> days,
         List<Item> items,
@@ -95,6 +98,7 @@ public record ItineraryView(
                 itinerary.getRouteCacheMissCount(),
                 itinerary.getRouteCacheFailureCount(),
                 itinerary.getRouteCacheHitRatio(),
+                CostSummary.from(itinerary),
                 itinerary.getCreatedAt(),
                 itinerary.getDays().stream().map(Day::from).toList(),
                 itinerary.getItems().stream().map(Item::from).toList(),
@@ -105,6 +109,31 @@ public record ItineraryView(
                         .map(Exclusion::from)
                         .toList()
         );
+    }
+
+    public record CostSummary(
+            BudgetCurrency currency,
+            Long limitMinor,
+            long fixedCostMinor,
+            long knownVisitCostMinor,
+            long estimatedTotalMinor,
+            int unpricedPlaceCount,
+            Long remainingMinor
+    ) {
+        static CostSummary from(Itinerary itinerary) {
+            BudgetSettings settings = itinerary.getBudgetSettings();
+            long visitCost = itinerary.getItems().stream()
+                    .map(ItineraryItem::getEstimatedCostMinor)
+                    .filter(java.util.Objects::nonNull)
+                    .reduce(0L, Math::addExact);
+            int unpriced = (int) itinerary.getItems().stream()
+                    .filter(item -> item.getEstimatedCostMinor() == null).count();
+            long total = Math.addExact(settings.fixedCostMinor(), visitCost);
+            Long remaining = settings.limitMinor() == null || unpriced > 0
+                    ? null : settings.limitMinor() - total;
+            return new CostSummary(settings.currency(), settings.limitMinor(),
+                    settings.fixedCostMinor(), visitCost, total, unpriced, remaining);
+        }
     }
 
     public record Day(
@@ -157,6 +186,7 @@ public record ItineraryView(
             Boolean mustVisit,
             PlaceEnvironment environment,
             int weatherScoreAdjustment,
+            Long estimatedCostMinor,
             ItineraryItemStatus status
     ) {
 
@@ -178,6 +208,7 @@ public record ItineraryView(
                     item.getMustVisit(),
                     item.getPlace().getEnvironment(),
                     item.getWeatherScoreAdjustment(),
+                    item.getEstimatedCostMinor(),
                     item.getStatus()
             );
         }

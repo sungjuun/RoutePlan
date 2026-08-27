@@ -9,6 +9,7 @@ export type ItineraryChangeReason =
   | 'PLACE_ADDED'
   | 'PLACE_REMOVED'
   | 'WEATHER'
+  | 'BUDGET'
   | 'USER_REQUEST'
   | 'OTHER'
 export type SharedRouteVisibility = 'PUBLIC' | 'UNLISTED'
@@ -18,6 +19,33 @@ export type PlacePreference = 'MUST_VISIT' | 'PREFERRED' | 'OPTIONAL'
 export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER'
 export type PlaceEnvironment = 'INDOOR' | 'OUTDOOR' | 'MIXED'
 export type WeatherCondition = 'UNKNOWN' | 'CLEAR' | 'CLOUDY' | 'RAIN' | 'SNOW' | 'EXTREME'
+export type BudgetCurrency = 'KRW' | 'JPY' | 'USD' | 'EUR' | 'GBP' | 'CNY'
+
+export interface TripBudgetInput {
+  currency: BudgetCurrency
+  limitMinor: number | null
+  fixedCostMinor: number
+  placeCosts: Array<{ placeId: number; estimatedCostMinor: number | null }>
+}
+
+export interface TripBudget extends TripBudgetInput {
+  placeCosts: Array<{
+    placeId: number
+    placeName: string
+    mustVisit: boolean
+    estimatedCostMinor: number | null
+  }>
+}
+
+export interface CostSummary {
+  currency: BudgetCurrency
+  limitMinor: number | null
+  fixedCostMinor: number
+  knownVisitCostMinor: number
+  estimatedTotalMinor: number
+  unpricedPlaceCount: number
+  remainingMinor: number | null
+}
 
 export interface User {
   id: number
@@ -126,6 +154,7 @@ export interface ItineraryItem {
   mustVisit: boolean
   environment: PlaceEnvironment
   weatherScoreAdjustment: number
+  estimatedCostMinor: number | null
   status: 'PLANNED' | 'COMPLETED'
 }
 
@@ -133,7 +162,7 @@ export interface ItineraryExclusion {
   placeId: number
   placeName: string
   priority: number
-  reason: 'CLOSED' | 'TIME_WINDOW' | 'DAILY_LIMIT'
+  reason: 'CLOSED' | 'TIME_WINDOW' | 'DAILY_LIMIT' | 'BUDGET'
 }
 
 export interface ItineraryDay {
@@ -196,6 +225,7 @@ export interface Itinerary {
   routeCacheMissCount: number
   routeCacheFailureCount: number
   routeCacheHitRatio: number
+  costSummary: CostSummary
   createdAt: string
   days: ItineraryDay[]
   items: ItineraryItem[]

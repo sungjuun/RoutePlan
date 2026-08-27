@@ -5,6 +5,7 @@ public enum ItineraryChangeReason {
     PLACE_ADDED,
     PLACE_REMOVED,
     WEATHER,
+    BUDGET,
     USER_REQUEST,
     OTHER
 }

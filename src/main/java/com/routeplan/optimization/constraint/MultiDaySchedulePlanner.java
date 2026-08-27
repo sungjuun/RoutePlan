@@ -22,10 +22,19 @@ public class MultiDaySchedulePlanner {
     }
 
     public MultiDaySchedule plan(List<ScheduleRequest> dailyRequests, RouteProvider routeProvider) {
+        return plan(dailyRequests, routeProvider, ScheduleBudget.unlimited());
+    }
+
+    public MultiDaySchedule plan(
+            List<ScheduleRequest> dailyRequests, RouteProvider routeProvider, ScheduleBudget budget
+    ) {
         if (dailyRequests == null || dailyRequests.isEmpty()) {
             throw new IllegalArgumentException("일자별 일정 요청은 한 개 이상이어야 합니다.");
         }
         Objects.requireNonNull(routeProvider, "경로 제공자는 필수입니다.");
+        Objects.requireNonNull(budget, "예산 제약은 필수입니다.");
+        budget.validate(dailyRequests.getFirst().candidates());
+        Long remainingBudget = budget.availableMinor();
 
         Map<Long, ScheduleCandidate> candidatesByTripPlaceId = new LinkedHashMap<>();
         dailyRequests.getFirst().candidates().forEach(candidate ->
@@ -62,7 +71,12 @@ public class MultiDaySchedulePlanner {
                             .filter(remaining::contains)
                             .toList()
             );
-            ConstraintSchedule daily = dailyPlanner.planLenient(request, routeProvider);
+            // Reserve every remaining Must Visit, including places closed until a later day.
+            ScheduleBudget optionalBudget = new ScheduleBudget(
+                    remainingBudget == null ? null : remainingBudget - budget.mandatoryCost(dailyCandidates),
+                    budget.costsByPlaceId()
+            );
+            ConstraintSchedule daily = dailyPlanner.planLenient(request, routeProvider, optionalBudget);
             List<ScheduledVisit> sequencedVisits = new ArrayList<>();
             for (ScheduledVisit visit : daily.visits()) {
                 ScheduledVisit sequenced = new ScheduledVisit(
@@ -75,6 +89,9 @@ public class MultiDaySchedulePlanner {
                 visits.add(sequenced);
                 sequencedVisits.add(sequenced);
                 remaining.remove(visit.tripPlaceId());
+                if (remainingBudget != null) {
+                    remainingBudget -= budget.cost(visit.placeId());
+                }
             }
             for (ExcludedVisit exclusion : daily.exclusions()) {
                 dailyCandidates.stream()
@@ -162,6 +179,9 @@ public class MultiDaySchedulePlanner {
         if (reasons == null || reasons.isEmpty()) {
             return ExclusionReason.DAILY_LIMIT;
         }
+        if (reasons.contains(ExclusionReason.BUDGET)) {
+            return ExclusionReason.BUDGET;
+        }
         if (reasons.contains(ExclusionReason.DAILY_LIMIT)) {
             return ExclusionReason.DAILY_LIMIT;
         }
@@ -182,6 +202,7 @@ public class MultiDaySchedulePlanner {
                     : candidate.placeName() + "은 여행 기간 동안 방문 가능한 영업일이 없습니다.";
             case TIME_WINDOW -> candidate.placeName() + "의 영업·선호시간과 체류시간이 충돌합니다.";
             case DAILY_LIMIT -> candidate.placeName() + "을 여행 기간 안에 배치할 시간이 부족합니다.";
+            case BUDGET -> candidate.placeName() + "의 예상 비용이 남은 예산을 초과합니다.";
         };
         return new ConstraintViolation(candidate.placeId(), candidate.placeName(), reason, message);
     }

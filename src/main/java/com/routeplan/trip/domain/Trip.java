@@ -1,5 +1,7 @@
 package com.routeplan.trip.domain;
 
+import com.routeplan.budget.domain.BudgetCurrency;
+import com.routeplan.budget.domain.BudgetSettings;
 import com.routeplan.user.domain.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -69,6 +71,16 @@ public class Trip {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TripStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "budget_currency", nullable = false, length = 3)
+    private BudgetCurrency budgetCurrency = BudgetCurrency.KRW;
+
+    @Column(name = "budget_limit_minor")
+    private Long budgetLimitMinor;
+
+    @Column(name = "fixed_cost_minor", nullable = false)
+    private long fixedCostMinor;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -208,6 +220,13 @@ public class Trip {
         this.pace = pace;
     }
 
+    public void updateBudget(BudgetSettings settings) {
+        this.budgetCurrency = settings.currency();
+        this.budgetLimitMinor = settings.limitMinor();
+        this.fixedCostMinor = settings.fixedCostMinor();
+        markDraft();
+    }
+
     public void markDraft() {
         this.status = TripStatus.DRAFT;
     }
@@ -309,6 +328,10 @@ public class Trip {
 
     public TripStatus getStatus() {
         return status;
+    }
+
+    public BudgetSettings getBudgetSettings() {
+        return new BudgetSettings(budgetCurrency, budgetLimitMinor, fixedCostMinor);
     }
 
     public Instant getCreatedAt() {

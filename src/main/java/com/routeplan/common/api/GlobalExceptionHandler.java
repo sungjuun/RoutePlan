@@ -5,6 +5,7 @@ import com.routeplan.common.error.RoutePlanException;
 import com.routeplan.common.observability.CorrelationIdFilter;
 import com.routeplan.optimization.constraint.InfeasibleScheduleException;
 import com.routeplan.optimization.constraint.InfeasibleReturnException;
+import com.routeplan.optimization.constraint.BudgetConstraintException;
 import com.routeplan.integration.google.ExternalProviderException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -22,6 +23,15 @@ import org.springframework.security.core.AuthenticationException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(BudgetConstraintException.class)
+    ResponseEntity<ErrorResponse> handleBudgetConstraint(
+            BudgetConstraintException exception, HttpServletRequest request
+    ) {
+        ErrorCode code = exception.reason() == BudgetConstraintException.Reason.MISSING_COST
+                ? ErrorCode.COST_ESTIMATES_REQUIRED : ErrorCode.INFEASIBLE_BUDGET;
+        return response(code, exception.getMessage(), request);
+    }
 
     @ExceptionHandler(AuthenticationException.class)
     ResponseEntity<ErrorResponse> handleAuthentication(

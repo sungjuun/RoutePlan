@@ -1,5 +1,6 @@
 package com.routeplan.itinerary.domain;
 
+import com.routeplan.budget.domain.BudgetSettings;
 import com.routeplan.place.domain.Place;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -73,6 +74,9 @@ public class ItineraryItem {
 
     @Column(name = "weather_score_adjustment", nullable = false)
     private int weatherScoreAdjustment;
+
+    @Column(name = "estimated_cost_minor")
+    private Long estimatedCostMinor;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -194,6 +198,15 @@ public class ItineraryItem {
 
     public Long getId() {
         return id;
+    }
+
+    void recordEstimatedCost(Long amount) {
+        BudgetSettings.requireAmount(amount);
+        this.estimatedCostMinor = amount;
+    }
+
+    public Long getEstimatedCostMinor() {
+        return estimatedCostMinor;
     }
 
     public Place getPlace() {

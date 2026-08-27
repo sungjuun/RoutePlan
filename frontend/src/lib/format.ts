@@ -51,6 +51,7 @@ export function reasonLabel(value: string | null): string {
     PLACE_ADDED: '장소 추가',
     PLACE_REMOVED: '장소 삭제',
     WEATHER: '날씨 변경',
+    BUDGET: '예산 변경',
     USER_REQUEST: '사용자 요청',
     OTHER: '기타 변경',
   }[value] ?? value

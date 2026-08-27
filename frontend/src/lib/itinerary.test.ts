@@ -26,6 +26,7 @@ function item(
     priority: 70,
     mustVisit: false,
     weatherScoreAdjustment: 0,
+    estimatedCostMinor: null,
     status,
   }
 }
@@ -63,6 +64,10 @@ function itinerary(version: number, items: ItineraryItem[]): Itinerary {
     routeCacheMissCount: 0,
     routeCacheFailureCount: 0,
     routeCacheHitRatio: 0,
+    costSummary: {
+      currency: 'KRW', limitMinor: null, fixedCostMinor: 0, knownVisitCostMinor: 0,
+      estimatedTotalMinor: 0, unpricedPlaceCount: items.length, remainingMinor: null,
+    },
     createdAt: '2026-09-10T00:00:00Z',
     days: [],
     items,

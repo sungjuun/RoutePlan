@@ -697,6 +697,38 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; letter-spacing: -.03
 .toast button { border: 0; color: inherit; background: transparent; padding: 3px; cursor: pointer; }
 @keyframes toast-in { from { transform: translateY(14px); opacity: 0; } }
 
+/* Budget planning */
+.budget-planner { width: 100%; min-width: 0; padding: 18px; border: 1px solid #e5decb; border-radius: 16px; background: #fffdf8; text-align: left; }
+.budget-planner-head { display: flex; gap: 10px; align-items: center; margin-bottom: 15px; color: #8d7344; }
+.budget-planner-head > div { display: grid; gap: 4px; }
+.budget-planner-head strong { color: var(--ink); font-size: 13px; }
+.budget-planner-head small, .budget-hint { color: #75817a; font-size: 11px; line-height: 1.6; }
+.budget-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.budget-fixed, .budget-place-costs { grid-column: 1 / -1; }
+.budget-fields .field small { font-size: 10px; color: #75817a; }
+.budget-place-costs { display: grid; gap: 8px; max-height: 280px; overflow-y: auto; padding-right: 3px; }
+.budget-cost-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, .55fr); gap: 12px; align-items: center; font-size: 12px; }
+.budget-cost-row > span { overflow-wrap: anywhere; }
+.budget-cost-row em { display: inline-block; margin-left: 5px; font-size: 10px; font-style: normal; color: #b27047; }
+.budget-cost-row input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 9px; background: white; padding: 10px; font: inherit; text-align: right; }
+.budget-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.budget-actions > small { color: #75817a; font-size: 10px; }
+.budget-error, .budget-dirty { display: flex; gap: 6px; align-items: center; color: #9e5b37; font-size: 11px; line-height: 1.6; }
+.budget-reload, .budget-error button { border: 0; background: transparent; color: #627b71; padding: 8px 0; font: inherit; font-size: 11px; text-decoration: underline; cursor: pointer; }
+.budget-config .budget-planner { border: 0; border-radius: 0; }
+.budget-summary { margin-bottom: 18px; padding: 18px 22px; background: #fcfbf4; }
+.budget-total { display: flex; align-items: center; gap: 12px; }
+.budget-total > div { display: grid; gap: 3px; }
+.budget-total small { font-size: 11px; color: #778277; }
+.budget-total strong { font-size: 20px; }
+.budget-total > span { margin-left: auto; color: #8c7e59; font-size: 11px; }
+.budget-summary dl { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 14px 0 10px; }
+.budget-summary dl > div { display: flex; gap: 10px; font-size: 11px; }
+.budget-summary dt { color: #778277; }
+.budget-summary dd { margin: 0; font-weight: 700; }
+.budget-summary > p { margin: 0; font-size: 10px; color: #788579; line-height: 1.6; }
+.timeline-copy .visit-cost { color: #8d7344; }
+
 /* Weather-aware planning */
 .weather-planner { width: 100%; padding: 16px; border: 1px solid #dfe6df; border-radius: 16px; background: linear-gradient(145deg, #f7fbf8, #fffdf8); }
 .weather-planner-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; text-align: left; }
@@ -748,6 +780,9 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; letter-spacing: -.03
 }
 
 @media (max-width: 820px) {
+  .budget-summary { padding: 16px; }
+  .budget-total strong { font-size: 17px; }
+  .budget-actions { flex-wrap: wrap; }
   .onboarding-shell { grid-template-columns: 1fr; }
   .onboarding-story { min-height: 510px; padding: 30px; }
   .story-copy { padding: 60px 0 40px; }
