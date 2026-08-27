@@ -9,8 +9,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.routeplan.auth.AuthenticatedMockMvc;
 import com.routeplan.common.observability.CorrelationIdFilter;
+import com.routeplan.user.application.UserService;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,16 +36,28 @@ class RoutePlanApiIntegrationTest {
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
 
     @Autowired
-    private MockMvc mockMvc;
+    private MockMvc rawMockMvc;
+
+    private AuthenticatedMockMvc mockMvc;
+
+    @Autowired
+    private UserService userService;
 
     @Autowired
     private MeterRegistry meterRegistry;
+
+    @BeforeEach
+    void setUpSecurity() {
+        mockMvc = new AuthenticatedMockMvc(rawMockMvc);
+    }
 
     @Test
     void exposesReadinessAndPropagatesCorrelationIdIntoErrors() throws Exception {
         mockMvc.perform(get("/actuator/health/readiness"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
+
+        postAndReadId("/api/v1/users", "{\"nickname\":\"correlation-user\"}");
 
         mockMvc.perform(get("/api/v1/trips/{tripId}", 999_999)
                         .header(CorrelationIdFilter.HEADER_NAME, "routeplan-test-123"))
@@ -475,6 +490,8 @@ class RoutePlanApiIntegrationTest {
 
     @Test
     void importsExternalPlaceIdempotentlyAndExplainsDisabledSearchProvider() throws Exception {
+        postAndReadId("/api/v1/users", "{\"nickname\":\"place-import-user\"}");
+
         mockMvc.perform(get("/api/v1/places/search")
                         .queryParam("query", "오사카성"))
                 .andExpect(status().isServiceUnavailable())
@@ -815,6 +832,12 @@ class RoutePlanApiIntegrationTest {
     }
 
     private long postAndReadId(String path, String body) throws Exception {
+        if ("/api/v1/users".equals(path)) {
+            String nickname = JsonPath.read(body, "$.nickname");
+            long userId = userService.create(nickname).id();
+            mockMvc.authenticate(userId);
+            return userId;
+        }
         MvcResult result = mockMvc.perform(post(path)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))

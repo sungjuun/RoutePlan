@@ -18,8 +18,20 @@ export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER'
 
 export interface User {
   id: number
+  email: string
   nickname: string
   createdAt: string
+}
+
+export interface AuthSession {
+  authenticated: boolean
+  user: User | null
+}
+
+export interface SignupInput {
+  email: string
+  nickname: string
+  password: string
 }
 
 export interface TripPlace {
@@ -170,7 +182,6 @@ export interface ApiErrorBody {
 }
 
 export interface CreateTripInput {
-  userId: number
   name: string
   startDate: string
   endDate: string
@@ -204,7 +215,6 @@ export interface ReoptimizeInput {
 }
 
 export interface WorkspaceReference {
-  user: User | null
   tripId: number | null
 }
 
@@ -284,7 +294,6 @@ export interface RouteLikeResult {
 }
 
 export interface PublishRouteInput {
-  userId: number
   title: string
   description: string | null
   region: string
@@ -292,7 +301,6 @@ export interface PublishRouteInput {
 }
 
 export interface CopyRouteInput {
-  userId: number
   name: string
   startDate: string
   dailyStartTime: string

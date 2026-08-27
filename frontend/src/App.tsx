@@ -2,16 +2,23 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Compass, LoaderCircle, MapPinned, MessageSquareText, Route, Settings2, UsersRound } from 'lucide-react'
 import { ApiError, api } from './api/client'
 import { AppHeader } from './components/AppHeader'
+import { AuthPage } from './components/AuthPage'
 import { CommunityWorkspace } from './components/CommunityWorkspace'
 import { ItineraryWorkspace } from './components/ItineraryWorkspace'
+import { LandingPage } from './components/LandingPage'
 import { NaturalLanguageWorkspace } from './components/NaturalLanguageWorkspace'
 import { PlaceWorkspace } from './components/PlaceWorkspace'
+import { PublicCommunityPage } from './components/PublicCommunityPage'
+import { PublicHeader } from './components/PublicHeader'
 import { TripSetup } from './components/TripSetup'
 import { Toast } from './components/Toast'
 import { clearTripReference, loadWorkspace, saveWorkspace } from './lib/storage'
 import type { Itinerary, Place, Trip, User } from './types'
 
 type Section = 'places' | 'itinerary' | 'settings' | 'community' | 'natural-language'
+type PublicPage = 'home' | 'community' | 'auth' | 'create-trip' | 'workspace'
+type AuthMode = 'login' | 'signup'
+type AfterAuth = 'home' | 'create-trip' | 'my-trip'
 
 interface Notice {
   kind: 'success' | 'error' | 'info'
@@ -19,20 +26,21 @@ interface Notice {
 }
 
 export function App() {
-  const initialWorkspace = useMemo(() => {
-    const stored = loadWorkspace()
-    const requestedTripId = Number(new URLSearchParams(window.location.search).get('tripId'))
-    return Number.isSafeInteger(requestedTripId) && requestedTripId > 0
-      ? { ...stored, tripId: requestedTripId }
-      : stored
+  const requestedTripId = useMemo(() => {
+    const value = Number(new URLSearchParams(window.location.search).get('tripId'))
+    return Number.isSafeInteger(value) && value > 0 ? value : null
   }, [])
-  const [user, setUser] = useState<User | null>(initialWorkspace.user)
+  const [user, setUser] = useState<User | null>(null)
+  const [page, setPage] = useState<PublicPage>('home')
+  const [authMode, setAuthMode] = useState<AuthMode>('login')
+  const [afterAuth, setAfterAuth] = useState<AfterAuth>('home')
+  const [communityRegion, setCommunityRegion] = useState('')
   const [trip, setTrip] = useState<Trip | null>(null)
   const [itinerary, setItinerary] = useState<Itinerary | null>(null)
   const [previousItinerary, setPreviousItinerary] = useState<Itinerary | null>(null)
   const [itineraryPlaces, setItineraryPlaces] = useState<Record<number, Place>>({})
   const [section, setSection] = useState<Section>('places')
-  const [booting, setBooting] = useState(initialWorkspace.tripId != null)
+  const [booting, setBooting] = useState(true)
   const [notice, setNotice] = useState<Notice | null>(null)
 
   const notify = useCallback((kind: Notice['kind'], message: string) => {
@@ -55,76 +63,149 @@ export function App() {
       setItineraryPlaces({})
       return
     }
-
     const [parent, places] = await Promise.all([
       latest.parentItineraryId ? api.getItinerary(latest.parentItineraryId) : Promise.resolve(null),
-      Promise.all(
-        [...new Set(latest.items.map((item) => item.placeId))].map((placeId) =>
-          api.getPlace(placeId),
-        ),
-      ),
+      Promise.all([...new Set(latest.items.map((item) => item.placeId))].map(api.getPlace)),
     ])
     setPreviousItinerary(parent)
     setItineraryPlaces(Object.fromEntries(places.map((place) => [place.id, place])))
   }, [])
 
-  useEffect(() => {
-    if (initialWorkspace.tripId == null) return
-    let cancelled = false
-    const restore = async () => {
+  const loadTrip = useCallback(async (tripId: number) => {
+    setBooting(true)
+    try {
+      const restoredTrip = await api.getTrip(tripId)
+      setTrip(restoredTrip)
+      saveWorkspace({ tripId: restoredTrip.id })
+      window.history.replaceState(null, '', `?tripId=${restoredTrip.id}`)
       try {
-        const restoredTrip = await api.getTrip(initialWorkspace.tripId!)
+        await loadItineraryContext(await api.getLatestItinerary(restoredTrip.id))
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.body.code !== 'ITINERARY_NOT_FOUND') throw error
+        await loadItineraryContext(null)
+      }
+      setPage('workspace')
+    } catch (error) {
+      clearTripReference()
+      setTrip(null)
+      setPage('home')
+      window.history.replaceState(null, '', window.location.pathname)
+      reportError(error)
+    } finally {
+      setBooting(false)
+    }
+  }, [loadItineraryContext, reportError])
+
+  useEffect(() => {
+    let cancelled = false
+    const boot = async () => {
+      try {
+        const session = await api.getAuthSession()
         if (cancelled) return
-        setTrip(restoredTrip)
-        if (!initialWorkspace.user || initialWorkspace.user.id !== restoredTrip.userId) {
-          const recoveredUser: User = {
-            id: restoredTrip.userId,
-            nickname: `여행자 ${restoredTrip.userId}`,
-            createdAt: restoredTrip.createdAt,
+        setUser(session.user)
+        if (requestedTripId != null) {
+          if (session.user) await loadTrip(requestedTripId)
+          else {
+            setAfterAuth('my-trip')
+            setAuthMode('login')
+            setPage('auth')
+            notify('info', '이 여행을 보려면 먼저 로그인해 주세요.')
           }
-          setUser(recoveredUser)
-          saveWorkspace({ user: recoveredUser, tripId: restoredTrip.id })
-        }
-        try {
-          const latest = await api.getLatestItinerary(restoredTrip.id)
-          if (!cancelled) await loadItineraryContext(latest)
-        } catch (error) {
-          if (!(error instanceof ApiError) || error.body.code !== 'ITINERARY_NOT_FOUND') throw error
         }
       } catch (error) {
-        if (!cancelled) {
-          clearTripReference(initialWorkspace.user)
-          reportError(error)
-        }
+        if (!cancelled) reportError(error)
       } finally {
         if (!cancelled) setBooting(false)
       }
     }
-    void restore()
-    return () => {
-      cancelled = true
-    }
-  }, [initialWorkspace.tripId, initialWorkspace.user, loadItineraryContext, reportError])
+    void boot()
+    return () => { cancelled = true }
+  }, [loadTrip, notify, reportError, requestedTripId])
 
-  const handleTripReady = (nextUser: User, nextTrip: Trip) => {
+  const showAuth = (mode: AuthMode, next: AfterAuth = 'home') => {
+    setAuthMode(mode)
+    setAfterAuth(next)
+    setPage('auth')
+  }
+
+  const showHome = () => {
+    setPage('home')
+    window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  const showCommunity = (region = '') => {
+    setCommunityRegion(region)
+    setPage('community')
+    window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  const createTrip = () => {
+    if (!user) {
+      showAuth('login', 'create-trip')
+      return
+    }
+    clearTripReference()
+    setTrip(null)
+    setItinerary(null)
+    setPreviousItinerary(null)
+    setItineraryPlaces({})
+    setPage('create-trip')
+    window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  const openMyTrip = async () => {
+    if (!user) {
+      showAuth('login', 'my-trip')
+      return
+    }
+    const storedTripId = loadWorkspace().tripId
+    if (storedTripId == null) createTrip()
+    else await loadTrip(storedTripId)
+  }
+
+  const handleAuthenticated = async (nextUser: User) => {
     setUser(nextUser)
+    notify('success', `${nextUser.nickname}님, 반갑습니다.`)
+    if (afterAuth === 'create-trip') {
+      setPage('create-trip')
+      return
+    }
+    if (afterAuth === 'my-trip') {
+      const storedTripId = loadWorkspace().tripId
+      if (storedTripId != null) {
+        await loadTrip(storedTripId)
+        return
+      }
+      setPage('create-trip')
+      return
+    }
+    setPage('home')
+  }
+
+  const logout = async () => {
+    try {
+      await api.logout()
+      setUser(null)
+      setTrip(null)
+      await loadItineraryContext(null)
+      clearTripReference()
+      showHome()
+      notify('success', '안전하게 로그아웃했습니다.')
+    } catch (error) {
+      reportError(error)
+    }
+  }
+
+  const handleTripReady = (nextTrip: Trip) => {
     setTrip(nextTrip)
     setItinerary(null)
     setPreviousItinerary(null)
     setItineraryPlaces({})
-    saveWorkspace({ user: nextUser, tripId: nextTrip.id })
+    saveWorkspace({ tripId: nextTrip.id })
+    window.history.replaceState(null, '', `?tripId=${nextTrip.id}`)
     setSection('places')
+    setPage('workspace')
     notify('success', `${nextTrip.name} 작업공간을 만들었습니다.`)
-  }
-
-  const handleTripUpdated = (nextTrip: Trip) => {
-    setTrip(nextTrip)
-    notify('success', '여행 설정을 저장했습니다.')
-  }
-
-  const handleTripChanged = (nextTrip: Trip, message?: string) => {
-    setTrip(nextTrip)
-    if (message) notify('success', message)
   }
 
   const handleItineraryChanged = async (next: Itinerary, message: string) => {
@@ -133,145 +214,55 @@ export function App() {
     notify('success', message)
   }
 
-  const handleNewTrip = () => {
-    clearTripReference(user)
-    setTrip(null)
-    setItinerary(null)
-    setPreviousItinerary(null)
-    setItineraryPlaces({})
-    setSection('places')
-  }
-
-  const handleRouteCopied = async (
-    nextTrip: Trip,
-    nextItinerary: Itinerary | null,
-    message: string,
-  ) => {
+  const handleRouteCopied = async (nextTrip: Trip, nextItinerary: Itinerary | null, message: string) => {
     setTrip(nextTrip)
-    saveWorkspace({ user, tripId: nextTrip.id })
+    saveWorkspace({ tripId: nextTrip.id })
+    window.history.replaceState(null, '', `?tripId=${nextTrip.id}`)
     await loadItineraryContext(nextItinerary)
     setSection(nextItinerary ? 'itinerary' : 'places')
+    setPage('workspace')
     notify('success', message)
   }
 
   if (booting) {
+    return <main className="app-loading" aria-live="polite"><div className="brand-mark"><Route size={25} /></div><LoaderCircle className="spin" size={25} /><p>RoutePlan을 준비하는 중입니다</p></main>
+  }
+
+  if (page === 'auth') {
+    return <><AuthPage initialMode={authMode} onAuthenticated={handleAuthenticated} onBack={showHome} onError={reportError} /><Toast notice={notice} onClose={() => setNotice(null)} /></>
+  }
+
+  if (page !== 'workspace') {
     return (
-      <main className="app-loading" aria-live="polite">
-        <div className="brand-mark"><Route size={25} /></div>
-        <LoaderCircle className="spin" size={25} />
-        <p>여행 작업공간을 불러오는 중입니다</p>
-      </main>
+      <div className="public-shell">
+        <PublicHeader user={user} onHome={showHome} onCommunity={() => showCommunity()} onMyTrip={() => void openMyTrip()} onNewTrip={createTrip} onLogin={() => showAuth('login')} onSignup={() => showAuth('signup')} onLogout={() => void logout()} />
+        {page === 'home' && <LandingPage user={user} onExplore={showCommunity} onCreateTrip={createTrip} onError={reportError} />}
+        {page === 'community' && <PublicCommunityPage user={user} initialRegion={communityRegion} onRequireAuth={() => showAuth('login', 'create-trip')} onCreateTrip={createTrip} onError={reportError} />}
+        {page === 'create-trip' && <TripSetup onReady={handleTripReady} onError={reportError} />}
+        <Toast notice={notice} onClose={() => setNotice(null)} />
+      </div>
     )
   }
 
-  if (!trip) {
-    return (
-      <>
-        <TripSetup
-          user={user}
-          onReady={handleTripReady}
-          onUserCreated={(nextUser) => {
-            setUser(nextUser)
-            saveWorkspace({ user: nextUser, tripId: null })
-          }}
-          onError={reportError}
-        />
-        <Toast notice={notice} onClose={() => setNotice(null)} />
-      </>
-    )
-  }
+  if (!trip || !user) return null
 
   return (
     <div className="app-shell">
-      <AppHeader trip={trip} user={user} onNewTrip={handleNewTrip} />
+      <AppHeader trip={trip} user={user} onNewTrip={createTrip} onHome={showHome} onCommunity={() => setSection('community')} onLogout={() => void logout()} />
       <div className="workspace-shell">
         <nav className="workspace-nav" aria-label="여행 작업 단계">
-          <button
-            className={section === 'places' ? 'active' : ''}
-            onClick={() => setSection('places')}
-          >
-            <span><MapPinned size={19} /></span>
-            <span><strong>장소 담기</strong><small>{trip.places.length}곳 선택됨</small></span>
-          </button>
-          <button
-            className={section === 'itinerary' ? 'active' : ''}
-            onClick={() => setSection('itinerary')}
-          >
-            <span><Compass size={19} /></span>
-            <span><strong>일정 보기</strong><small>{itinerary ? `버전 ${itinerary.version}` : '계산 전'}</small></span>
-          </button>
-          <button
-            className={section === 'natural-language' ? 'active' : ''}
-            onClick={() => setSection('natural-language')}
-          >
-            <span><MessageSquareText size={19} /></span>
-            <span><strong>자연어 조건</strong><small>말로 취향 설정</small></span>
-          </button>
-          <button
-            className={section === 'settings' ? 'active' : ''}
-            onClick={() => setSection('settings')}
-          >
-            <span><Settings2 size={19} /></span>
-            <span><strong>여행 설정</strong><small>시간·숙소·이동</small></span>
-          </button>
-          <button
-            className={section === 'community' ? 'active' : ''}
-            onClick={() => setSection('community')}
-          >
-            <span><UsersRound size={19} /></span>
-            <span><strong>루트 커뮤니티</strong><small>공개·탐색·가져오기</small></span>
-          </button>
+          <button className={section === 'places' ? 'active' : ''} onClick={() => setSection('places')}><span><MapPinned size={19} /></span><span><strong>장소 담기</strong><small>{trip.places.length}곳 선택됨</small></span></button>
+          <button className={section === 'itinerary' ? 'active' : ''} onClick={() => setSection('itinerary')}><span><Compass size={19} /></span><span><strong>일정 보기</strong><small>{itinerary ? `버전 ${itinerary.version}` : '계산 전'}</small></span></button>
+          <button className={section === 'natural-language' ? 'active' : ''} onClick={() => setSection('natural-language')}><span><MessageSquareText size={19} /></span><span><strong>자연어 조건</strong><small>말로 취향 설정</small></span></button>
+          <button className={section === 'settings' ? 'active' : ''} onClick={() => setSection('settings')}><span><Settings2 size={19} /></span><span><strong>여행 설정</strong><small>시간·숙소·이동</small></span></button>
+          <button className={section === 'community' ? 'active' : ''} onClick={() => setSection('community')}><span><UsersRound size={19} /></span><span><strong>루트 커뮤니티</strong><small>공개·탐색·가져오기</small></span></button>
         </nav>
-
         <main className="workspace-main">
-          {section === 'places' && (
-            <PlaceWorkspace
-              trip={trip}
-              hasItinerary={itinerary != null}
-              onTripChanged={handleTripChanged}
-              onGoToItinerary={() => setSection('itinerary')}
-              onError={reportError}
-            />
-          )}
-          {section === 'itinerary' && (
-            <ItineraryWorkspace
-              trip={trip}
-              itinerary={itinerary}
-              previousItinerary={previousItinerary}
-              itineraryPlaces={itineraryPlaces}
-              onItineraryChanged={handleItineraryChanged}
-              onError={reportError}
-              onGoToPlaces={() => setSection('places')}
-            />
-          )}
-          {section === 'settings' && (
-            <TripSetup
-              user={user}
-              trip={trip}
-              embedded
-              onUpdated={handleTripUpdated}
-              onError={reportError}
-            />
-          )}
-          {section === 'natural-language' && (
-            <NaturalLanguageWorkspace
-              trip={trip}
-              onTripChanged={handleTripChanged}
-              onGoToPlaces={() => setSection('places')}
-              onGoToItinerary={() => setSection('itinerary')}
-              onError={reportError}
-            />
-          )}
-          {section === 'community' && (
-            <CommunityWorkspace
-              user={user}
-              trip={trip}
-              itinerary={itinerary}
-              onTripCopied={handleRouteCopied}
-              onNotify={notify}
-              onError={reportError}
-            />
-          )}
+          {section === 'places' && <PlaceWorkspace trip={trip} hasItinerary={itinerary != null} onTripChanged={(next, message) => { setTrip(next); if (message) notify('success', message) }} onGoToItinerary={() => setSection('itinerary')} onError={reportError} />}
+          {section === 'itinerary' && <ItineraryWorkspace trip={trip} itinerary={itinerary} previousItinerary={previousItinerary} itineraryPlaces={itineraryPlaces} onItineraryChanged={handleItineraryChanged} onError={reportError} onGoToPlaces={() => setSection('places')} />}
+          {section === 'settings' && <TripSetup trip={trip} embedded onUpdated={(next) => { setTrip(next); notify('success', '여행 설정을 저장했습니다.') }} onError={reportError} />}
+          {section === 'natural-language' && <NaturalLanguageWorkspace trip={trip} onTripChanged={setTrip} onGoToPlaces={() => setSection('places')} onGoToItinerary={() => setSection('itinerary')} onError={reportError} />}
+          {section === 'community' && <CommunityWorkspace user={user} trip={trip} itinerary={itinerary} onTripCopied={handleRouteCopied} onNotify={notify} onError={reportError} />}
         </main>
       </div>
       <Toast notice={notice} onClose={() => setNotice(null)} />

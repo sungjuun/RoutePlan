@@ -1,5 +1,7 @@
 package com.routeplan.ai.api;
 
+import com.routeplan.auth.ResourceAccessService;
+import com.routeplan.auth.RoutePlanPrincipal;
 import com.routeplan.ai.application.NaturalLanguageConstraintService;
 import com.routeplan.ai.application.NaturalLanguageConstraintService.ApplyProposal;
 import com.routeplan.ai.application.NaturalLanguageConstraintService.PlaceSettings;
@@ -17,6 +19,7 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalTime;
 import java.util.List;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,24 +30,33 @@ import org.springframework.web.bind.annotation.RestController;
 public class NaturalLanguageConstraintController {
 
     private final NaturalLanguageConstraintService service;
+    private final ResourceAccessService accessService;
 
-    public NaturalLanguageConstraintController(NaturalLanguageConstraintService service) {
+    public NaturalLanguageConstraintController(
+            NaturalLanguageConstraintService service,
+            ResourceAccessService accessService
+    ) {
         this.service = service;
+        this.accessService = accessService;
     }
 
     @PostMapping("/preview")
     public PreviewResult preview(
             @PathVariable Long tripId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody PreviewRequest request
     ) {
+        accessService.requireTripOwner(tripId, principal.userId());
         return service.preview(tripId, request.text().trim());
     }
 
     @PostMapping("/apply")
     public TripResult apply(
             @PathVariable Long tripId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody ApplyRequest request
     ) {
+        accessService.requireTripOwner(tripId, principal.userId());
         return service.apply(tripId, request.toProposal());
     }
 

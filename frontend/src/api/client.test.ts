@@ -4,25 +4,54 @@ import { ApiError, api } from './client'
 describe('API client', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('returns typed JSON for successful requests', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      id: 7,
-      nickname: '여행자',
-      createdAt: '2026-08-25T00:00:00Z',
-    }), { status: 201, headers: { 'Content-Type': 'application/json' } })))
+  it('gets a CSRF token and returns the authenticated user after signup', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        headerName: 'X-CSRF-TOKEN',
+        token: 'csrf-token',
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        authenticated: true,
+        user: {
+          id: 7,
+          email: 'traveler@example.com',
+          nickname: '여행자',
+          createdAt: '2026-08-25T00:00:00Z',
+        },
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
 
-    await expect(api.createUser('여행자')).resolves.toMatchObject({ id: 7, nickname: '여행자' })
-    expect(fetch).toHaveBeenCalledWith('/api/v1/users', expect.objectContaining({ method: 'POST' }))
+    await expect(api.signup({
+      email: 'traveler@example.com',
+      nickname: '여행자',
+      password: 'routeplan12!',
+    })).resolves.toMatchObject({ authenticated: true, user: { id: 7 } })
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/auth/signup',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'X-CSRF-TOKEN': 'csrf-token' }),
+      }),
+    )
   })
 
   it('preserves backend error codes and violations', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      code: 'INFEASIBLE_MUST_VISIT',
-      message: '필수 장소를 방문할 수 없습니다.',
-      path: '/api/v1/trips/1/optimize',
-      timestamp: '2026-08-25T00:00:00Z',
-      violations: [{ placeId: 3, placeName: '휴무 장소', reason: 'CLOSED', message: '휴무일입니다.' }],
-    }), { status: 422, headers: { 'Content-Type': 'application/json' } })))
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      if (String(input).includes('/auth/csrf')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          headerName: 'X-CSRF-TOKEN',
+          token: 'csrf-token',
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({
+        code: 'INFEASIBLE_MUST_VISIT',
+        message: '필수 장소를 방문할 수 없습니다.',
+        path: '/api/v1/trips/1/optimize',
+        timestamp: '2026-08-25T00:00:00Z',
+        violations: [{ placeId: 3, placeName: '휴무 장소', reason: 'CLOSED', message: '휴무일입니다.' }],
+      }), { status: 422, headers: { 'Content-Type': 'application/json' } }))
+    }))
 
     const error = await api.optimize(1, 'NEAREST_NEIGHBOR').catch((value: unknown) => value)
 
@@ -72,27 +101,35 @@ describe('API client', () => {
   })
 
   it('sends natural language text only to the preview endpoint', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      originalText: '여유롭게 해줘',
-      provider: 'RULE_BASED',
-      structuredConstraints: {
-        dailyStartTime: null,
-        dailyEndTime: null,
-        pace: 'RELAXED',
-        transportMode: null,
-        walkingPreference: null,
-        placeConstraints: [],
-        notes: [],
-      },
-      trip: {
-        before: { dailyStartTime: '09:00:00', dailyEndTime: '20:00:00', pace: 'STANDARD', transportMode: 'WALKING' },
-        after: { dailyStartTime: '09:00:00', dailyEndTime: '20:00:00', pace: 'RELAXED', transportMode: 'WALKING' },
-        changed: true,
-      },
-      places: [],
-      warnings: [],
-      hasChanges: true,
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      if (String(input).includes('/auth/csrf')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          headerName: 'X-CSRF-TOKEN',
+          token: 'csrf-token',
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({
+        originalText: '여유롭게 해줘',
+        provider: 'RULE_BASED',
+        structuredConstraints: {
+          dailyStartTime: null,
+          dailyEndTime: null,
+          pace: 'RELAXED',
+          transportMode: null,
+          walkingPreference: null,
+          placeConstraints: [],
+          notes: [],
+        },
+        trip: {
+          before: { dailyStartTime: '09:00:00', dailyEndTime: '20:00:00', pace: 'STANDARD', transportMode: 'WALKING' },
+          after: { dailyStartTime: '09:00:00', dailyEndTime: '20:00:00', pace: 'RELAXED', transportMode: 'WALKING' },
+          changed: true,
+        },
+        places: [],
+        warnings: [],
+        hasChanges: true,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    }))
 
     await api.previewNaturalLanguageConstraints(11, '여유롭게 해줘')
 

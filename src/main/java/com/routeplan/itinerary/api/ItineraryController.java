@@ -1,5 +1,7 @@
 package com.routeplan.itinerary.api;
 
+import com.routeplan.auth.ResourceAccessService;
+import com.routeplan.auth.RoutePlanPrincipal;
 import com.routeplan.itinerary.application.ItineraryOptimizationService;
 import com.routeplan.itinerary.application.ItineraryQueryService;
 import com.routeplan.itinerary.application.ItineraryReoptimizationService;
@@ -19,6 +21,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -34,23 +37,28 @@ public class ItineraryController {
     private final ItineraryOptimizationService optimizationService;
     private final ItineraryReoptimizationService reoptimizationService;
     private final ItineraryQueryService queryService;
+    private final ResourceAccessService accessService;
 
     public ItineraryController(
             ItineraryOptimizationService optimizationService,
             ItineraryReoptimizationService reoptimizationService,
-            ItineraryQueryService queryService
+            ItineraryQueryService queryService,
+            ResourceAccessService accessService
     ) {
         this.optimizationService = optimizationService;
         this.reoptimizationService = reoptimizationService;
         this.queryService = queryService;
+        this.accessService = accessService;
     }
 
     @PostMapping("/trips/{tripId}/reoptimize")
     public ResponseEntity<ItineraryView> reoptimize(
             @PathVariable Long tripId,
             @RequestParam(defaultValue = "NEAREST_NEIGHBOR") OptimizationAlgorithm algorithm,
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody ReoptimizeRequest request
     ) {
+        accessService.requireTripOwner(tripId, principal.userId());
         ItineraryView result = reoptimizationService.reoptimize(
                 tripId,
                 algorithm,
@@ -64,8 +72,10 @@ public class ItineraryController {
     @PostMapping("/trips/{tripId}/optimize")
     public ResponseEntity<ItineraryView> optimize(
             @PathVariable Long tripId,
-            @RequestParam(defaultValue = "NEAREST_NEIGHBOR") OptimizationAlgorithm algorithm
+            @RequestParam(defaultValue = "NEAREST_NEIGHBOR") OptimizationAlgorithm algorithm,
+            @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
+        accessService.requireTripOwner(tripId, principal.userId());
         ItineraryView result = optimizationService.optimize(tripId, algorithm);
         return ResponseEntity.created(
                 URI.create("/api/v1/itineraries/" + result.itineraryId())
@@ -73,12 +83,20 @@ public class ItineraryController {
     }
 
     @GetMapping("/trips/{tripId}/itineraries/latest")
-    public ItineraryView getLatest(@PathVariable Long tripId) {
+    public ItineraryView getLatest(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal
+    ) {
+        accessService.requireTripOwner(tripId, principal.userId());
         return queryService.getLatest(tripId);
     }
 
     @GetMapping("/itineraries/{itineraryId}")
-    public ItineraryView get(@PathVariable Long itineraryId) {
+    public ItineraryView get(
+            @PathVariable Long itineraryId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal
+    ) {
+        accessService.requireItineraryOwner(itineraryId, principal.userId());
         return queryService.get(itineraryId);
     }
 

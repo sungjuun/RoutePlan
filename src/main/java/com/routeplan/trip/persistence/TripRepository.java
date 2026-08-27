@@ -19,4 +19,7 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
     @EntityGraph(attributePaths = "user")
     @Query("select trip from Trip trip where trip.id = :tripId")
     Optional<Trip> findByIdForUpdate(@Param("tripId") Long tripId);
+
+    @Query("select trip.user.id from Trip trip where trip.id = :tripId")
+    Optional<Long> findOwnerIdById(@Param("tripId") Long tripId);
 }

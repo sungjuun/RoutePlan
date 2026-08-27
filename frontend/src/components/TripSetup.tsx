@@ -10,14 +10,12 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { api } from '../api/client'
-import type { CreateTripInput, TransportMode, Trip, TripPace, User } from '../types'
+import type { CreateTripInput, TransportMode, Trip, TripPace } from '../types'
 
 interface Props {
-  user: User | null
   trip?: Trip
   embedded?: boolean
-  onReady?: (user: User, trip: Trip) => void
-  onUserCreated?: (user: User) => void
+  onReady?: (trip: Trip) => void
   onUpdated?: (trip: Trip) => void
   onError: (error: unknown) => void
 }
@@ -36,15 +34,12 @@ function addDays(dateValue: string, days: number): string {
 }
 
 export function TripSetup({
-  user,
   trip,
   embedded = false,
   onReady,
-  onUserCreated,
   onUpdated,
   onError,
 }: Props) {
-  const [nickname, setNickname] = useState(user?.nickname ?? '')
   const [name, setName] = useState(trip?.name ?? '')
   const [startDate, setStartDate] = useState(trip?.startDate ?? tomorrow())
   const [endDate, setEndDate] = useState(trip?.endDate ?? trip?.startDate ?? tomorrow())
@@ -61,13 +56,7 @@ export function TripSetup({
     event.preventDefault()
     setSubmitting(true)
     try {
-      let activeUser = user
-      if (!activeUser) {
-        activeUser = await api.createUser(nickname)
-        onUserCreated?.(activeUser)
-      }
       const input: CreateTripInput = {
-        userId: activeUser.id,
         name,
         startDate,
         endDate,
@@ -80,11 +69,9 @@ export function TripSetup({
         pace,
       }
       if (trip) {
-        const { userId: _userId, ...updateInput } = input
-        void _userId
-        onUpdated?.(await api.updateTrip(trip.id, updateInput))
+        onUpdated?.(await api.updateTrip(trip.id, input))
       } else {
-        onReady?.(activeUser, await api.createTrip(input))
+        onReady?.(await api.createTrip(input))
       }
     } catch (error) {
       onError(error)
@@ -95,12 +82,6 @@ export function TripSetup({
 
   const form = (
     <form className="trip-form" onSubmit={handleSubmit}>
-      {!user && (
-        <label className="field field-wide">
-          <span>여행자 이름</span>
-          <input value={nickname} onChange={(event) => setNickname(event.target.value)} maxLength={50} required placeholder="어떻게 불러드릴까요?" />
-        </label>
-      )}
       <label className="field field-wide">
         <span>여행 이름</span>
         <input value={name} onChange={(event) => setName(event.target.value)} maxLength={100} required placeholder="예: 서울의 오래된 골목을 걷는 날" />

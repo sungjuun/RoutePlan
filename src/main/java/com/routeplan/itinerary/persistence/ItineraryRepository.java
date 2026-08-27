@@ -28,4 +28,7 @@ public interface ItineraryRepository extends JpaRepository<Itinerary, Long> {
               )
             """)
     Optional<Itinerary> findLatestDetailedByTripId(@Param("tripId") Long tripId);
+
+    @Query("select itinerary.trip.user.id from Itinerary itinerary where itinerary.id = :itineraryId")
+    Optional<Long> findOwnerIdById(@Param("itineraryId") Long itineraryId);
 }

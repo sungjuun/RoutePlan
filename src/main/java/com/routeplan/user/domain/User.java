@@ -20,6 +20,12 @@ public class User {
     @Column(nullable = false, length = 50, unique = true)
     private String nickname;
 
+    @Column(length = 254)
+    private String email;
+
+    @Column(name = "password_hash", length = 255)
+    private String passwordHash;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -31,8 +37,32 @@ public class User {
         this.nickname = normalizeNickname(nickname);
     }
 
+    private User(String email, String nickname, String passwordHash) {
+        this.email = normalizeEmail(email);
+        this.nickname = normalizeNickname(nickname);
+        if (passwordHash == null || passwordHash.isBlank()) {
+            throw new IllegalArgumentException("비밀번호 해시는 필수입니다.");
+        }
+        this.passwordHash = passwordHash;
+    }
+
     public static User create(String nickname) {
         return new User(nickname);
+    }
+
+    public static User register(String email, String nickname, String passwordHash) {
+        return new User(email, nickname, passwordHash);
+    }
+
+    private static String normalizeEmail(String email) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("이메일은 필수입니다.");
+        }
+        String normalized = email.trim().toLowerCase(java.util.Locale.ROOT);
+        if (normalized.length() > 254) {
+            throw new IllegalArgumentException("이메일은 254자를 초과할 수 없습니다.");
+        }
+        return normalized;
     }
 
     private static String normalizeNickname(String nickname) {
@@ -52,6 +82,14 @@ public class User {
 
     public String getNickname() {
         return nickname;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
     }
 
     public Instant getCreatedAt() {

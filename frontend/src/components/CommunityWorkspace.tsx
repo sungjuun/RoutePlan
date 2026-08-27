@@ -90,7 +90,7 @@ export function CommunityWorkspace(props: Props) {
   const openRoute = async (routeId: number) => {
     setDetailLoading(true)
     try {
-      const detail = await api.getSharedRoute(routeId, user?.id)
+      const detail = await api.getSharedRoute(routeId)
       setSelected(detail)
       setRoutes((current) => ({
         ...current,
@@ -307,7 +307,6 @@ function PublishRoutePanel({
     setSubmitting(true)
     try {
       const route = await api.publishRoute(itinerary.itineraryId, {
-        userId: user.id,
         title,
         description: description.trim() || null,
         region,
@@ -369,8 +368,8 @@ function RouteDetail({
     setLiking(true)
     try {
       const result = route.likedByViewer
-        ? await api.unlikeSharedRoute(route.routeId, user.id)
-        : await api.likeSharedRoute(route.routeId, user.id)
+        ? await api.unlikeSharedRoute(route.routeId)
+        : await api.likeSharedRoute(route.routeId)
       onChanged({ ...route, likeCount: result.likeCount, likedByViewer: result.liked })
     } catch (error) {
       onError(error)
@@ -432,7 +431,6 @@ function RouteDetail({
       ) : (
         <CopyRouteForm
           route={route}
-          user={user!}
           currentTrip={currentTrip}
           onCancel={() => setCopyOpen(false)}
           onTripCopied={onTripCopied}
@@ -445,14 +443,12 @@ function RouteDetail({
 
 function CopyRouteForm({
   route,
-  user,
   currentTrip,
   onCancel,
   onTripCopied,
   onError,
 }: {
   route: SharedRouteDetail
-  user: User
   currentTrip: Trip
   onCancel: () => void
   onTripCopied: Props['onTripCopied']
@@ -475,7 +471,6 @@ function CopyRouteForm({
     setSubmitting(true)
     try {
       const copied = await api.copySharedRoute(route.routeId, {
-        userId: user.id,
         name,
         startDate,
         dailyStartTime,

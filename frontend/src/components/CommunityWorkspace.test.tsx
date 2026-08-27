@@ -12,6 +12,7 @@ vi.mock('../api/client', () => ({
 
 const user: User = {
   id: 7,
+  email: 'traveler@example.com',
   nickname: '여행자',
   createdAt: '2026-08-26T00:00:00Z',
 }

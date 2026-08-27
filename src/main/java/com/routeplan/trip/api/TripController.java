@@ -1,5 +1,7 @@
 package com.routeplan.trip.api;
 
+import com.routeplan.auth.ResourceAccessService;
+import com.routeplan.auth.RoutePlanPrincipal;
 import com.routeplan.trip.application.TripService;
 import com.routeplan.trip.application.TripService.CreateTripCommand;
 import com.routeplan.trip.application.TripService.AddTripPlaceCommand;
@@ -21,6 +23,7 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -35,32 +38,48 @@ import org.springframework.web.bind.annotation.RestController;
 public class TripController {
 
     private final TripService tripService;
+    private final ResourceAccessService accessService;
 
-    public TripController(TripService tripService) {
+    public TripController(TripService tripService, ResourceAccessService accessService) {
         this.tripService = tripService;
+        this.accessService = accessService;
     }
 
     @PostMapping
-    public ResponseEntity<TripResult> create(@Valid @RequestBody CreateTripRequest request) {
-        TripResult result = tripService.create(request.toCommand());
+    public ResponseEntity<TripResult> create(
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
+            @Valid @RequestBody CreateTripRequest request
+    ) {
+        TripResult result = tripService.create(request.toCommand(principal.userId()));
         return ResponseEntity.created(URI.create("/api/v1/trips/" + result.id())).body(result);
     }
 
     @GetMapping("/{tripId}")
-    public TripResult get(@PathVariable Long tripId) {
+    public TripResult get(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal
+    ) {
+        accessService.requireTripOwner(tripId, principal.userId());
         return tripService.get(tripId);
     }
 
     @PatchMapping("/{tripId}")
-    public TripResult update(@PathVariable Long tripId, @Valid @RequestBody UpdateTripRequest request) {
+    public TripResult update(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
+            @Valid @RequestBody UpdateTripRequest request
+    ) {
+        accessService.requireTripOwner(tripId, principal.userId());
         return tripService.update(tripId, request.toCommand());
     }
 
     @PostMapping("/{tripId}/places")
     public ResponseEntity<TripResult> addPlace(
             @PathVariable Long tripId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody AddTripPlaceRequest request
     ) {
+        accessService.requireTripOwner(tripId, principal.userId());
         TripResult result = tripService.addPlace(tripId, request.toCommand());
         return ResponseEntity.created(
                 URI.create("/api/v1/trips/" + tripId + "/places/" + request.placeId())
@@ -71,19 +90,25 @@ public class TripController {
     public TripResult updatePlaceConstraints(
             @PathVariable Long tripId,
             @PathVariable Long placeId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody UpdateTripPlaceRequest request
     ) {
+        accessService.requireTripOwner(tripId, principal.userId());
         return tripService.updatePlaceConstraints(tripId, placeId, request.toCommand());
     }
 
     @DeleteMapping("/{tripId}/places/{placeId}")
-    public ResponseEntity<Void> removePlace(@PathVariable Long tripId, @PathVariable Long placeId) {
+    public ResponseEntity<Void> removePlace(
+            @PathVariable Long tripId,
+            @PathVariable Long placeId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal
+    ) {
+        accessService.requireTripOwner(tripId, principal.userId());
         tripService.removePlace(tripId, placeId);
         return ResponseEntity.noContent().build();
     }
 
     public record CreateTripRequest(
-            @NotNull Long userId,
             @NotBlank @Size(max = 100) String name,
             @NotNull LocalDate startDate,
             @NotNull LocalDate endDate,
@@ -95,7 +120,7 @@ public class TripController {
             @NotNull TransportMode transportMode,
             TripPace pace
     ) {
-        CreateTripCommand toCommand() {
+        CreateTripCommand toCommand(Long userId) {
             return new CreateTripCommand(
                     userId, name, startDate, endDate, accommodationName,
                     accommodationLatitude, accommodationLongitude, transportMode,

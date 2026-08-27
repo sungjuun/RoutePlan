@@ -46,11 +46,18 @@ V12는 짧은 외부 Provider 장애가 사용자 요청 전체의 실패로 이
 
 > 일시적인 Rate Limit·서버·네트워크 장애만 제한적으로 재시도하고, 영구 오류는 즉시 반환하면서 재시도 동작을 지표로 확인할 수 있는가?
 
-## 구현 범위 (V1–V12)
+V13은 브라우저가 전달한 사용자 ID를 신뢰하던 경계를 제거하고, 서비스의 첫 화면을 공개 루트 탐색 중심으로 개편합니다.
+
+> 안전한 세션 인증으로 여행 소유권을 강제하면서도, 비회원이 나라별 추천 루트와 커뮤니티를 먼저 둘러볼 수 있는가?
+
+## 구현 범위 (V1–V13)
 
 ### 지원
 
-- 최소 사용자 생성
+- 이메일·닉네임·비밀번호 회원가입과 로그인·로그아웃
+- BCrypt 기반 적응형 비밀번호 해시와 HttpOnly 세션 쿠키
+- CSRF 보호와 인증 실패·권한 거부 표준 JSON 응답
+- 로그인 사용자를 기준으로 한 Trip·Itinerary 소유권 검사
 - 1–14일 Trip 생성·조회·수정
 - 좌표 기반 Place 등록·조회
 - Trip에 장소 추가·삭제
@@ -86,6 +93,8 @@ V12는 짧은 외부 Provider 장애가 사용자 요청 전체의 실패로 이
 - 부모 일정·변경 사유·재계산 시작점과 항목 상태를 포함한 버전 계보
 - 최신 또는 특정 Itinerary 조회
 - React 기반 여행 생성·장소 관리·일정 타임라인·지도 화면
+- 나라별 추천 루트와 인기 공개 루트를 먼저 보여주는 공개 메인 페이지
+- 비회원 공개 커뮤니티와 로그인·회원가입·사용자 메뉴 UI
 - 현재 위치 기반 재최적화와 이전/현재 버전 비교 UI
 - 외부 검색 비활성 환경을 위한 수동 좌표 장소 등록
 - 브라우저 작업공간 복구와 반응형 모바일 UI
@@ -119,7 +128,7 @@ V12는 짧은 외부 Provider 장애가 사용자 요청 전체의 실패로 이
 - DB 영속 Route Matrix
 - Google Places 영업시간 자동 가져오기
 - QueryDSL, PostGIS
-- 인증, 다중 턴 AI 대화, AI의 장소 자동 추가
+- OAuth·이메일 인증·비밀번호 재설정, 다중 턴 AI 대화, AI의 장소 자동 추가
 
 기본 `SIMPLE` 모드의 `estimatedTravelMinutes`는 직선거리와 고정 평균속도로 계산한 추정치입니다. `GOOGLE` Route Provider를 활성화하면 Google Routes API가 반환한 실제 경로 거리와 이동시간을 사용합니다.
 
@@ -128,6 +137,7 @@ V12는 짧은 외부 Provider 장애가 사용자 요청 전체의 실패로 이
 - Java 21
 - Spring Boot 4.1.0
 - Spring Web MVC
+- Spring Security
 - Spring Data JPA
 - Spring Data Redis
 - PostgreSQL 16
@@ -153,8 +163,9 @@ QueryDSL은 동적 검색 쿼리가 없는 현재 단계에서는 사용하지 �
 
 ```text
 com.routeplan
+├─ auth            세션 인증·CSRF·리소스 소유권 검사
 ├─ common          공통 오류 응답·관측성
-├─ user            최소 사용자
+├─ user            계정과 비밀번호 해시
 ├─ trip            Trip과 TripPlace
 ├─ place           장소 정보
 ├─ optimization    Spring/JPA와 분리된 경로·제약 일정 계산
@@ -165,7 +176,8 @@ com.routeplan
 
 ```mermaid
 flowchart LR
-    WEB[React Frontend] -->|Nginx /api proxy| API[REST API]
+    WEB[React Frontend] -->|HttpOnly Session + CSRF| SECURITY[Spring Security]
+    SECURITY -->|Nginx /api proxy| API[REST API]
     WEB --> OSM[OpenStreetMap Tiles]
     API --> APP[Optimization / Reoptimization Service]
     API --> COMMUNITY[SharedRoute Service]
@@ -186,14 +198,16 @@ flowchart LR
 
 `OptimizationEngine`과 `ConstraintSchedulePlanner`는 JPA Entity를 받지 않습니다. 애플리케이션 서비스가 Entity를 순수 입력 Snapshot으로 변환하고, Route Matrix를 한 번 만든 뒤 두 계산 계층에 같은 Matrix를 전달합니다. 경로 순서 탐색과 현실 제약 일정 계산을 분리해 V2 알고리즘 비교 기준도 유지했습니다.
 
-`frontend`는 백엔드와 분리된 React 애플리케이션입니다. 개발 환경에서는 Vite가 `/api`를 `localhost:8080`으로 전달하고, Docker에서는 Nginx가 `backend:8080`으로 전달합니다. 브라우저는 동일 출처 API만 호출하므로 별도 CORS 설정이 필요하지 않습니다. 현재 사용자와 Trip ID는 브라우저 작업공간에 저장하며 새로고침 시 서버의 Trip과 최신 Itinerary를 다시 조회합니다.
+`frontend`는 백엔드와 분리된 React 애플리케이션입니다. 개발 환경에서는 Vite가 `/api`를 `localhost:8080`으로 전달하고, Docker에서는 Nginx가 `backend:8080`으로 전달합니다. 브라우저는 동일 출처 API만 호출하므로 별도 CORS 설정이 필요하지 않습니다. 로그인 상태는 서버 세션과 HttpOnly 쿠키로만 확인하며 브라우저 저장소에는 마지막 Trip ID만 보존합니다. 새로고침 시 `/auth/me`로 세션을 확인한 뒤 소유한 Trip과 최신 Itinerary를 다시 조회합니다.
 
 ## Frontend MVP
 
 프론트엔드는 다음 한 사이클을 화면에서 끝낼 수 있습니다.
 
 ```text
-여행자·여행 조건 입력
+나라별 추천·인기 Route 탐색
+→ 로그인 또는 회원가입
+→ 여행 조건 입력
 → 장소 검색 또는 좌표 등록
 → Must Visit·Priority·시간창·체류시간 편집
 → 알고리즘 선택과 일정 생성
@@ -248,6 +262,7 @@ erDiagram
 - 같은 Itinerary는 SharedRoute로 한 번만 공개할 수 있음
 - SharedRoute의 장소 순서는 중복될 수 없고 Snapshot 항목이 한 개 이상이어야 함
 - 같은 사용자는 같은 SharedRoute에 좋아요를 한 번만 등록할 수 있음
+- 가입 계정은 이메일과 비밀번호 해시를 항상 함께 가지며 이메일은 대소문자와 무관하게 유일함
 
 ## Optimization Engine
 
@@ -417,9 +432,15 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 
 ## API
 
+공개 Route 조회와 인증 상태 확인을 제외한 API는 로그인이 필요합니다. 클라이언트가 `userId`를 보내더라도 소유자는 요청 본문이 아니라 서버 세션의 사용자로 결정됩니다. 상태 변경 요청은 먼저 CSRF 토큰을 조회해 서버가 알려준 헤더에 전달해야 합니다.
+
 | Method | Endpoint | 기능 |
 |---|---|---|
-| `POST` | `/api/v1/users` | 사용자 생성 |
+| `GET` | `/api/v1/auth/csrf` | CSRF 헤더 이름과 토큰 조회 |
+| `GET` | `/api/v1/auth/me` | 현재 로그인 상태와 사용자 조회 |
+| `POST` | `/api/v1/auth/signup` | 이메일·닉네임·비밀번호 회원가입 후 로그인 |
+| `POST` | `/api/v1/auth/login` | 세션 로그인 |
+| `POST` | `/api/v1/auth/logout` | 세션 로그아웃 |
 | `POST` | `/api/v1/trips` | 1–14일 Trip 생성 |
 | `GET` | `/api/v1/trips/{tripId}` | Trip과 장소 조회 |
 | `PATCH` | `/api/v1/trips/{tripId}` | Trip 수정 |
@@ -438,14 +459,16 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 | `GET` | `/api/v1/itineraries/{itineraryId}` | 특정 일정 조회 |
 | `POST` | `/api/v1/itineraries/{itineraryId}/share` | 일정 Snapshot을 SharedRoute로 공개 |
 | `GET` | `/api/v1/routes?region=...&travelDays=...&sort=...` | 공개 Route 탐색 |
-| `GET` | `/api/v1/routes/{routeId}?viewerUserId=...` | 공개 Route 상세 조회와 조회수 증가 |
+| `GET` | `/api/v1/routes/{routeId}` | 공개 Route 상세 조회와 조회수 증가 |
 | `POST` | `/api/v1/routes/{routeId}/likes` | 공개 Route 좋아요 |
-| `DELETE` | `/api/v1/routes/{routeId}/likes?userId=...` | 공개 Route 좋아요 취소 |
+| `DELETE` | `/api/v1/routes/{routeId}/likes` | 공개 Route 좋아요 취소 |
 | `POST` | `/api/v1/routes/{routeId}/copy` | 공개 Route 장소를 새 Trip으로 복사 |
 | `POST` | `/api/v1/trips/{tripId}/natural-language/preview` | 자연어를 구조화된 여행 조건과 변경안으로 해석 |
 | `POST` | `/api/v1/trips/{tripId}/natural-language/apply` | 검토한 변경안을 현재 Trip에 원자적으로 적용 |
 
 Swagger UI는 Docker Compose 실행 시 `http://localhost:8180/swagger-ui.html`, 애플리케이션 직접 실행 시 `http://localhost:8080/swagger-ui.html`에서 확인할 수 있습니다.
+
+세션 쿠키 이름은 `ROUTEPLAN_SESSION`이며 JavaScript에서 읽을 수 없는 `HttpOnly`, 동일 사이트 요청을 위한 `SameSite=Lax`를 사용합니다. 운영 HTTPS 환경에서는 `ROUTEPLAN_SESSION_COOKIE_SECURE=true`로 설정해야 합니다. 기본 세션 유효시간은 12시간이고 `ROUTEPLAN_SESSION_TIMEOUT`으로 조정할 수 있습니다. 기존 V12 데이터의 이메일이 없는 레거시 사용자는 자동 로그인 계정으로 변환하지 않으므로 V13 화면에서 새로 가입해야 합니다.
 
 ### 운영 상태와 메트릭
 
@@ -628,6 +651,7 @@ docker compose up --build
 Frontend는 `http://localhost:3100`, Backend는 `http://localhost:8180`, PostgreSQL은 `localhost:5432`, Redis는 `localhost:6379`에서 실행됩니다.
 이미 사용 중인 포트가 있다면 `.env`의 `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`를 변경할 수 있습니다.
 Backend 컨테이너 healthcheck는 Swagger 문서가 아니라 `/actuator/health/readiness`를 사용합니다.
+첫 화면에서 공개 추천 루트를 확인할 수 있으며, 여행 생성·좋아요·복사·공개 기능은 회원가입 또는 로그인 후 사용할 수 있습니다.
 
 ### 애플리케이션 직접 실행
 
@@ -697,6 +721,8 @@ npm test
 npm run lint
 npm run build
 ```
+
+현재 기본 검증 묶음은 Backend 65개와 Frontend 15개 테스트를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V9와 세션 인증·CSRF·소유권 경계를 함께 확인합니다.
 
 `.github/workflows/ci.yml`은 push와 pull request마다 Backend와 Frontend Job을 병렬 실행합니다. Backend는 Java 21과 Testcontainers PostgreSQL로 전체 테스트를 수행하고, Frontend는 Node.js 22에서 고정된 lockfile로 설치한 뒤 단위 테스트, ESLint, 프로덕션 빌드를 모두 통과해야 합니다. Benchmark는 실행시간 변동과 비용 때문에 일반 CI에서 분리합니다.
 
@@ -871,15 +897,15 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 재최적화의 현재 위치·시각과 완료 항목은 클라이언트가 전달하며 GPS나 서버 이벤트로 검증하지 않습니다.
 - 완료 상태는 기준 일정의 연속된 앞부분만 지원하고 중간 장소 건너뛰기는 지원하지 않습니다.
 - 프론트 지도 선은 실제 도로 Geometry가 아니라 방문 순서를 잇는 시각화입니다.
-- 서버에 사용자별 Trip 목록 API가 없어 현재 작업공간 한 건을 브라우저에 보존합니다.
 - 다일 장소 배분은 날짜 순차 휴리스틱이며 날짜·장소 조합의 전역 최적해를 보장하지 않습니다.
 - 다일 재최적화도 날짜 순차 휴리스틱을 사용하며, 현재 날짜의 완료 상태는 기준 일정의 연속된 앞부분만 지원합니다.
-- 인증이 없어 `userId`는 소유 관계만 표현하며 권한을 보장하지 않습니다.
-- 커뮤니티 화면은 현재 Trip 작업공간을 만든 사용자만 진입할 수 있습니다.
+- 계정 이메일 검증, 비밀번호 재설정, OAuth 로그인과 로그인 시도 Rate Limit은 아직 지원하지 않습니다.
+- 서버에 사용자별 Trip 목록 API가 없어 로그인 계정이라도 현재 브라우저에 보존된 마지막 작업공간 한 건만 바로 복구합니다.
+- 기본 `HttpSession`은 단일 Backend 메모리에 있으므로 다중 인스턴스 배포 전에는 외부 Session Store와 만료 정책을 구성해야 합니다.
 - Route 복사 시 방문 장소·Priority·Must Visit만 옮기며 공개 당시 선호 시간창은 복사하지 않습니다.
 - 조회수는 상세 요청마다 증가하며 사용자·세션별 중복 조회를 제거하지 않습니다.
 - 인기순은 복사·좋아요·조회수의 단순 우선 정렬이며 시간 감쇠나 가중 점수는 적용하지 않습니다.
-- `UNLISTED`는 ID 기반 접근만 지원하고 완전한 비공개 Route는 인증 도입 전까지 지원하지 않습니다.
+- `UNLISTED`는 ID 기반 접근만 지원하며 작성자 전용 비공개 Route와 공유 링크 만료는 아직 지원하지 않습니다.
 - 기본 규칙 기반 자연어 Parser는 대표 한국어 표현만 지원하며 문맥 이해 범위가 제한적입니다.
 - OpenAI Provider 실호출은 이 개발 환경에 API 키가 없어 latency·비용·quota를 아직 측정하지 못했습니다.
 - 자연어 장소 조건은 현재 Trip에 이미 담긴 장소만 매칭하며 장소 검색·자동 추가는 하지 않습니다.
@@ -913,3 +939,5 @@ V10에서 현재 시각만 받아 다일 일정을 다시 계산하면 이미 �
 V11 이전에는 Itinerary에 Matrix 측정값이 저장되어도 실패한 요청은 DB에 결과가 없어 원인을 집계할 수 없었고, 여러 로그가 같은 요청인지 연결할 ID도 없었습니다. 성공 결과의 Snapshot 측정은 그대로 유지하면서 Micrometer Timer/Counter를 orchestration 경계에 추가해 실패도 기록합니다. 요청별 Correlation ID는 검증된 헤더 또는 서버 UUID 하나를 응답·오류·MDC에 공유합니다. Trip ID처럼 값이 계속 늘어나는 정보는 메트릭 태그에서 제외해 Prometheus 시계열 폭증을 막습니다.
 
 V12 이전에는 Google·OpenAI 호출이 일시적 429·5xx·Timeout에도 한 번 만에 실패했습니다. 모든 오류를 재시도하면 잘못된 요청이나 인증 실패를 반복해 비용과 지연만 늘어나므로 HTTP 상태와 실패 유형을 먼저 분리했습니다. 재시도 가능한 실패만 최대 횟수 안에서 지수 Backoff와 Jitter로 다시 호출하고, 각 실제 시도·재시도 결정·최종 소진을 낮은 카디널리티 태그로 기록합니다.
+
+V13 이전에는 요청 본문의 `userId`만으로 다른 사용자의 Trip을 조회하거나 변경할 수 있었습니다. V13에서는 이메일과 적응형 비밀번호 해시를 가진 계정, 서버 `HttpSession`, CSRF 보호를 추가하고 모든 개인 리소스의 소유자를 인증 Principal에서 결정합니다. 공개 Route 목록·상세만 비회원에게 열어 두고 좋아요·복사·공개·여행 편집은 로그인 사용자로 제한했습니다. 프론트도 로컬 사용자 객체를 제거하고 공개 추천 메인 → 커뮤니티 탐색 → 로그인 → 개인 작업공간 흐름으로 분리했습니다.

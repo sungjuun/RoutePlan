@@ -1,5 +1,6 @@
 package com.routeplan.community.api;
 
+import com.routeplan.auth.RoutePlanPrincipal;
 import com.routeplan.community.application.RouteLikeView;
 import com.routeplan.community.application.SharedRouteDetailView;
 import com.routeplan.community.application.SharedRoutePageView;
@@ -25,6 +26,7 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -49,9 +51,13 @@ public class SharedRouteController {
     @PostMapping("/itineraries/{itineraryId}/share")
     public ResponseEntity<SharedRouteDetailView> publish(
             @PathVariable Long itineraryId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody PublishRouteRequest request
     ) {
-        SharedRouteDetailView route = sharedRouteService.publish(itineraryId, request.toCommand());
+        SharedRouteDetailView route = sharedRouteService.publish(
+                itineraryId,
+                request.toCommand(principal.userId())
+        );
         return ResponseEntity.created(URI.create("/api/v1/routes/" + route.routeId())).body(route);
     }
 
@@ -69,54 +75,55 @@ public class SharedRouteController {
     @GetMapping("/routes/{routeId}")
     public SharedRouteDetailView get(
             @PathVariable Long routeId,
-            @RequestParam(required = false) @Positive Long viewerUserId
+            @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
-        return sharedRouteService.get(routeId, viewerUserId);
+        return sharedRouteService.get(routeId, principal == null ? null : principal.userId());
     }
 
     @PostMapping("/routes/{routeId}/likes")
     public ResponseEntity<RouteLikeView> like(
             @PathVariable Long routeId,
-            @Valid @RequestBody RouteLikeRequest request
+            @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
-        return ResponseEntity.status(201).body(sharedRouteService.like(routeId, request.userId()));
+        return ResponseEntity.status(201).body(
+                sharedRouteService.like(routeId, principal.userId())
+        );
     }
 
     @DeleteMapping("/routes/{routeId}/likes")
     public RouteLikeView unlike(
             @PathVariable Long routeId,
-            @RequestParam @Positive Long userId
+            @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
-        return sharedRouteService.unlike(routeId, userId);
+        return sharedRouteService.unlike(routeId, principal.userId());
     }
 
     @PostMapping("/routes/{routeId}/copy")
     public ResponseEntity<TripResult> copy(
             @PathVariable Long routeId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody CopyRouteRequest request
     ) {
-        TripResult trip = sharedRouteService.copy(routeId, request.toCommand());
+        TripResult trip = sharedRouteService.copy(
+                routeId,
+                request.toCommand(principal.userId())
+        );
         return ResponseEntity.created(URI.create("/api/v1/trips/" + trip.id())).body(trip);
     }
 
     public record PublishRouteRequest(
-            @NotNull @Positive Long userId,
             @NotBlank @Size(max = 150) String title,
             @Size(max = 1000) String description,
             @NotBlank @Size(max = 100) String region,
             SharedRouteVisibility visibility
     ) {
 
-        PublishCommand toCommand() {
+        PublishCommand toCommand(Long userId) {
             return new PublishCommand(userId, title, description, region, visibility);
         }
     }
 
-    public record RouteLikeRequest(@NotNull @Positive Long userId) {
-    }
-
     public record CopyRouteRequest(
-            @NotNull @Positive Long userId,
             @NotBlank @Size(max = 100) String name,
             @NotNull LocalDate startDate,
             @NotNull LocalTime dailyStartTime,
@@ -128,7 +135,7 @@ public class SharedRouteController {
             @NotNull TripPace pace
     ) {
 
-        CopyCommand toCommand() {
+        CopyCommand toCommand(Long userId) {
             return new CopyCommand(
                     userId,
                     name,

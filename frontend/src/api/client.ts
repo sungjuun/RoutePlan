@@ -1,6 +1,7 @@
 import type {
   ApiErrorBody,
   ApplyNaturalLanguageConstraintsInput,
+  AuthSession,
   CopyRouteInput,
   CreateTripInput,
   Itinerary,
@@ -14,10 +15,17 @@ import type {
   SharedRouteDetail,
   SharedRoutePage,
   SharedRouteSort,
+  SignupInput,
   Trip,
   TripPlaceConstraints,
-  User,
 } from '../types'
+
+interface CsrfView {
+  headerName: string
+  token: string
+}
+
+let csrfRequest: Promise<CsrfView> | null = null
 
 export class ApiError extends Error {
   constructor(
@@ -30,10 +38,14 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? 'GET').toUpperCase()
+  const csrf = ['GET', 'HEAD', 'OPTIONS'].includes(method) ? null : await csrfToken()
   const response = await fetch(`/api/v1${path}`, {
     ...init,
+    credentials: 'same-origin',
     headers: {
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(csrf ? { [csrf.headerName]: csrf.token } : {}),
       ...init?.headers,
     },
   })
@@ -72,20 +84,54 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T
 }
 
+async function csrfToken(): Promise<CsrfView> {
+  if (!csrfRequest) {
+    csrfRequest = fetch('/api/v1/auth/csrf', { credentials: 'same-origin' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('보안 토큰을 준비하지 못했습니다.')
+        return response.json() as Promise<CsrfView>
+      })
+      .catch((error) => {
+        csrfRequest = null
+        throw error
+      })
+  }
+  return csrfRequest
+}
+
 function json(method: string, body: unknown): RequestInit {
   return { method, body: JSON.stringify(body) }
 }
 
 export const api = {
-  createUser: (nickname: string) =>
-    request<User>('/users', json('POST', { nickname })),
+  getAuthSession: () => request<AuthSession>('/auth/me'),
+
+  signup: async (input: SignupInput) => {
+    const session = await request<AuthSession>('/auth/signup', json('POST', input))
+    csrfRequest = null
+    return session
+  },
+
+  login: async (email: string, password: string) => {
+    const session = await request<AuthSession>(
+      '/auth/login',
+      json('POST', { email, password }),
+    )
+    csrfRequest = null
+    return session
+  },
+
+  logout: async () => {
+    await request<void>('/auth/logout', { method: 'POST' })
+    csrfRequest = null
+  },
 
   createTrip: (input: CreateTripInput) =>
     request<Trip>('/trips', json('POST', input)),
 
   getTrip: (tripId: number) => request<Trip>(`/trips/${tripId}`),
 
-  updateTrip: (tripId: number, input: Omit<CreateTripInput, 'userId'>) =>
+  updateTrip: (tripId: number, input: CreateTripInput) =>
     request<Trip>(`/trips/${tripId}`, json('PATCH', input)),
 
   createPlace: (input: {
@@ -172,21 +218,14 @@ export const api = {
     return request<SharedRoutePage>(`/routes?${params}`)
   },
 
-  getSharedRoute: (routeId: number, viewerUserId?: number) => {
-    const params = viewerUserId == null
-      ? ''
-      : `?${new URLSearchParams({ viewerUserId: String(viewerUserId) })}`
-    return request<SharedRouteDetail>(`/routes/${routeId}${params}`)
-  },
+  getSharedRoute: (routeId: number) =>
+    request<SharedRouteDetail>(`/routes/${routeId}`),
 
-  likeSharedRoute: (routeId: number, userId: number) =>
-    request<RouteLikeResult>(`/routes/${routeId}/likes`, json('POST', { userId })),
+  likeSharedRoute: (routeId: number) =>
+    request<RouteLikeResult>(`/routes/${routeId}/likes`, { method: 'POST' }),
 
-  unlikeSharedRoute: (routeId: number, userId: number) =>
-    request<RouteLikeResult>(
-      `/routes/${routeId}/likes?${new URLSearchParams({ userId: String(userId) })}`,
-      { method: 'DELETE' },
-    ),
+  unlikeSharedRoute: (routeId: number) =>
+    request<RouteLikeResult>(`/routes/${routeId}/likes`, { method: 'DELETE' }),
 
   copySharedRoute: (routeId: number, input: CopyRouteInput) =>
     request<Trip>(`/routes/${routeId}/copy`, json('POST', input)),

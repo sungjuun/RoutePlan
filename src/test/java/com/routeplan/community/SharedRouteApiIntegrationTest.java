@@ -8,6 +8,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.routeplan.auth.AuthenticatedMockMvc;
+import com.routeplan.user.application.UserService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -30,7 +33,17 @@ class SharedRouteApiIntegrationTest {
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
 
     @Autowired
-    private MockMvc mockMvc;
+    private MockMvc rawMockMvc;
+
+    private AuthenticatedMockMvc mockMvc;
+
+    @Autowired
+    private UserService userService;
+
+    @BeforeEach
+    void setUpSecurity() {
+        mockMvc = new AuthenticatedMockMvc(rawMockMvc);
+    }
 
     @Test
     void publishesDiscoversLikesCopiesAndReoptimizesSharedRoute() throws Exception {
@@ -40,6 +53,7 @@ class SharedRouteApiIntegrationTest {
         long travelerId = postAndReadId("/api/v1/users", """
                 {"nickname":"community-traveler"}
                 """);
+        mockMvc.authenticate(ownerId);
         long osakaCastleId = postAndReadId("/api/v1/places", """
                 {
                   "name":"오사카성",
@@ -147,6 +161,8 @@ class SharedRouteApiIntegrationTest {
                 .andExpect(jsonPath("$.viewCount").value(1))
                 .andExpect(jsonPath("$.likedByViewer").value(false));
 
+        mockMvc.authenticate(travelerId);
+
         mockMvc.perform(post("/api/v1/routes/{routeId}/likes", routeId.longValue())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"userId\":" + travelerId + "}"))
@@ -159,6 +175,7 @@ class SharedRouteApiIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DUPLICATE_ROUTE_LIKE"));
 
+        mockMvc.authenticate(ownerId);
         mockMvc.perform(patch("/api/v1/trips/{tripId}", sourceTripId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -176,6 +193,7 @@ class SharedRouteApiIntegrationTest {
                 .andExpect(jsonPath("$.accommodationName").value("난바 숙소"))
                 .andExpect(jsonPath("$.likeCount").value(1));
 
+        mockMvc.authenticate(travelerId);
         MvcResult copiedTrip = mockMvc.perform(post(
                         "/api/v1/routes/{routeId}/copy", routeId.longValue()
                 )
@@ -236,6 +254,7 @@ class SharedRouteApiIntegrationTest {
         long strangerId = postAndReadId("/api/v1/users", """
                 {"nickname":"ownership-stranger"}
                 """);
+        mockMvc.authenticate(ownerId);
         long placeId = postAndReadId("/api/v1/places", """
                 {
                   "name":"소유권 장소",
@@ -263,6 +282,7 @@ class SharedRouteApiIntegrationTest {
                 optimization.getResponse().getContentAsString(), "$.itineraryId"
         );
 
+        mockMvc.authenticate(strangerId);
         mockMvc.perform(post("/api/v1/itineraries/{itineraryId}/share", itineraryId.longValue())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -277,6 +297,12 @@ class SharedRouteApiIntegrationTest {
     }
 
     private long postAndReadId(String path, String body) throws Exception {
+        if ("/api/v1/users".equals(path)) {
+            String nickname = JsonPath.read(body, "$.nickname");
+            long userId = userService.create(nickname).id();
+            mockMvc.authenticate(userId);
+            return userId;
+        }
         MvcResult result = mockMvc.perform(post(path)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))

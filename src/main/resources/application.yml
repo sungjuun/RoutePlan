@@ -28,6 +28,14 @@ springdoc:
 
 server:
   shutdown: graceful
+  servlet:
+    session:
+      timeout: ${ROUTEPLAN_SESSION_TIMEOUT:12h}
+      cookie:
+        name: ROUTEPLAN_SESSION
+        http-only: true
+        secure: ${ROUTEPLAN_SESSION_COOKIE_SECURE:false}
+        same-site: lax
 
 management:
   endpoints:
