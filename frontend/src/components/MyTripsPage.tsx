@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, BedDouble, CalendarDays, MapPinned, Plus, Route } from 'lucide-react'
+import { ArrowRight, BedDouble, CalendarDays, MapPinned, Plus } from 'lucide-react'
 import { api } from '../api/client'
 import { dateLabel, paceLabel, transportLabel } from '../lib/format'
 import type { TripSummary } from '../types'
+import { AsyncState } from './AsyncState'
 
 interface Props {
   onOpenTrip: (tripId: number) => void
@@ -20,6 +21,8 @@ function localToday(): string {
 export function MyTripsPage({ onOpenTrip, onNewTrip, onError }: Props) {
   const [trips, setTrips] = useState<TripSummary[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const today = localToday()
   const optimizedCount = useMemo(
     () => trips.filter((trip) => trip.status === 'OPTIMIZED').length,
@@ -34,10 +37,15 @@ export function MyTripsPage({ onOpenTrip, onNewTrip, onError }: Props) {
     let cancelled = false
     api.getTrips()
       .then((result) => { if (!cancelled) setTrips(result) })
-      .catch(onError)
+      .catch((error) => {
+        if (!cancelled) {
+          setLoadFailed(true)
+          onError(error)
+        }
+      })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [onError])
+  }, [onError, reloadKey])
 
   return (
     <main className="account-page my-trips-page">
@@ -48,16 +56,18 @@ export function MyTripsPage({ onOpenTrip, onNewTrip, onError }: Props) {
 
       <section className="account-content">
         <div className="journey-summary-row">
-          <div><span>전체 여행</span><strong>{trips.length}</strong></div>
-          <div><span>일정 계산 완료</span><strong>{optimizedCount}</strong></div>
-          <div><span>예정·진행 여행</span><strong>{upcomingCount}</strong></div>
+          <div><span>전체 여행</span><strong>{loading || loadFailed ? '—' : trips.length}</strong></div>
+          <div><span>일정 계산 완료</span><strong>{loading || loadFailed ? '—' : optimizedCount}</strong></div>
+          <div><span>예정·진행 여행</span><strong>{loading || loadFailed ? '—' : upcomingCount}</strong></div>
         </div>
 
         <div className="account-section-head"><div><span className="eyebrow">SAVED TRIPS</span><h2>저장된 여행</h2></div><span>최근 수정순</span></div>
         {loading ? (
-          <div className="account-empty panel">여행 목록을 불러오는 중입니다…</div>
+          <AsyncState kind="loading" title="여행 목록을 불러오는 중입니다" className="account-empty" />
+        ) : loadFailed ? (
+          <AsyncState kind="error" title="여행 목록을 불러오지 못했습니다" message="연결 상태를 확인한 뒤 다시 시도해 주세요." actionLabel="다시 시도" onAction={() => { setLoading(true); setLoadFailed(false); setReloadKey((key) => key + 1) }} className="account-empty" />
         ) : trips.length === 0 ? (
-          <div className="account-empty panel"><Route size={30} /><h3>아직 저장된 여행이 없습니다</h3><p>새 여행을 만들거나 커뮤니티 루트를 내 일정으로 가져와 보세요.</p><button className="button button-primary" onClick={onNewTrip}>첫 여행 만들기</button></div>
+          <AsyncState kind="empty" title="아직 저장된 여행이 없습니다" message="새 여행을 만들거나 커뮤니티 루트를 내 일정으로 가져와 보세요." actionLabel="첫 여행 만들기" onAction={onNewTrip} className="account-empty" />
         ) : (
           <div className="my-trip-grid">
             {trips.map((trip, index) => (

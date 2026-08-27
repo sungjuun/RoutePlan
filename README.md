@@ -97,6 +97,8 @@ V13은 브라우저가 전달한 사용자 ID를 신뢰하던 경계를 제거�
 - 비회원 공개 커뮤니티와 로그인·회원가입·사용자 메뉴 UI
 - 계정별 저장 여행 목록과 선택한 여행 작업공간 복구
 - 여행·완성 일정·저장 장소 현황을 보여주는 마이페이지
+- 공개 화면의 현재 메뉴 표시와 태블릿·모바일 접이식 주요 메뉴
+- 추천 루트·내 여행·마이페이지의 로딩·빈 결과·실패·재시도 상태 UI
 - 현재 위치 기반 재최적화와 이전/현재 버전 비교 UI
 - 외부 검색 비활성 환경을 위한 수동 좌표 장소 등록
 - 브라우저 작업공간 복구와 반응형 모바일 UI
@@ -725,7 +727,7 @@ npm run lint
 npm run build
 ```
 
-현재 기본 검증 묶음은 Backend 65개와 Frontend 17개 테스트를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V9와 세션 인증·CSRF·소유권 경계를 함께 확인합니다.
+현재 기본 검증 묶음은 Backend 65개와 Frontend 19개 테스트를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V9와 세션 인증·CSRF·소유권 경계를 함께 확인합니다.
 
 `.github/workflows/ci.yml`은 push와 pull request마다 Backend와 Frontend Job을 병렬 실행합니다. Backend는 Java 21과 Testcontainers PostgreSQL로 전체 테스트를 수행하고, Frontend는 Node.js 22에서 고정된 lockfile로 설치한 뒤 단위 테스트, ESLint, 프로덕션 빌드를 모두 통과해야 합니다. Benchmark는 실행시간 변동과 비용 때문에 일반 CI에서 분리합니다.
 
@@ -776,6 +778,8 @@ npm run build
 - API 성공 응답과 구조화된 오류 전달
 - 예상하지 못한 Proxy 오류 형식의 사용자 안전 메시지 fallback
 - 커뮤니티 목록 렌더링과 인기순 전환
+- 공개 추천 검색, 로그인, 내 여행·마이페이지 사용자 흐름
+- 공개 모바일 메뉴 전환과 내 여행 API 실패 후 재시도
 - 한국어 자연어의 시간·여행 강도·이동수단·장소 우선순위 결정적 해석
 - 자연어 미리보기와 검토한 조건의 Trip 원자적 적용 API
 - OpenAI 요청의 Strict JSON Schema·`store=false`·API key 비노출 계약
@@ -833,6 +837,8 @@ V10 현재 날짜 기준 다일 잔여 일정 재최적화 ✓
 V11 Actuator·Micrometer·Correlation ID·GitHub Actions 운영 기반 ✓
  ↓
 V12 외부 API Retry·지수 Backoff·Jitter·재시도 지표 ✓
+ ↓
+V13 세션 인증·소유권 보호·공개 추천 메인·내 여행·마이페이지 ✓
 ```
 
 ## Performance Benchmark

@@ -3,6 +3,7 @@ import { ArrowRight, CalendarDays, Copy, Heart, MapPin, Search, Sparkles } from 
 import { api } from '../api/client'
 import { durationLabel, paceLabel, transportLabel } from '../lib/format'
 import type { SharedRouteSummary, User } from '../types'
+import { AsyncState } from './AsyncState'
 
 const destinations = [
   { country: '일본', region: '오사카', code: 'JP', copy: '골목과 미식, 오래된 성' },
@@ -22,6 +23,9 @@ interface Props {
 export function LandingPage({ user, onExplore, onCreateTrip, onError }: Props) {
   const [query, setQuery] = useState('')
   const [routes, setRoutes] = useState<SharedRouteSummary[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -29,9 +33,15 @@ export function LandingPage({ user, onExplore, onCreateTrip, onError }: Props) {
       .then((page) => {
         if (!cancelled) setRoutes(page.content)
       })
-      .catch(onError)
+      .catch((error) => {
+        if (!cancelled) {
+          setLoadFailed(true)
+          onError(error)
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [onError])
+  }, [onError, reloadKey])
 
   const search = (event: FormEvent) => {
     event.preventDefault()
@@ -88,8 +98,12 @@ export function LandingPage({ user, onExplore, onCreateTrip, onError }: Props) {
           <div><span className="eyebrow">POPULAR ROUTES</span><h2>지금 많이 가져가는 여행</h2><p>실제로 다른 여행자가 자신의 일정으로 복사한 횟수를 우선합니다.</p></div>
           <button onClick={() => onExplore()}>루트 커뮤니티 <ArrowRight size={16} /></button>
         </div>
-        {routes.length === 0 ? (
-          <div className="landing-empty panel">아직 공개된 추천 루트가 없습니다. 첫 번째 루트를 공개해 보세요.</div>
+        {loading ? (
+          <AsyncState kind="loading" title="추천 루트를 불러오는 중입니다" className="landing-empty" />
+        ) : loadFailed ? (
+          <AsyncState kind="error" title="추천 루트를 불러오지 못했습니다" message="잠시 후 다시 시도해 주세요." actionLabel="다시 시도" onAction={() => { setLoading(true); setLoadFailed(false); setReloadKey((key) => key + 1) }} className="landing-empty" />
+        ) : routes.length === 0 ? (
+          <AsyncState kind="empty" title="아직 공개된 추천 루트가 없습니다" message="첫 번째 일정을 공개해 커뮤니티를 시작해 보세요." className="landing-empty" />
         ) : (
           <div className="landing-route-grid">
             {routes.map((route, index) => (

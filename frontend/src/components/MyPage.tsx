@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, CalendarCheck, LogOut, Mail, MapPinned, Plus, Route, ShieldCheck, UserRound } from 'lucide-react'
 import { api } from '../api/client'
 import type { TripSummary, User } from '../types'
+import { AsyncState } from './AsyncState'
 
 interface Props {
   user: User
@@ -13,6 +14,9 @@ interface Props {
 
 export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError }: Props) {
   const [trips, setTrips] = useState<TripSummary[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const totalPlaces = useMemo(
     () => trips.reduce((total, trip) => total + trip.placeCount, 0),
     [trips],
@@ -26,9 +30,15 @@ export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError }: Prop
     let cancelled = false
     api.getTrips()
       .then((result) => { if (!cancelled) setTrips(result) })
-      .catch(onError)
+      .catch((error) => {
+        if (!cancelled) {
+          setLoadFailed(true)
+          onError(error)
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [onError])
+  }, [onError, reloadKey])
 
   return (
     <main className="account-page profile-page">
@@ -39,11 +49,17 @@ export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError }: Prop
 
       <section className="account-content profile-layout">
         <div className="profile-main">
-          <div className="profile-stats">
-            <div><Route size={20} /><span>저장한 여행</span><strong>{trips.length}</strong></div>
-            <div><CalendarCheck size={20} /><span>완성한 일정</span><strong>{optimized}</strong></div>
-            <div><MapPinned size={20} /><span>담은 장소</span><strong>{totalPlaces}</strong></div>
-          </div>
+          {loading ? (
+            <AsyncState kind="loading" title="여행 현황을 불러오는 중입니다" className="profile-data-state" />
+          ) : loadFailed ? (
+            <AsyncState kind="error" title="여행 현황을 불러오지 못했습니다" message="계정 정보는 안전하게 유지되고 있습니다. 다시 불러와 주세요." actionLabel="다시 시도" onAction={() => { setLoading(true); setLoadFailed(false); setReloadKey((key) => key + 1) }} className="profile-data-state" />
+          ) : (
+            <div className="profile-stats">
+              <div><Route size={20} /><span>저장한 여행</span><strong>{trips.length}</strong></div>
+              <div><CalendarCheck size={20} /><span>완성한 일정</span><strong>{optimized}</strong></div>
+              <div><MapPinned size={20} /><span>담은 장소</span><strong>{totalPlaces}</strong></div>
+            </div>
+          )}
           <section className="profile-actions panel">
             <div><span className="eyebrow">QUICK START</span><h2>다음 여행을 이어가세요</h2></div>
             <button onClick={onOpenTrips}><Route size={18} /><span><strong>내 여행 전체보기</strong><small>만든 여행과 가져온 루트 확인</small></span><ArrowRight size={17} /></button>

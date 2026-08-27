@@ -6,6 +6,7 @@ import { AuthPage } from './AuthPage'
 import { LandingPage } from './LandingPage'
 import { MyPage } from './MyPage'
 import { MyTripsPage } from './MyTripsPage'
+import { PublicHeader } from './PublicHeader'
 
 vi.mock('../api/client', () => ({
   api: {
@@ -52,6 +53,7 @@ const savedTrips: TripSummary[] = [{
 
 describe('public RoutePlan experience', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     vi.mocked(api.discoverRoutes).mockResolvedValue(emptyRoutes)
     vi.mocked(api.login).mockResolvedValue(authenticated)
     vi.mocked(api.getTrips).mockResolvedValue(savedTrips)
@@ -131,5 +133,45 @@ describe('public RoutePlan experience', () => {
     expect(screen.getByText('traveler@example.com')).toBeInTheDocument()
     await waitFor(() => expect(api.getTrips).toHaveBeenCalled())
     expect(screen.getByText('담은 장소')).toBeInTheDocument()
+  })
+
+  it('opens the compact public menu and closes it after navigation', () => {
+    const onCommunity = vi.fn()
+    render(
+      <PublicHeader
+        user={authenticated.user}
+        activePage="home"
+        onHome={vi.fn()}
+        onCommunity={onCommunity}
+        onMyTrip={vi.fn()}
+        onProfile={vi.fn()}
+        onNewTrip={vi.fn()}
+        onLogin={vi.fn()}
+        onSignup={vi.fn()}
+        onLogout={vi.fn()}
+      />,
+    )
+
+    const toggle = screen.getByRole('button', { name: '메뉴 열기' })
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: '메뉴 닫기' })).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '커뮤니티' }))
+    expect(onCommunity).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: '메뉴 열기' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('shows a recoverable error when saved trips fail to load', async () => {
+    vi.mocked(api.getTrips)
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce(savedTrips)
+
+    const onError = vi.fn()
+    render(<MyTripsPage onOpenTrip={vi.fn()} onNewTrip={vi.fn()} onError={onError} />)
+
+    expect(await screen.findByText('여행 목록을 불러오지 못했습니다')).toBeInTheDocument()
+    expect(onError).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: /다시 시도/ }))
+    expect(await screen.findByText('가져온 오사카 여행')).toBeInTheDocument()
+    expect(api.getTrips).toHaveBeenCalledTimes(2)
   })
 })

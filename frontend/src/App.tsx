@@ -252,7 +252,7 @@ export function App() {
   if (page !== 'workspace') {
     return (
       <div className="public-shell">
-        <PublicHeader user={user} onHome={showHome} onCommunity={() => showCommunity()} onMyTrip={openMyTrips} onProfile={openProfile} onNewTrip={createTrip} onLogin={() => showAuth('login')} onSignup={() => showAuth('signup')} onLogout={() => void logout()} />
+        <PublicHeader user={user} activePage={page} onHome={showHome} onCommunity={() => showCommunity()} onMyTrip={openMyTrips} onProfile={openProfile} onNewTrip={createTrip} onLogin={() => showAuth('login')} onSignup={() => showAuth('signup')} onLogout={() => void logout()} />
         {page === 'home' && <LandingPage user={user} onExplore={showCommunity} onCreateTrip={createTrip} onError={reportError} />}
         {page === 'community' && <PublicCommunityPage user={user} initialRegion={communityRegion} onRequireAuth={() => showAuth('login', 'create-trip')} onCreateTrip={createTrip} onError={reportError} />}
         {page === 'create-trip' && <TripSetup onReady={handleTripReady} onError={reportError} />}
