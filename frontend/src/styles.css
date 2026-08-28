@@ -823,7 +823,46 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; letter-spacing: -.03
   .route-card-grid, .community-layout.with-detail .route-card-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
 }
 
+.advanced-panel { margin: 18px 0; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: #fffdf8; min-width: 0; }
+.advanced-panel h2, .advanced-panel h3, .advanced-panel h4 { margin: 0 0 12px; }
+.advanced-panel h4 { margin-top: 22px; }
+.advanced-panel p { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.advanced-panel small { display: block; color: #64746d; line-height: 1.6; }
+.advanced-panel form { margin: 14px 0; }
+.advanced-panel textarea { width: 100%; min-height: 84px; resize: vertical; padding: 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.advanced-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0; border: 0; min-width: 0; }
+.advanced-grid legend { margin-bottom: 12px; font-size: 13px; }
+.advanced-inline, .advanced-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+.advanced-inline .field { flex: 1; min-width: 200px; }
+.advanced-actions button:not(.button), .advanced-list button, .advanced-panel > button { padding: 7px 10px; border-radius: 7px; background: #f0f3ee; font-size: 12px; }
+.advanced-list { max-height: 360px; overflow-y: auto; margin: 15px 0; }
+.advanced-list article { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.advanced-list article > div { flex: 1; min-width: 130px; overflow-wrap: anywhere; }
+.advanced-list strong { font-size: 13px; }
+.preference-chips { display: flex; flex-wrap: wrap; gap: 10px; }
+.preference-chips label { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 20px; cursor: pointer; }
+.discussion-entry { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.discussion-entry header { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; font-size: 13px; }
+.discussion-entry header span { color: #69786f; font-size: 12px; }
+.discussion-entry p, .discussion-entry blockquote { white-space: pre-wrap; overflow-wrap: anywhere; }
+.discussion-entry blockquote { margin: 14px 0; padding: 10px 14px; border-left: 3px solid #d9a876; font-size: 13px; }
+.report-form { padding: 16px; background: #fff1e5; border-radius: 10px; }
+.data-warning { padding: 14px 18px; background: #fff0dc; color: #835422; white-space: pre-line; font-size: 13px; line-height: 1.7; border-radius: 10px; }
+.data-caption { color: #68766f; font-size: 12px; line-height: 1.65; }
+.google-road-canvas { height: 420px; width: 100%; border-radius: 12px; background: #edf1ed; }
+.road-map { padding: 12px; }
+.map-mode-switch { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; }
+.map-mode-switch button { padding: 8px 12px; border-radius: 8px; font-size: 12px; background: #f0f3ee; color: #52685b; }
+.map-mode-switch button[aria-pressed="true"] { background: #214a3d; color: white; }
+.road-map p, .road-map small { font-size: 12px; line-height: 1.7; display: block; }
+.google-attribution { display: block; color: #5f6368; font-size: 14px; font-weight: 500; letter-spacing: .1px; margin: 12px; }
+.place-hours { border-bottom: 1px solid var(--line); padding-bottom: 14px; font-size: 12px; line-height: 1.8; }
+.recommendation-reasons { color: #37755b; font-size: 12px !important; }
+
 @media (max-width: 540px) {
+  .advanced-grid { grid-template-columns: 1fr; }
+  .advanced-panel { padding: 14px; }
+  .google-road-canvas { height: 330px; }
   .trip-form, .manual-place-form, .place-constraints, .reopt-form-grid { grid-template-columns: 1fr; }
   .field-wide { grid-column: auto; }
   .choice-grid-three { grid-template-columns: 1fr; }

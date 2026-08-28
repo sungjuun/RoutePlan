@@ -3,6 +3,8 @@ import { ArrowRight, CalendarCheck, LogOut, Mail, MapPinned, Plus, Route, Shield
 import { api } from '../api/client'
 import type { TripSummary, User } from '../types'
 import { AsyncState } from './AsyncState'
+import { PreferencesPanel } from './PreferencesPanel'
+import { ModerationPanel } from './ModerationPanel'
 
 interface Props {
   user: User
@@ -65,6 +67,8 @@ export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError }: Prop
             <button onClick={onOpenTrips}><Route size={18} /><span><strong>내 여행 전체보기</strong><small>만든 여행과 가져온 루트 확인</small></span><ArrowRight size={17} /></button>
             <button onClick={onNewTrip}><Plus size={18} /><span><strong>새 여행 만들기</strong><small>숙소와 날짜부터 새로 계획</small></span><ArrowRight size={17} /></button>
           </section>
+          <PreferencesPanel onError={onError} />
+          <ModerationPanel onError={onError} />
         </div>
         <aside className="profile-account panel">
           <span className="eyebrow">ACCOUNT</span><h2>계정 정보</h2>

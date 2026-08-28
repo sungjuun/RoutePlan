@@ -37,17 +37,20 @@ public class TripService {
     private final TripRepository tripRepository;
     private final PlaceRepository placeRepository;
     private final TripPlaceRepository tripPlaceRepository;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public TripService(
             UserRepository userRepository,
             TripRepository tripRepository,
             PlaceRepository placeRepository,
-            TripPlaceRepository tripPlaceRepository
+            TripPlaceRepository tripPlaceRepository,
+            org.springframework.jdbc.core.JdbcTemplate jdbc
     ) {
         this.userRepository = userRepository;
         this.tripRepository = tripRepository;
         this.placeRepository = placeRepository;
         this.tripPlaceRepository = tripPlaceRepository;
+        this.jdbc = jdbc;
     }
 
     @Transactional
@@ -141,7 +144,15 @@ public class TripService {
 
     @Transactional
     public TripResult update(Long tripId, UpdateTripCommand command) {
-        Trip trip = getTrip(tripId);
+        Trip trip = getTripForUpdate(tripId);
+        LocalDate start = command.startDate() == null ? trip.getStartDate() : command.startDate();
+        LocalDate end = command.endDate() == null ? trip.getEndDate() : command.endDate();
+        Long outside = jdbc.queryForObject("""
+                SELECT (SELECT count(*) FROM trip_expenses WHERE trip_id=? AND (spend_date<? OR spend_date>?))
+                     + (SELECT count(*) FROM trip_budget_allocations WHERE trip_id=? AND (spend_date<? OR spend_date>?))
+                """,Long.class,tripId,start,end,tripId,start,end);
+        if (outside != null && outside > 0) throw new RoutePlanException(ErrorCode.CONFLICT,
+                "새 여행 기간 밖에 지출 또는 날짜 예산이 있습니다. 기록의 날짜를 먼저 정리해 주세요.");
         BigDecimal latitude = command.accommodationLatitude() == null
                 ? trip.getAccommodationLatitude() : command.accommodationLatitude();
         BigDecimal longitude = command.accommodationLongitude() == null
@@ -160,6 +171,11 @@ public class TripService {
                 command.pace() == null ? trip.getPace() : command.pace()
         );
         return toResult(trip, tripPlaceRepository.findAllByTripIdOrderByIdAsc(tripId));
+    }
+
+    @Transactional
+    public void updateTimeZone(Long tripId, String zone) {
+        getTripForUpdate(tripId).updateTimeZone(zone);
     }
 
     @Transactional
@@ -295,7 +311,8 @@ public class TripService {
                             tripPlace.getPreferredStartTime(),
                             tripPlace.getPreferredEndTime(),
                             tripPlace.getMinimumStayMinutes(),
-                            tripPlace.getMaximumStayMinutes()
+                            tripPlace.getMaximumStayMinutes(),
+                            place.getExternalPlaceId()
                     );
                 })
                 .toList();
@@ -454,7 +471,8 @@ public class TripService {
             LocalTime preferredStartTime,
             LocalTime preferredEndTime,
             Integer minimumStayMinutes,
-            Integer maximumStayMinutes
+            Integer maximumStayMinutes,
+            String externalPlaceId
     ) {
     }
 }

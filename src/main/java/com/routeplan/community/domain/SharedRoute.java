@@ -35,6 +35,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 @Entity
 @Table(name = "shared_routes")
 public class SharedRoute {
+    @Column(name = "moderated_hidden", nullable = false)
+    private boolean moderatedHidden;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

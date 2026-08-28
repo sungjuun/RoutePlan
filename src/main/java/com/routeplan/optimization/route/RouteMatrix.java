@@ -17,6 +17,7 @@ public final class RouteMatrix implements RouteProvider {
     private final int cacheHitCount;
     private final int cacheMissCount;
     private final int cacheFailureCount;
+    private int accountedElements;
 
     public RouteMatrix(
             TransportMode transportMode,
@@ -53,6 +54,7 @@ public final class RouteMatrix implements RouteProvider {
             throw new IllegalArgumentException("비활성 Route Cache에는 측정값이 있을 수 없습니다.");
         }
         this.routes = Map.copyOf(routes);
+        this.accountedElements = routes.size();
         this.providerCallCount = providerCallCount;
         this.buildMillis = buildMillis;
         this.cacheEnabled = cacheEnabled;
@@ -86,7 +88,21 @@ public final class RouteMatrix implements RouteProvider {
     }
 
     public int elementCount() {
-        return routes.size();
+        return accountedElements;
+    }
+
+    public static RouteMatrix summarize(java.util.Collection<RouteMatrix> values) {
+        var matrices = values.stream().distinct().toList();
+        var first = matrices.getFirst();
+        RouteMatrix summary = new RouteMatrix(first.transportMode, first.dataType, first.routes,
+                matrices.stream().mapToInt(RouteMatrix::providerCallCount).sum(),
+                matrices.stream().mapToLong(RouteMatrix::buildMillis).sum(),
+                matrices.stream().anyMatch(RouteMatrix::cacheEnabled),
+                matrices.stream().mapToInt(RouteMatrix::cacheHitCount).sum(),
+                matrices.stream().mapToInt(RouteMatrix::cacheMissCount).sum(),
+                matrices.stream().mapToInt(RouteMatrix::cacheFailureCount).sum());
+        summary.accountedElements = matrices.stream().mapToInt(RouteMatrix::elementCount).sum();
+        return summary;
     }
 
     public long buildMillis() {

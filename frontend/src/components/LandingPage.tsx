@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { durationLabel, paceLabel, transportLabel } from '../lib/format'
 import type { SharedRouteSummary, User } from '../types'
 import { AsyncState } from './AsyncState'
+import { advanced } from '../api/advanced'
 
 const destinations = [
   { country: '일본', region: '오사카', code: 'JP', copy: '골목과 미식, 오래된 성' },
@@ -26,12 +27,15 @@ export function LandingPage({ user, onExplore, onCreateTrip, onError }: Props) {
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  const [reasons, setReasons] = useState<Record<number, string[]>>({})
 
   useEffect(() => {
     let cancelled = false
-    api.discoverRoutes({ sort: 'POPULAR', size: 6 })
-      .then((page) => {
-        if (!cancelled) setRoutes(page.content)
+    const load = user
+      ? advanced.recommendations().then(items => ({ content: items.map(i => i.route), reasons: Object.fromEntries(items.map(i => [i.route.routeId, i.reasons])) }))
+      : api.discoverRoutes({ sort: 'POPULAR', size: 6 }).then(page => ({ content: page.content, reasons: {} }))
+    load.then((page) => {
+        if (!cancelled) { setRoutes(page.content); setReasons(page.reasons) }
       })
       .catch((error) => {
         if (!cancelled) {
@@ -41,7 +45,7 @@ export function LandingPage({ user, onExplore, onCreateTrip, onError }: Props) {
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [onError, reloadKey])
+  }, [onError, reloadKey, user])
 
   const search = (event: FormEvent) => {
     event.preventDefault()
@@ -95,7 +99,7 @@ export function LandingPage({ user, onExplore, onCreateTrip, onError }: Props) {
 
       <section className="landing-section popular-section">
         <div className="landing-section-head">
-          <div><span className="eyebrow">POPULAR ROUTES</span><h2>지금 많이 가져가는 여행</h2><p>실제로 다른 여행자가 자신의 일정으로 복사한 횟수를 우선합니다.</p></div>
+          <div><span className="eyebrow">{user ? 'FOR YOU' : 'POPULAR ROUTES'}</span><h2>{user ? '내 취향에 맞는 여행' : '지금 많이 가져가는 여행'}</h2><p>{user ? '마이페이지에서 선택한 관심 지역·장소 유형·여행 방식으로 추천합니다.' : '실제로 다른 여행자가 자신의 일정으로 복사한 횟수를 우선합니다.'}</p></div>
           <button onClick={() => onExplore()}>루트 커뮤니티 <ArrowRight size={16} /></button>
         </div>
         {loading ? (
@@ -115,6 +119,7 @@ export function LandingPage({ user, onExplore, onCreateTrip, onError }: Props) {
                   <small>{route.ownerNickname}의 Route</small>
                   <h3>{route.title}</h3>
                   <p>{route.placePreview}</p>
+                  {reasons[route.routeId] && <p className="recommendation-reasons">{reasons[route.routeId].join(' · ')}</p>}
                   <div><span><CalendarDays size={13} /> {route.travelDays}일</span><span>{transportLabel(route.transportMode)}</span><span>{paceLabel(route.pace)}</span></div>
                   <footer><span><Heart size={14} /> {route.likeCount}</span><span><Copy size={14} /> {route.copyCount}</span><strong>{durationLabel(route.estimatedTravelMinutes)}</strong></footer>
                 </div>

@@ -94,7 +94,7 @@ public class TripWeatherService {
             LocalDate forecastDate,
             WeatherCondition condition,
             int precipitationProbability,
-            Instant updatedAt
+            Instant updatedAt, String source
     ) {
 
         static ForecastResult from(TripWeatherForecast forecast) {
@@ -102,7 +102,7 @@ public class TripWeatherService {
                     forecast.getForecastDate(),
                     forecast.getCondition(),
                     forecast.getPrecipitationProbability(),
-                    forecast.getUpdatedAt()
+                    forecast.getUpdatedAt(), forecast.getSource()
             );
         }
     }

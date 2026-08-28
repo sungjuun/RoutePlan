@@ -20,6 +20,8 @@ public class TripBudgetService {
 
     private final TripRepository tripRepository;
     private final TripPlaceRepository placeRepository;
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public TripBudgetService(TripRepository tripRepository, TripPlaceRepository placeRepository) {
         this.tripRepository = tripRepository;
@@ -38,6 +40,10 @@ public class TripBudgetService {
         Trip trip = tripRepository.findByIdForUpdate(tripId)
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_NOT_FOUND));
         List<TripPlace> places = placeRepository.findAllByTripIdOrderByIdAsc(tripId);
+        if (settings.currency() != trip.getBudgetSettings().currency()
+                && Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM trip_expenses WHERE trip_id=?) OR EXISTS(SELECT 1 FROM trip_budget_allocations WHERE trip_id=?)", Boolean.class, tripId, tripId))) {
+            throw new RoutePlanException(ErrorCode.CONFLICT, "실제 지출 또는 구간 예산이 있어 통화를 바꿀 수 없습니다. 기록을 정리한 뒤 변경해 주세요.");
+        }
         Map<Long, Long> byId = new HashMap<>();
         if (costs == null) throw new IllegalArgumentException("장소 비용 목록은 필수입니다.");
         for (PlaceCostCommand cost : costs) {

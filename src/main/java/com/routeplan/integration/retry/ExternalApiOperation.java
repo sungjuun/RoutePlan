@@ -3,6 +3,8 @@ package com.routeplan.integration.retry;
 public enum ExternalApiOperation {
     GOOGLE_PLACES("google", "places"),
     GOOGLE_ROUTES("google", "routes"),
+    GOOGLE_PLACE_DETAILS("google", "place_details"),
+    GOOGLE_GEOMETRY("google", "geometry"),
     OPENAI_RESPONSES("openai", "responses");
 
     private final String provider;

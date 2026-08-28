@@ -21,6 +21,8 @@ public class GoogleMapsHttpClient {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final ExternalRetryExecutor retryExecutor;
+    @Autowired(required = false)
+    private com.routeplan.integration.ExternalUsageGuard usageGuard;
 
     @Autowired
     public GoogleMapsHttpClient(
@@ -57,7 +59,26 @@ public class GoogleMapsHttpClient {
     ) {
         Objects.requireNonNull(uri, "외부 API URI는 필수입니다.");
         HttpRequest request = request(uri, fieldMask, body);
-        return retryExecutor.execute(operation, () -> send(request));
+        long units = 1;
+        if (operation == ExternalApiOperation.GOOGLE_ROUTES) {
+            JsonNode node = objectMapper.valueToTree(body);
+            units = (long) node.path("origins").size() * node.path("destinations").size();
+        }
+        long billableUnits = units;
+        return retryExecutor.execute(operation, () -> {
+            if (usageGuard != null) usageGuard.reserve(operation, billableUnits);
+            return send(request);
+        });
+    }
+
+    public JsonNode get(ExternalApiOperation operation, URI uri, String fieldMask) {
+        HttpRequest request = HttpRequest.newBuilder(uri).timeout(properties.getRequestTimeout())
+                .header("X-Goog-Api-Key", properties.requireApiKey())
+                .header("X-Goog-FieldMask", fieldMask).GET().build();
+        return retryExecutor.execute(operation, () -> {
+            if (usageGuard != null) usageGuard.reserve(operation, 1);
+            return send(request);
+        });
     }
 
     private HttpRequest request(URI uri, String fieldMask, Object body) {

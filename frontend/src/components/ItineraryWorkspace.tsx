@@ -37,6 +37,8 @@ import { WeatherPlanner } from './WeatherPlanner'
 import { BudgetPlanner } from './BudgetPlanner'
 import { BudgetSummary } from './BudgetSummary'
 import { moneyLabel } from '../lib/money'
+import { LiveDataPanel } from './LiveDataPanel'
+import { SpendingPanel } from './SpendingPanel'
 
 interface Props {
   trip: Trip
@@ -61,7 +63,10 @@ export function ItineraryWorkspace(props: Props) {
   const [algorithm, setAlgorithm] = useState<OptimizationAlgorithm>(itinerary?.algorithm ?? 'NEAREST_NEIGHBOR_2_OPT')
   const [tab, setTab] = useState<ItineraryTab>('route')
   const [calculating, setCalculating] = useState(false)
-  const [budgetBlocked, setBudgetBlocked] = useState(true)
+  const [budgetDirty, setBudgetDirty] = useState(true)
+  const [liveDataBlocked, setLiveDataBlocked] = useState(true)
+  const [weatherRevision, setWeatherRevision] = useState(0)
+  const budgetBlocked = budgetDirty || liveDataBlocked
   const multiDay = trip.startDate !== trip.endDate
 
   useEffect(() => {
@@ -96,8 +101,10 @@ export function ItineraryWorkspace(props: Props) {
         </div>
         <div className="planner-launch-card">
           <div className="launch-visual" aria-hidden="true"><span>H</span><i></i><span>1</span><i></i><span>2</span><i></i><span>H</span></div>
-          <WeatherPlanner trip={trip} onError={onError} />
-          <BudgetPlanner trip={trip} onError={onError} onBlockedChange={setBudgetBlocked} />
+          <LiveDataPanel trip={trip} onError={onError} onRefreshed={() => setWeatherRevision(r => r + 1)} onBlockedChange={setLiveDataBlocked} />
+          <WeatherPlanner key={weatherRevision} trip={trip} onError={onError} />
+          <BudgetPlanner trip={trip} onError={onError} onBlockedChange={setBudgetDirty} />
+          <SpendingPanel trip={trip} onError={onError} />
           <AlgorithmPicker algorithm={algorithm} onChange={setAlgorithm} placeCount={trip.places.length} />
           {trip.places.length === 0 ? (
             <button className="button button-primary" onClick={onGoToPlaces}><Plus size={18} /> 장소 담으러 가기</button>
@@ -138,14 +145,21 @@ export function ItineraryWorkspace(props: Props) {
       </div>
 
       <details className="weather-config panel">
-        <summary><CloudSun size={18} /> 날짜별 날씨 설정 <span>예보 변경 후 새 버전을 계산하세요</span></summary>
-        <WeatherPlanner trip={trip} onError={onError} compact />
+        <summary><CloudSun size={18} /> 날씨·현지 시간대 <span>설정 변경 후 새 버전을 계산하세요</span></summary>
+        <LiveDataPanel trip={trip} onError={onError} onRefreshed={() => setWeatherRevision(r => r + 1)} onBlockedChange={setLiveDataBlocked} />
+        <WeatherPlanner key={weatherRevision} trip={trip} onError={onError} compact />
       </details>
       <details className="weather-config budget-config panel">
         <summary><Wallet size={18} /> 여행 비용과 예산 설정 <span>{budgetBlocked ? '예산 설정을 확인하고 저장하세요' : '저장한 비용으로 새 버전을 계산하세요'}</span></summary>
-        <BudgetPlanner trip={trip} onError={onError} onBlockedChange={setBudgetBlocked} />
+        <BudgetPlanner trip={trip} onError={onError} onBlockedChange={setBudgetDirty} />
       </details>
-      {budgetBlocked && <p className="budget-dirty">예산 설정을 불러오는 중이거나 저장하지 않은 변경이 있습니다. 예산 설정을 확인해 주세요.</p>}
+      <details className="weather-config panel">
+        <summary><Wallet size={18} /> 날짜별·항목별 예산과 지출 <span>예상 비용과 별도로 관리합니다</span></summary>
+        <SpendingPanel trip={trip} onError={onError} />
+      </details>
+      {budgetBlocked && <p className="budget-dirty">예산·시간대 설정을 불러오는 중이거나 저장하지 않은 변경이 있습니다. 설정을 확인해 주세요.</p>}
+      {itinerary.dataWarnings && <p className="data-warning" role="status">{itinerary.dataWarnings}</p>}
+      <p className="data-caption">일정 시간대: {itinerary.timeZoneId ?? 'Asia/Seoul'} · 대중교통 소요시간은 각 날짜의 출발 시각 기준 추정이며, 방문 후 출발 시각별 배차를 재탐색하지 않습니다.</p>
 
       {tab === 'route' && (
         <RouteView

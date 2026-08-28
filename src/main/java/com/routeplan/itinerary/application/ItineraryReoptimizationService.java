@@ -73,6 +73,8 @@ public class ItineraryReoptimizationService {
     private final RoutePlanMetrics metrics;
     private final TransactionTemplate readTransaction;
     private final TransactionTemplate writeTransaction;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.routeplan.place.search.LiveOpeningHours liveHours;
 
     public ItineraryReoptimizationService(
             TripRepository tripRepository,
@@ -114,20 +116,24 @@ public class ItineraryReoptimizationService {
             );
             ScheduleBudget budget = snapshot.scheduleBudget();
             budget.validate(snapshot.input().dailyCandidates().getFirst().candidates());
-            RouteMatrix routeMatrix = routeMatrixProvider.build(
+            var matrices = routeMatrixProvider.buildForDates(
                     locations(snapshot.input()),
-                    snapshot.input().optimizationRequest().transportMode()
+                    snapshot.input().optimizationRequest().transportMode(),
+                    snapshot.input().dailyCandidates().stream().map(DailyCandidates::visitDate).toList(),
+                    snapshot.input().optimizationStartTime(), snapshot.input().tripDailyStartTime(), snapshot.input().timeZoneId()
             );
+            RouteMatrix routeMatrix = RouteMatrix.summarize(matrices.values());
             metrics.recordRouteMatrix(routeMatrix);
             OptimizationResult result = optimizationEngineRegistry.get(algorithm)
                     .optimize(snapshot.input().optimizationRequest(), routeMatrix);
-            MultiDaySchedule schedule = schedulePlanner.plan(
-                    snapshot.input().toScheduleRequests(result),
-                    routeMatrix,
+            var live = liveHours.apply(tripId, snapshot.input().toScheduleRequests(result));
+            MultiDaySchedule schedule = schedulePlanner.planByDate(
+                    live.requests(),
+                    matrices::get,
                     budget
             );
             ItineraryView itinerary = Objects.requireNonNull(writeTransaction.execute(status ->
-                    saveIfUnchanged(snapshot, result, schedule, routeMatrix)
+                    saveIfUnchanged(snapshot, result, schedule, routeMatrix, live.warnings())
             ));
             metrics.recordGeneration(
                     sample,
@@ -179,6 +185,9 @@ public class ItineraryReoptimizationService {
         if (!completedItems.isEmpty()
                 && source.getBudgetSettings().currency() != trip.getBudgetSettings().currency()) {
             throw new RoutePlanException(ErrorCode.BUDGET_CURRENCY_MISMATCH);
+        }
+        if (!completedItems.isEmpty() && !source.getTimeZoneId().equals(trip.getTimeZoneId())) {
+            throw invalidState("완료된 방문의 시간대를 변경할 수 없습니다. 원래 시간대를 복구하거나 전체 일정을 새로 계산하세요.");
         }
         validateCompletedDates(source, completedItems, normalizedCommand.currentDate());
         validateCompletedTimes(
@@ -373,7 +382,7 @@ public class ItineraryReoptimizationService {
                 accommodation,
                 optimizationRequest,
                 dailyCandidates,
-                BudgetInput.from(trip, remaining)
+                BudgetInput.from(trip, remaining), trip.getTimeZoneId()
         );
     }
 
@@ -443,7 +452,7 @@ public class ItineraryReoptimizationService {
             ReoptimizationSnapshot snapshot,
             OptimizationResult result,
             MultiDaySchedule schedule,
-            RouteMatrix routeMatrix
+            RouteMatrix routeMatrix, List<String> warnings
     ) {
         Trip trip = tripRepository.findByIdForUpdate(snapshot.input().tripId())
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_NOT_FOUND));
@@ -638,6 +647,8 @@ public class ItineraryReoptimizationService {
             }
         });
         itinerary.recordBudget(snapshot.input().budget().settings(), costSnapshots);
+        itinerary.recordTimeZone(snapshot.input().timeZoneId());
+        itinerary.recordLiveData(warnings, snapshot.input().optimizationRequest().transportMode());
         trip.markOptimized();
         return ItineraryView.from(itineraryRepository.saveAndFlush(itinerary));
     }
@@ -685,7 +696,7 @@ public class ItineraryReoptimizationService {
             Location accommodation,
             OptimizationRequest optimizationRequest,
             List<DailyCandidates> dailyCandidates,
-            BudgetInput budget
+            BudgetInput budget, String timeZoneId
     ) {
 
         private ReoptimizationInput {

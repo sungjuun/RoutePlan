@@ -7,6 +7,12 @@ import { LandingPage } from './LandingPage'
 import { MyPage } from './MyPage'
 import { MyTripsPage } from './MyTripsPage'
 import { PublicHeader } from './PublicHeader'
+import { advanced } from '../api/advanced'
+
+vi.mock('../api/advanced', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../api/advanced')>(),
+  advanced: { preferences: vi.fn(), moderator: vi.fn(), recommendations: vi.fn() },
+}))
 
 vi.mock('../api/client', () => ({
   api: {
@@ -57,6 +63,8 @@ describe('public RoutePlan experience', () => {
     vi.mocked(api.discoverRoutes).mockResolvedValue(emptyRoutes)
     vi.mocked(api.login).mockResolvedValue(authenticated)
     vi.mocked(api.getTrips).mockResolvedValue(savedTrips)
+    vi.mocked(advanced.preferences).mockResolvedValue({ interests: [], regions: [], pace: null, transportMode: null })
+    vi.mocked(advanced.moderator).mockResolvedValue({ allowed: false })
   })
 
   it('opens country recommendations and searches community routes', async () => {

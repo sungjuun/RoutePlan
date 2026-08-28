@@ -28,6 +28,14 @@ public class MultiDaySchedulePlanner {
     public MultiDaySchedule plan(
             List<ScheduleRequest> dailyRequests, RouteProvider routeProvider, ScheduleBudget budget
     ) {
+        return planByDate(dailyRequests, date -> routeProvider, budget);
+    }
+
+    public MultiDaySchedule planByDate(
+            List<ScheduleRequest> dailyRequests,
+            java.util.function.Function<java.time.LocalDate, RouteProvider> routeProvider,
+            ScheduleBudget budget
+    ) {
         if (dailyRequests == null || dailyRequests.isEmpty()) {
             throw new IllegalArgumentException("일자별 일정 요청은 한 개 이상이어야 합니다.");
         }
@@ -76,7 +84,7 @@ public class MultiDaySchedulePlanner {
                     remainingBudget == null ? null : remainingBudget - budget.mandatoryCost(dailyCandidates),
                     budget.costsByPlaceId()
             );
-            ConstraintSchedule daily = dailyPlanner.planLenient(request, routeProvider, optionalBudget);
+            ConstraintSchedule daily = dailyPlanner.planLenient(request, routeProvider.apply(source.visitDate()), optionalBudget);
             List<ScheduledVisit> sequencedVisits = new ArrayList<>();
             for (ScheduledVisit visit : daily.visits()) {
                 ScheduledVisit sequenced = new ScheduledVisit(

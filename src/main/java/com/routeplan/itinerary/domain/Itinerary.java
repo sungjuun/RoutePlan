@@ -150,6 +150,39 @@ public class Itinerary {
     @Column(name = "fixed_cost_minor", nullable = false)
     private long fixedCostMinor;
 
+    @Column(name = "time_zone_id", nullable = false, length = 100)
+    private String timeZoneId = "Asia/Seoul";
+
+    @Column(name = "data_warnings", nullable = false, columnDefinition = "text")
+    private String dataWarnings = "";
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "travel_mode_snapshot", length = 30)
+    private com.routeplan.trip.domain.TransportMode travelModeSnapshot;
+    @Column(name = "hotel_latitude_snapshot", precision = 9, scale = 6)
+    private java.math.BigDecimal hotelLatitudeSnapshot;
+    @Column(name = "hotel_longitude_snapshot", precision = 10, scale = 6)
+    private java.math.BigDecimal hotelLongitudeSnapshot;
+    public java.math.BigDecimal getHotelLatitudeSnapshot() { return hotelLatitudeSnapshot; }
+    public java.math.BigDecimal getHotelLongitudeSnapshot() { return hotelLongitudeSnapshot; }
+
+    public String getDataWarnings() { return dataWarnings; }
+    public com.routeplan.trip.domain.TransportMode getTravelModeSnapshot() { return travelModeSnapshot; }
+    public void recordLiveData(java.util.List<String> warnings, com.routeplan.trip.domain.TransportMode mode) {
+        if (id != null) throw new IllegalStateException("저장된 일정은 변경할 수 없습니다.");
+        this.dataWarnings = String.join("\n", warnings);
+        this.travelModeSnapshot = mode;
+        this.hotelLatitudeSnapshot = trip.getAccommodationLatitude();
+        this.hotelLongitudeSnapshot = trip.getAccommodationLongitude();
+    }
+
+    public String getTimeZoneId() { return timeZoneId; }
+
+    public void recordTimeZone(String zone) {
+        if (id != null) throw new IllegalStateException("저장된 일정의 시간대는 변경할 수 없습니다.");
+        this.timeZoneId = java.time.ZoneId.of(zone).getId();
+    }
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

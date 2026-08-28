@@ -46,6 +46,16 @@ public class TripWeatherForecast {
     @Column(name = "precipitation_probability", nullable = false)
     private int precipitationProbability;
 
+    @Column(nullable = false, length = 30)
+    private String source = "MANUAL";
+
+    public String getSource() { return source; }
+
+    public void applyAutomatic(WeatherCondition condition, int probability) {
+        update(condition, probability);
+        this.source = "OPEN_METEO";
+    }
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

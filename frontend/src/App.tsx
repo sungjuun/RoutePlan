@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { Compass, LoaderCircle, MapPinned, MessageSquareText, Route, Settings2, UsersRound } from 'lucide-react'
 import { ApiError, api } from './api/client'
 import { AppHeader } from './components/AppHeader'
@@ -6,7 +6,6 @@ import { AuthPage } from './components/AuthPage'
 import { CommunityWorkspace } from './components/CommunityWorkspace'
 import { ItineraryWorkspace } from './components/ItineraryWorkspace'
 import { LandingPage } from './components/LandingPage'
-import { MyPage } from './components/MyPage'
 import { MyTripsPage } from './components/MyTripsPage'
 import { NaturalLanguageWorkspace } from './components/NaturalLanguageWorkspace'
 import { PlaceWorkspace } from './components/PlaceWorkspace'
@@ -16,6 +15,8 @@ import { TripSetup } from './components/TripSetup'
 import { Toast } from './components/Toast'
 import { clearTripReference, saveWorkspace } from './lib/storage'
 import type { Itinerary, Place, Trip, User } from './types'
+
+const MyPage = lazy(() => import('./components/MyPage').then(module => ({ default: module.MyPage })))
 
 type Section = 'places' | 'itinerary' | 'settings' | 'community' | 'natural-language'
 type PublicPage = 'home' | 'community' | 'auth' | 'create-trip' | 'trips' | 'profile' | 'workspace'
@@ -257,7 +258,7 @@ export function App() {
         {page === 'community' && <PublicCommunityPage user={user} initialRegion={communityRegion} onRequireAuth={() => showAuth('login', 'create-trip')} onCreateTrip={createTrip} onError={reportError} />}
         {page === 'create-trip' && <TripSetup onReady={handleTripReady} onError={reportError} />}
         {page === 'trips' && <MyTripsPage onOpenTrip={(tripId) => void loadTrip(tripId)} onNewTrip={createTrip} onError={reportError} />}
-        {page === 'profile' && user && <MyPage user={user} onOpenTrips={openMyTrips} onNewTrip={createTrip} onLogout={() => void logout()} onError={reportError} />}
+        {page === 'profile' && user && <Suspense fallback={<p role="status">마이페이지를 불러오는 중…</p>}><MyPage user={user} onOpenTrips={openMyTrips} onNewTrip={createTrip} onLogout={() => void logout()} onError={reportError} /></Suspense>}
         <Toast notice={notice} onClose={() => setNotice(null)} />
       </div>
     )

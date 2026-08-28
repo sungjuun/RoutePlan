@@ -33,6 +33,7 @@ import type {
   User,
 } from '../types'
 import { SharedRouteMap } from './SharedRouteMap'
+import { DiscussionPanel } from './DiscussionPanel'
 
 interface Props {
   user: User | null
@@ -437,6 +438,7 @@ function RouteDetail({
           onError={onError}
         />
       )}
+      <DiscussionPanel key={route.routeId} routeId={route.routeId} ownerId={route.ownerId} user={user} onError={onError} />
     </div>
   )
 }

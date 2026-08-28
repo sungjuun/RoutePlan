@@ -55,6 +55,11 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
 
     @Override
     public RouteMatrix build(List<Location> locations, TransportMode transportMode) {
+        return build(locations, transportMode, null);
+    }
+
+    @Override
+    public RouteMatrix build(List<Location> locations, TransportMode transportMode, java.time.Instant departure) {
         if (locations == null || locations.isEmpty()) {
             throw new IllegalArgumentException("Route Matrix 위치가 한 개 이상 필요합니다.");
         }
@@ -67,7 +72,9 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
         Map<RouteMatrix.Leg, RouteResult> routes = new LinkedHashMap<>();
         addZeroDistanceRoutes(uniqueLocations, routes);
         Set<RouteCacheKey> cacheKeys = cacheKeys(uniqueLocations, transportMode);
-        RouteCacheRead cacheRead = readCache(cacheKeys);
+        // A transit matrix depends on its actual departure date. Never reuse timeless cached legs.
+        boolean useCache = routeLegCache.enabled() && !(transportMode == TransportMode.PUBLIC_TRANSIT && departure != null);
+        RouteCacheRead cacheRead = useCache ? readCache(cacheKeys) : RouteCacheRead.empty();
         cacheRead.routes().forEach((key, route) -> routes.put(
                 new RouteMatrix.Leg(key.origin(), key.destination()),
                 route
@@ -84,14 +91,14 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
                         ExternalApiOperation.GOOGLE_ROUTES,
                         endpoint,
                         FIELD_MASK,
-                        requestBody(origins, destinations, transportMode)
+                        requestBody(origins, destinations, transportMode, departure)
                 );
                 requestCount++;
                 merge(response, origins, destinations, transportMode, routes, fetchedRoutes);
             }
         }
         int cacheFailures = cacheRead.failureCount();
-        if (routeLegCache.enabled()) {
+        if (useCache) {
             cacheFailures += routeLegCache.putAll(fetchedRoutes);
         }
         verifyComplete(uniqueLocations, routes);
@@ -101,9 +108,9 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
                 routes,
                 requestCount,
                 elapsedMillis(startedAt),
-                routeLegCache.enabled(),
+                useCache,
                 cacheRead.routes().size(),
-                routeLegCache.enabled() ? cacheKeys.size() - cacheRead.routes().size() : 0,
+                useCache ? cacheKeys.size() - cacheRead.routes().size() : 0,
                 cacheFailures
         );
     }
@@ -147,13 +154,22 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
     private Map<String, Object> requestBody(
             List<Location> origins,
             List<Location> destinations,
-            TransportMode transportMode
+            TransportMode transportMode, java.time.Instant departure
     ) {
-        return Map.of(
+        Map<String, Object> body = new LinkedHashMap<>(Map.of(
                 "origins", origins.stream().map(this::origin).toList(),
                 "destinations", destinations.stream().map(this::destination).toList(),
                 "travelMode", googleTravelMode(transportMode)
-        );
+        ));
+        if (transportMode == TransportMode.PUBLIC_TRANSIT && departure != null) {
+            java.time.Instant now = java.time.Instant.now();
+            if (departure.isBefore(now.minus(java.time.Duration.ofDays(7)))
+                    || departure.isAfter(now.plus(java.time.Duration.ofDays(100)))) {
+                throw new IllegalArgumentException("대중교통 조회는 현재 기준 과거 7일~미래 100일만 지원합니다.");
+            }
+            body.put("departureTime", departure.toString());
+        }
+        return body;
     }
 
     private Map<String, Object> origin(Location location) {

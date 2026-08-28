@@ -183,6 +183,9 @@ public class SharedRouteService {
                 ),
                 places
         );
+        if (route.getSourceItinerary() != null) {
+            tripService.updateTimeZone(copied.id(), route.getSourceItinerary().getTimeZoneId());
+        }
         route.increaseCopyCount();
         return copied;
     }

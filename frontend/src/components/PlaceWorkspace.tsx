@@ -16,6 +16,7 @@ import { ApiError, api } from '../api/client'
 import { categoryLabel, durationLabel, environmentLabel } from '../lib/format'
 import type { PlaceEnvironment, PlaceSearchResult, Trip, TripPlace, TripPlaceConstraints } from '../types'
 import { MapPanel } from './MapPanel'
+import { advanced } from '../api/advanced'
 
 interface Props {
   trip: Trip
@@ -115,6 +116,7 @@ export function PlaceWorkspace({ trip, hasItinerary, onTripChanged, onGoToItiner
                 )}
                 {results.length > 0 && (
                   <div className="search-results">
+                    <small className="google-attribution">Google Maps 제공 · <a href="/data-sources.html" target="_blank" rel="noreferrer">이용 안내</a></small>
                     {results.map((result) => (
                       <article key={result.externalPlaceId}>
                         <span className="place-result-icon"><MapPin size={18} /></span>
@@ -233,6 +235,13 @@ function SelectedPlaceCard({
   const [minimumStayMinutes, setMinimumStayMinutes] = useState(place.minimumStayMinutes?.toString() ?? '')
   const [maximumStayMinutes, setMaximumStayMinutes] = useState(place.maximumStayMinutes?.toString() ?? '')
   const [saving, setSaving] = useState(false)
+  const [hoursBusy, setHoursBusy] = useState(false)
+  const [hours, setHours] = useState<{ weekdayDescriptions: string[]; warning: string } | null>(null)
+  const loadHours = async () => {
+    setHoursBusy(true)
+    try { setHours(await advanced.hours(tripId, place.placeId)) }
+    catch (error) { onError(error) } finally { setHoursBusy(false) }
+  }
 
   const preset = mustVisit ? 'must' : priority >= 60 ? 'prefer' : 'optional'
   const applyPreset = (value: 'must' | 'prefer' | 'optional') => {
@@ -281,6 +290,7 @@ function SelectedPlaceCard({
       </button>
       {expanded && (
         <div className="place-constraints">
+          {place.externalPlaceId && <section className="place-hours field-wide"><button className="button button-ghost button-small" disabled={hoursBusy} onClick={() => void loadHours()}>{hoursBusy ? '조회 중…' : 'Google 영업시간 가져오기'}</button><p>일정 계산 시 자동 반영됩니다. 수동 설정된 영업시간이 있으면 우선 사용합니다.</p>{hours && <><ul>{hours.weekdayDescriptions.map(line => <li key={line}>{line}</li>)}</ul><p role="status">{hours.warning}</p><small className="google-attribution">Google Maps 제공 · 정규 주간 영업시간</small></>}</section>}
           <div className="visit-priority-select">
             {([
               ['must', '꼭 가기', '일정에 반드시 포함'],

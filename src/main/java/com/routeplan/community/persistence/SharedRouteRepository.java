@@ -17,11 +17,11 @@ public interface SharedRouteRepository extends JpaRepository<SharedRoute, Long> 
     boolean existsBySourceItineraryId(Long sourceItineraryId);
 
     @EntityGraph(attributePaths = {"owner", "items", "items.place"})
-    @Query("select route from SharedRoute route where route.id = :routeId")
+    @Query("select route from SharedRoute route where route.id = :routeId and route.moderatedHidden = false")
     Optional<SharedRoute> findDetailedById(@Param("routeId") Long routeId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select route from SharedRoute route where route.id = :routeId")
+    @Query("select route from SharedRoute route where route.id = :routeId and route.moderatedHidden = false")
     Optional<SharedRoute> findByIdForUpdate(@Param("routeId") Long routeId);
 
     @Query(
@@ -30,6 +30,7 @@ public interface SharedRouteRepository extends JpaRepository<SharedRoute, Long> 
                     from SharedRoute route
                     join fetch route.owner
                     where route.visibility = :visibility
+                      and route.moderatedHidden = false
                       and (:region = '' or lower(route.region) like lower(concat('%', :region, '%')))
                       and (:travelDays is null or route.travelDays = :travelDays)
                     """,
@@ -37,6 +38,7 @@ public interface SharedRouteRepository extends JpaRepository<SharedRoute, Long> 
                     select count(route)
                     from SharedRoute route
                     where route.visibility = :visibility
+                      and route.moderatedHidden = false
                       and (:region = '' or lower(route.region) like lower(concat('%', :region, '%')))
                       and (:travelDays is null or route.travelDays = :travelDays)
                     """

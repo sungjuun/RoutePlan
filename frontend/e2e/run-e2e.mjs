@@ -29,6 +29,15 @@ const commandEnvironment = {
   BACKEND_PORT: backendPort,
   FRONTEND_PORT: frontendPort,
   E2E_BASE_URL: baseURL,
+  // Never reuse developer credentials or paid providers in the disposable test stack.
+  ROUTEPLAN_PLACE_PROVIDER: 'DISABLED',
+  ROUTEPLAN_ROUTE_PROVIDER: 'SIMPLE',
+  GOOGLE_MAPS_API_KEY: '',
+  GOOGLE_MAPS_BROWSER_KEY: '',
+  ROUTEPLAN_AI_PROVIDER: 'RULE_BASED',
+  OPENAI_API_KEY: '',
+  ROUTEPLAN_ROUTE_CACHE_ENABLED: 'false',
+  ROUTEPLAN_MODERATOR_EMAILS: 'routeplan-moderator@example.com',
 }
 
 function run(command, args, options = {}) {

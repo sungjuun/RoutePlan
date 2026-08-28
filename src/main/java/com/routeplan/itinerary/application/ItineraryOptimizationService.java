@@ -62,6 +62,8 @@ public class ItineraryOptimizationService {
     private final RoutePlanMetrics metrics;
     private final TransactionTemplate readTransaction;
     private final TransactionTemplate writeTransaction;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.routeplan.place.search.LiveOpeningHours liveHours;
 
     public ItineraryOptimizationService(
             TripRepository tripRepository,
@@ -99,20 +101,24 @@ public class ItineraryOptimizationService {
             );
             ScheduleBudget budget = snapshot.budget().remaining(0, false);
             budget.validate(snapshot.dailyCandidates().getFirst().candidates());
-            RouteMatrix routeMatrix = routeMatrixProvider.build(
+            var matrices = routeMatrixProvider.buildForDates(
                     locations(snapshot.optimizationRequest()),
-                    snapshot.optimizationRequest().transportMode()
+                    snapshot.optimizationRequest().transportMode(),
+                    snapshot.dailyCandidates().stream().map(DailyCandidates::visitDate).toList(),
+                    snapshot.dailyStartTime(), snapshot.dailyStartTime(), snapshot.timeZoneId()
             );
+            RouteMatrix routeMatrix = RouteMatrix.summarize(matrices.values());
             metrics.recordRouteMatrix(routeMatrix);
             OptimizationResult result = optimizationEngineRegistry.get(algorithm)
                     .optimize(snapshot.optimizationRequest(), routeMatrix);
-            MultiDaySchedule schedule = schedulePlanner.plan(
-                    snapshot.toScheduleRequests(result),
-                    routeMatrix,
+            var live = liveHours.apply(tripId, snapshot.toScheduleRequests(result));
+            MultiDaySchedule schedule = schedulePlanner.planByDate(
+                    live.requests(),
+                    matrices::get,
                     budget
             );
             ItineraryView itinerary = Objects.requireNonNull(writeTransaction.execute(status ->
-                    saveIfUnchanged(snapshot, result, schedule, routeMatrix)
+                    saveIfUnchanged(snapshot, result, schedule, routeMatrix, live.warnings())
             ));
             metrics.recordGeneration(
                     sample,
@@ -155,7 +161,7 @@ public class ItineraryOptimizationService {
             OptimizationSnapshot snapshot,
             OptimizationResult result,
             MultiDaySchedule schedule,
-            RouteMatrix routeMatrix
+            RouteMatrix routeMatrix, List<String> warnings
     ) {
         Trip trip = tripRepository.findByIdForUpdate(snapshot.tripId())
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_NOT_FOUND));
@@ -231,6 +237,8 @@ public class ItineraryOptimizationService {
         ));
 
         itinerary.recordBudget(snapshot.budget().settings(), snapshot.budget().costsByPlaceId());
+        itinerary.recordTimeZone(snapshot.timeZoneId());
+        itinerary.recordLiveData(warnings, snapshot.optimizationRequest().transportMode());
         trip.markOptimized();
         return ItineraryView.from(itineraryRepository.saveAndFlush(itinerary));
     }
@@ -315,7 +323,7 @@ public class ItineraryOptimizationService {
                 trip.getDailyEndTime(),
                 optimizationRequest,
                 dailyCandidates,
-                BudgetInput.from(trip, tripPlaces)
+                BudgetInput.from(trip, tripPlaces), trip.getTimeZoneId()
         );
     }
 
@@ -364,7 +372,7 @@ public class ItineraryOptimizationService {
             LocalTime dailyEndTime,
             OptimizationRequest optimizationRequest,
             List<DailyCandidates> dailyCandidates,
-            BudgetInput budget
+            BudgetInput budget, String timeZoneId
     ) {
 
         private OptimizationSnapshot {
@@ -398,7 +406,8 @@ public class ItineraryOptimizationService {
                     && dailyEndTime.equals(other.dailyEndTime)
                     && optimizationRequest.equals(other.optimizationRequest)
                     && dailyCandidates.equals(other.dailyCandidates)
-                    && budget.equals(other.budget);
+                    && budget.equals(other.budget)
+                    && timeZoneId.equals(other.timeZoneId);
         }
 
         private WeatherSnapshot weatherFor(LocalDate visitDate) {

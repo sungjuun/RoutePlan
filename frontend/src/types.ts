@@ -66,6 +66,7 @@ export interface SignupInput {
 }
 
 export interface TripPlace {
+  externalPlaceId?: string | null
   placeId: number
   name: string
   latitude: number
@@ -194,6 +195,8 @@ export interface TripWeatherForecastInput {
 }
 
 export interface Itinerary {
+  timeZoneId?: string
+  dataWarnings?: string
   itineraryId: number
   tripId: number
   version: number

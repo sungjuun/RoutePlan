@@ -43,7 +43,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase()
   const csrf = ['GET', 'HEAD', 'OPTIONS'].includes(method) ? null : await csrfToken()
   const response = await fetch(`/api/v1${path}`, {

@@ -145,6 +145,23 @@ class GoogleRoutesMatrixProviderTest {
         return provider(server, new DisabledRouteLegCache());
     }
 
+    @Test
+    void transitUsesEachTravelDateAndLocalDepartureWithoutReusingTimelessCache() throws Exception {
+        try (GoogleMapsStubServer server = new GoogleMapsStubServer()) {
+            server.respondWith(request -> new GoogleMapsStubServer.StubResponse(200, matrixResponse(request.body())));
+            var provider = provider(server, new InMemoryRouteLegCache());
+            var date = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tokyo")).plusDays(2);
+            var locations = List.of(location(34.1, 135.1), location(34.2, 135.2));
+            var matrices = provider.buildForDates(locations, TransportMode.PUBLIC_TRANSIT, List.of(date, date.plusDays(1)),
+                    java.time.LocalTime.of(10, 0), java.time.LocalTime.of(9, 0), "Asia/Tokyo");
+            assertThat(server.requests()).hasSize(2);
+            assertThat(objectMapper.readTree(server.requests().get(0).body()).path("departureTime").asText()).isEqualTo(date + "T01:00:00Z");
+            assertThat(objectMapper.readTree(server.requests().get(1).body()).path("departureTime").asText()).isEqualTo(date.plusDays(1) + "T00:00:00Z");
+            assertThat(RouteMatrix.summarize(matrices.values()).elementCount()).isEqualTo(8);
+            assertThat(matrices.values()).allSatisfy(m -> assertThat(m.cacheEnabled()).isFalse());
+        }
+    }
+
     private GoogleRoutesMatrixProvider provider(
             GoogleMapsStubServer server,
             RouteLegCache routeLegCache

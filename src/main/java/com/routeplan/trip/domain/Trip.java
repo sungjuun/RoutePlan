@@ -72,6 +72,19 @@ public class Trip {
     @Column(nullable = false, length = 20)
     private TripStatus status;
 
+    @Column(name = "time_zone_id", nullable = false, length = 100)
+    private String timeZoneId = "Asia/Seoul";
+
+    public String getTimeZoneId() { return timeZoneId; }
+
+    public void updateTimeZone(String zone) {
+        if (zone == null || !java.time.ZoneId.getAvailableZoneIds().contains(zone)) {
+            throw new IllegalArgumentException("유효한 IANA 시간대가 필요합니다. 예: Asia/Seoul");
+        }
+        this.timeZoneId = zone;
+        markDraft();
+    }
+
     @Enumerated(EnumType.STRING)
     @Column(name = "budget_currency", nullable = false, length = 3)
     private BudgetCurrency budgetCurrency = BudgetCurrency.KRW;

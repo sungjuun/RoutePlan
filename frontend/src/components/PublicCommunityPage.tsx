@@ -5,6 +5,7 @@ import { dateLabel, durationLabel, paceLabel, transportLabel } from '../lib/form
 import type { SharedRouteDetail, SharedRoutePage, SharedRouteSort, User } from '../types'
 import { AsyncState } from './AsyncState'
 import { SharedRouteMap } from './SharedRouteMap'
+import { DiscussionPanel } from './DiscussionPanel'
 
 interface Props {
   user: User | null
@@ -65,7 +66,15 @@ export function PublicCommunityPage({ user, initialRegion, onRequireAuth, onCrea
             {loading ? <AsyncState kind="loading" title="루트를 불러오는 중입니다" className="community-state" /> : loadFailed ? <AsyncState kind="error" title="공개 루트를 불러오지 못했습니다" message="잠시 후 다시 시도해 주세요." actionLabel="다시 시도" onAction={() => { setLoading(true); setLoadFailed(false); setReloadKey((key) => key + 1) }} className="community-state" /> : routes.content.length === 0 ? <AsyncState kind="empty" title="아직 공개된 루트가 없습니다" message="다른 지역을 검색해 보세요." className="community-state" /> : <div className="route-card-grid">{routes.content.map((route, index) => <button key={route.routeId} className={`public-route-card panel ${selected?.routeId === route.routeId ? 'selected' : ''}`} onClick={async () => { try { setSelected(await api.getSharedRoute(route.routeId)) } catch (error) { onError(error) } }}><div className={`public-route-cover cover-${(index % 4) + 1}`}><span>{route.region}</span><b>{route.travelDays}일</b></div><div><small>{route.ownerNickname}</small><h3>{route.title}</h3><p>{route.placePreview}</p><div className="public-route-meta"><span>{transportLabel(route.transportMode)}</span><span>{paceLabel(route.pace)}</span></div><footer><span><Heart size={13} /> {route.likeCount}</span><span><Copy size={13} /> {route.copyCount}</span><span><Eye size={13} /> {route.viewCount}</span></footer></div></button>)}</div>}
             {routes.totalPages > 1 && <div className="community-pagination"><button className="button button-ghost button-small" disabled={routes.first} onClick={() => { setLoading(true); setLoadFailed(false); setSelected(null); setPage((value) => value - 1) }}><ArrowLeft size={15} /> 이전</button><span>{routes.page + 1} / {routes.totalPages}</span><button className="button button-ghost button-small" disabled={routes.last} onClick={() => { setLoading(true); setLoadFailed(false); setSelected(null); setPage((value) => value + 1) }}>다음 <ArrowRight size={15} /></button></div>}
           </div>
-          {selected && <aside className="public-route-detail panel"><button className="detail-close" onClick={() => setSelected(null)} aria-label="상세 닫기">×</button><span className="eyebrow">{selected.region} · {selected.travelDays} DAYS</span><h2>{selected.title}</h2><p>{selected.description}</p><SharedRouteMap route={selected} /><div className="public-detail-facts"><span><CalendarDays size={14} /> {dateLabel(selected.sourceStartDate)} 출발</span><span>{transportLabel(selected.transportMode)}</span><span>{durationLabel(selected.estimatedTravelMinutes)} 이동</span></div><ol>{selected.items.map((item) => <li key={item.itemId}><span>{item.dayNumber}일차 · {item.sequence}</span><strong>{item.placeName}</strong><small>{item.startTime.slice(0, 5)}–{item.endTime.slice(0, 5)}</small></li>)}</ol><button className="button button-primary button-large" onClick={user ? onCreateTrip : onRequireAuth}>{user ? '이 루트를 참고해 내 여행 만들기' : '로그인하고 내 여행으로 가져오기'} <ArrowRight size={17} /></button></aside>}
+          {selected && <aside className="public-route-detail panel">
+            <button className="detail-close" onClick={() => setSelected(null)} aria-label="상세 닫기">×</button>
+            <span className="eyebrow">{selected.region} · {selected.travelDays} DAYS</span><h2>{selected.title}</h2><p>{selected.description}</p>
+            <SharedRouteMap route={selected} />
+            <div className="public-detail-facts"><span><CalendarDays size={14} /> {dateLabel(selected.sourceStartDate)} 출발</span><span>{transportLabel(selected.transportMode)}</span><span>{durationLabel(selected.estimatedTravelMinutes)} 이동</span></div>
+            <ol>{selected.items.map(item => <li key={item.itemId}><span>{item.dayNumber}일차 · {item.sequence}</span><strong>{item.placeName}</strong><small>{item.startTime.slice(0, 5)}–{item.endTime.slice(0, 5)}</small></li>)}</ol>
+            <button className="button button-primary button-large" onClick={user ? onCreateTrip : onRequireAuth}>{user ? '이 루트를 참고해 내 여행 만들기' : '로그인하고 내 여행으로 가져오기'} <ArrowRight size={17} /></button>
+            <DiscussionPanel key={selected.routeId} routeId={selected.routeId} ownerId={selected.ownerId} user={user} onError={onError} onRequireAuth={onRequireAuth} />
+          </aside>}
         </div>
       </section>
     </main>
