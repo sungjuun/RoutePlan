@@ -64,7 +64,7 @@ V16은 여행 비용을 실제 일정 선택의 제약으로 연결합니다.
 
 V17은 실제 예보·영업시간·현지 출발시각을 연결하고 날짜/항목별 지출 장부, 명시적 취향 추천, 댓글·후기·신고와 운영자 처리를 추가합니다.
 
-설정과 사용법은 [실제 데이터·개인화·장부 안내](docs/advanced-integrations.md), 현재 외부 API 상태는 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 참고하세요. 날씨와 영업시간 실응답은 확인했으며, 실제 경로는 **Routes API 활성화와 별도 브라우저 지도 키 설정이 남아 있습니다**.
+설정과 사용법은 [실제 데이터·개인화·장부 안내](docs/advanced-integrations.md), 외부 API 검증 결과는 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 참고하세요. **2026-08-28 로컬 환경에서 날씨·영업시간·도보 경로·현지 날짜를 반영한 대중교통 응답과 Google 한국어 지도·실제 경로선 표시를 확인했습니다.** 대표 표본 검증이며 실제 청구액·무료 잔량·운영 환경 검증은 별도입니다. 다른 환경에서는 서버·브라우저 키와 해당 API 활성화가 필요합니다.
 
 ## 구현 범위 (V1–V17)
 
@@ -472,7 +472,7 @@ Trip 장소 수에 따른 전체 Matrix와 계획된 외부 요청 수는 다음
 | 30 | 31 | 961 | 4 | 15 |
 | 50 | 51 | 2,601 | 8 | 35 |
 
-동일 좌표 구간은 외부 응답 없이 `0m / 0분`으로 만들기 때문에 마지막 Chunk가 1 × 1 대각 원소뿐이면 호출하지 않습니다. 분할 개수와 100요소 제한은 로컬 HTTP Stub 계약 테스트로 검증했습니다. 실제 Google API 키가 이 개발 환경에 없어 과금이 발생하는 실호출 latency는 기록하지 않았습니다. 대신 모든 Itinerary에 다음 값을 저장해 실제 환경의 측정값이 자동으로 남도록 했습니다.
+동일 좌표 구간은 외부 응답 없이 `0m / 0분`으로 만들기 때문에 마지막 Chunk가 1 × 1 대각 원소뿐이면 호출하지 않습니다. 분할 개수와 100요소 제한은 로컬 HTTP Stub 계약 테스트로 검증했습니다. 2026-08-28에는 도쿄 도보·서울 대중교통의 실제 Google 응답과 단일 표본 latency도 [실호출 점검 기록](docs/live-validation-2026-08-28.md)에 남겼습니다. 이 결과는 대규모 Matrix의 성능이나 모든 지역의 경로 제공을 보장하지 않습니다. 모든 Itinerary에 다음 값을 저장해 계산별 측정값을 확인할 수 있습니다.
 
 ```text
 routeDataType
@@ -737,7 +737,7 @@ ROUTEPLAN_EXTERNAL_RETRY_JITTER=0.2
 
 `408`, `429`, `5xx`, 연결 실패와 Timeout만 재시도합니다. 인증 오류, 그 밖의 `4xx`, JSON 직렬화·파싱 오류, 유효하지 않은 Provider 응답과 중단된 Thread는 재시도하지 않습니다. 최대 시도 횟수는 1–10이고 `enabled=false`이면 한 번만 호출합니다. 대기 중 Thread가 중단되면 interrupt 상태를 복원하고 즉시 실패합니다.
 
-API 키는 요청 헤더에만 사용하며 오류 메시지나 응답에 포함하지 않습니다. 키가 없거나 장소 검색 Provider가 비활성화된 경우 검색은 `503 EXTERNAL_PROVIDER_NOT_CONFIGURED`를 반환합니다. Google의 429는 `EXTERNAL_PROVIDER_RATE_LIMITED`, 연결·408·5xx는 `EXTERNAL_PROVIDER_UNAVAILABLE`, 일반 4xx와 잘못된 element는 `EXTERNAL_PROVIDER_INVALID_RESPONSE`로 구분합니다.
+서버용 API 키는 외부 요청 헤더에만 사용하며 클라이언트 응답이나 오류 메시지에 포함하지 않습니다. 별도 브라우저 지도 키는 `/api/v1/integrations/maps-config`를 통해 프론트에 전달되므로 Maps JavaScript API·웹사이트 제한이 필요합니다. 서버 키가 없거나 장소 검색 Provider가 비활성화된 경우 검색은 `503 EXTERNAL_PROVIDER_NOT_CONFIGURED`를 반환합니다. Google의 429는 `EXTERNAL_PROVIDER_RATE_LIMITED`, 연결·408·5xx는 `EXTERNAL_PROVIDER_UNAVAILABLE`, 일반 4xx와 잘못된 element는 `EXTERNAL_PROVIDER_INVALID_RESPONSE`로 구분합니다.
 
 ## Local Run
 
@@ -831,7 +831,7 @@ npm run test:e2e:docker
 
 `test:e2e:docker`는 개발용 `localhost:3100`과 DB를 건드리지 않습니다. `routeplan-e2e` 프로젝트를 기본 포트 `3200`·`8280`·`55432`·`6479`에 띄우고, 테스트가 끝나면 전용 컨테이너와 DB 볼륨을 제거합니다. 이미 실행 중인 환경을 직접 검사할 때는 `E2E_BASE_URL`을 지정하고 `npm run test:e2e`를 사용합니다. 실패 시 `frontend/playwright-report`와 `frontend/test-results`에 Screenshot·Video·Trace·Compose 로그를 남깁니다.
 
-현재 기본 검증 묶음은 Backend 100개, Frontend 단위 테스트 32개, 브라우저 E2E 6개를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V13과 세션 인증·CSRF·소유권 경계를 함께 확인합니다. 실제 Google 경로 검증 상태는 별도 점검 기록을 확인하세요.
+현재 기본 검증 묶음은 Backend 100개, Frontend 단위 테스트 34개, 브라우저 E2E 6개를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V13과 세션 인증·CSRF·소유권 경계를 함께 확인합니다. 경로 출처 표시 수정에는 Google/직선거리 추정 분기를 확인하는 프론트 회귀 테스트 2개를 추가했습니다. 실제 Google 경로 검증 결과와 각 검증의 실행 범위는 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 확인하세요.
 
 `.github/workflows/ci.yml`은 push와 pull request마다 Backend와 Frontend Job을 병렬 실행하고, 둘 다 통과하면 격리된 Docker 환경에서 Browser E2E Job을 실행합니다. Backend는 Java 21과 Testcontainers PostgreSQL로 전체 테스트를 수행하고, Frontend는 Node.js 22에서 고정된 lockfile로 설치한 뒤 단위 테스트, ESLint, 프로덕션 빌드를 모두 통과해야 합니다. Benchmark는 실행시간 변동과 비용 때문에 일반 CI에서 분리합니다.
 
@@ -961,7 +961,7 @@ V15 장소 환경·날짜별 날씨·날씨 대응 일정 생성과 재최적화
  ↓
 V16 통화·고정비·장소 비용·전체 예산 제약·비용 Snapshot 재최적화 ✓
 V17 자동 예보·영업시간·현지 시간·도로 지도·실제 지출·취향 추천·댓글/후기/신고 ✓
-    Routes API 활성화·브라우저 키 설정 후 실제 경로 최종 검증 필요
+    2026-08-28 대표 경로 API·대중교통·Google 지도 실검증 및 출처 표시 수정 완료
 ```
 
 ## Performance Benchmark
@@ -1020,7 +1020,7 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - V2 Benchmark는 제약 없는 경로 기준이며 V3 제약 일정 성능 Benchmark는 아직 분리하지 않았습니다.
 - Google 정규 영업시간을 자동 조회하지만 분할/야간 영업 및 휴일 예외는 별도 확인해야 합니다.
 - Transit Matrix는 각 여행일의 현지 출발시각을 반영하지만 매 방문 후 시각 변화까지 재탐색하는 시간 의존 최적화는 아닙니다.
-- 날씨·영업시간 실응답은 확인했습니다. Routes API는 현재 키의 프로젝트에서 비활성화(403)되어 활성화 후 실제 경로 검증이 필요하고, 실제 청구액/무료 잔량은 Cloud Billing에서 별도 확인해야 합니다.
+- 로컬 대표 표본으로 날씨·영업시간·도보·대중교통 응답과 Google 지도 표시를 확인했습니다. 모든 국가·이동수단·날짜 조합의 검증은 아니며, 실제 청구액/무료 잔량과 운영 호출 한도는 Cloud Billing·Console에서 별도 확인해야 합니다.
 - 외부 API는 제한된 Retry를 제공하지만 Circuit Breaker와 Provider별 격리는 아직 적용하지 않습니다.
 - Redis Cache는 TTL 기반이며 재시작 후 보존을 요구하지 않는 파생 데이터입니다.
 - 동시에 같은 miss가 발생하는 Cache Stampede를 막는 분산 Lock은 아직 없습니다.

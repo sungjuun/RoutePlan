@@ -315,7 +315,7 @@ function RouteView({
         <div className="route-map-stack">
           <MapPanel trip={trip} itinerary={itinerary} places={itineraryPlaces} />
           <div className="route-detail-card panel">
-            <div><span className="route-source-dot"></span><span><strong>{itinerary.routeDataType === 'EXTERNAL_PROVIDER' ? '실제 도로 경로' : '좌표 기반 예상 경로'}</strong><small>Matrix {itinerary.routeMatrixElementCount.toLocaleString()}요소 · {itinerary.routeMatrixBuildMillis}ms</small></span></div>
+            <div><span className="route-source-dot"></span><span><strong>{itinerary.routeDataType === 'GOOGLE_ROUTES' ? '실제 도로 경로' : '좌표 기반 예상 경로'}</strong><small>Matrix {itinerary.routeMatrixElementCount.toLocaleString()}요소 · {itinerary.routeMatrixBuildMillis}ms</small></span></div>
             <button className="button button-ghost button-small" onClick={() => void optimize()} disabled={calculating || budgetBlocked}>{calculating ? '계산 중…' : '전체 새 버전 계산'}</button>
           </div>
           <details className="algorithm-details panel">

@@ -1,4 +1,5 @@
 export type TransportMode = 'WALKING' | 'DRIVING' | 'PUBLIC_TRANSIT'
+export type RouteDataType = 'STRAIGHT_LINE_ESTIMATE' | 'GOOGLE_ROUTES'
 export type TripPace = 'ACTIVE' | 'STANDARD' | 'RELAXED'
 export type OptimizationAlgorithm =
   | 'NEAREST_NEIGHBOR'
@@ -219,7 +220,7 @@ export interface Itinerary {
   returnTravelDistanceMeters: number
   returnTravelMinutes: number
   returnArrivalTime: string
-  routeDataType: string
+  routeDataType: RouteDataType
   routeProviderCallCount: number
   routeMatrixElementCount: number
   routeMatrixBuildMillis: number
