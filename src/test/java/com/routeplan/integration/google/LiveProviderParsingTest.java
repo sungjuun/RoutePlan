@@ -60,7 +60,7 @@ class LiveProviderParsingTest {
             assertThat(server.requests()).hasSize(2).allSatisfy(r->{
                 assertThat(r.method()).isEqualTo("GET");
                 assertThat(r.path()).isEqualTo("/v1/places/test_place_id");
-                assertThat(r.header("X-Goog-FieldMask")).isEqualTo("id,regularOpeningHours");
+                assertThat(r.header("X-Goog-FieldMask")).isEqualTo("id,regularOpeningHours,currentOpeningHours,utcOffsetMinutes");
             });
         }
     }
@@ -71,11 +71,39 @@ class LiveProviderParsingTest {
                 {"open":{"day":1,"hour":9},"close":{"day":1,"hour":12}},
                 {"open":{"day":1,"hour":14},"close":{"day":1,"hour":18}}]}}
                 """));
-        assertThat(split.days()).isEmpty(); assertThat(split.warning()).contains("분할");
+        assertThat(split.days().get(DayOfWeek.MONDAY).intervals()).containsExactly(
+                new com.routeplan.optimization.constraint.OpeningWindow(540, 720),
+                new com.routeplan.optimization.constraint.OpeningWindow(840, 1080));
         var overnight=LiveOpeningHours.parse(json.readTree("{\"regularOpeningHours\":{\"periods\":[{\"open\":{\"day\":1,\"hour\":21},\"close\":{\"day\":2,\"hour\":3}}]}}"));
-        assertThat(overnight.days()).isEmpty(); assertThat(overnight.warning()).contains("자정");
+        assertThat(overnight.days().get(DayOfWeek.MONDAY).intervals()).containsExactly(new com.routeplan.optimization.constraint.OpeningWindow(1260, 1440));
+        assertThat(overnight.days().get(DayOfWeek.TUESDAY).intervals()).containsExactly(new com.routeplan.optimization.constraint.OpeningWindow(0, 180));
         var always=LiveOpeningHours.parse(json.readTree("{\"regularOpeningHours\":{\"periods\":[{\"open\":{\"day\":0,\"hour\":0}}]}}"));
         assertThat(always.days()).hasSize(7); assertThat(always.days().values()).allSatisfy(d->assertThat(d.closed()).isFalse());
+    }
+
+    @Test void transitRefinementRequestsOneElementPerExactDepartureWithoutCache() throws Exception {
+        try (var server = new GoogleMapsStubServer()) {
+            server.respondWith(r -> new GoogleMapsStubServer.StubResponse(200,
+                    "[{\"originIndex\":0,\"destinationIndex\":0,\"condition\":\"ROUTE_EXISTS\",\"distanceMeters\":500,\"duration\":\"601s\"}]"));
+            var properties = new GoogleMapsProperties(); properties.setApiKey("test-key"); properties.setRoutesBaseUrl(server.baseUri());
+            var client = new GoogleMapsHttpClient(properties, noDelayRetryExecutor(3));
+            var guard = mock(com.routeplan.integration.ExternalUsageGuard.class);
+            org.springframework.test.util.ReflectionTestUtils.setField(client, "usageGuard", guard);
+            var cache = mock(com.routeplan.optimization.route.cache.RouteLegCache.class);
+            var provider = new com.routeplan.optimization.route.GoogleRoutesMatrixProvider(client, properties, cache);
+            var from = com.routeplan.optimization.domain.Location.of(BigDecimal.ONE, BigDecimal.ONE);
+            var to = com.routeplan.optimization.domain.Location.of(BigDecimal.TEN, BigDecimal.TEN);
+            Instant departure = Instant.now().plus(Duration.ofDays(1));
+            assertThat(provider.transitLeg(from, to, departure).estimatedTravelMinutes()).isEqualTo(11);
+            provider.transitLeg(from, to, departure.plusSeconds(3600));
+            assertThat(server.requests()).hasSize(2);
+            var body = json.readTree(server.requests().getFirst().body());
+            assertThat(body.path("origins")).hasSize(1);
+            assertThat(body.path("destinations")).hasSize(1);
+            assertThat(body.path("departureTime").asText()).isEqualTo(departure.toString());
+            verify(guard, times(2)).reserve(com.routeplan.integration.retry.ExternalApiOperation.GOOGLE_ROUTES, 1);
+            verifyNoInteractions(cache);
+        }
     }
 
     @Test void eachRetryReservesBillableMatrixElementsAndAppLimitStopsNetwork() throws Exception {

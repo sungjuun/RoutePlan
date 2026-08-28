@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { Compass, LogOut, Menu, Plus, Route, UserRound, X } from 'lucide-react'
+import { Compass, LogOut, Menu, Plus, Route, X } from 'lucide-react'
 import type { User } from '../types'
+import type { ReactNode } from 'react'
+import { UserAvatar } from './UserAvatar'
 
 interface Props {
   user: User | null
@@ -13,6 +15,7 @@ interface Props {
   onSignup: () => void
   onLogout: () => void
   activePage?: string
+  notifications?: ReactNode
 }
 
 export function PublicHeader({
@@ -26,6 +29,7 @@ export function PublicHeader({
   onSignup,
   onLogout,
   activePage,
+  notifications,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const navigate = (action: () => void) => {
@@ -45,6 +49,7 @@ export function PublicHeader({
         <button className={activePage === 'trips' ? 'active' : ''} aria-current={activePage === 'trips' ? 'page' : undefined} onClick={() => navigate(onMyTrip)}>내 여행</button>
       </nav>
       <div className="public-header-actions">
+        {notifications}
         <button
           className="icon-button public-menu-toggle"
           onClick={() => setMenuOpen((open) => !open)}
@@ -59,8 +64,8 @@ export function PublicHeader({
             <button className="button button-ghost button-small" onClick={() => navigate(onNewTrip)}>
               <Plus size={15} /> 새 여행
             </button>
-            <button className="public-profile" onClick={() => navigate(onProfile)}><i>{user.nickname.slice(0, 1)}</i>{user.nickname}</button>
-            <button className={`icon-button public-profile-icon ${activePage === 'profile' ? 'active' : ''}`} onClick={() => navigate(onProfile)} aria-label="마이페이지"><UserRound size={17} /></button>
+            <button className="public-profile" onClick={() => navigate(onProfile)}><i><UserAvatar user={user} /></i>{user.nickname}</button>
+            <button className={`icon-button public-profile-icon ${activePage === 'profile' ? 'active' : ''}`} onClick={() => navigate(onProfile)} aria-label="마이페이지"><UserAvatar user={user} /></button>
             <button className="icon-button" onClick={() => navigate(onLogout)} aria-label="로그아웃">
               <LogOut size={17} />
             </button>

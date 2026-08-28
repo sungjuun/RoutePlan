@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Compass, LoaderCircle, MapPinned, MessageSquareText, Route, Settings2, UsersRound } from 'lucide-react'
 import { ApiError, api } from './api/client'
 import { AppHeader } from './components/AppHeader'
@@ -13,10 +13,12 @@ import { PublicCommunityPage } from './components/PublicCommunityPage'
 import { PublicHeader } from './components/PublicHeader'
 import { TripSetup } from './components/TripSetup'
 import { Toast } from './components/Toast'
+import type { Notification } from './components/NotificationCenter'
 import { clearTripReference, saveWorkspace } from './lib/storage'
 import type { Itinerary, Place, Trip, User } from './types'
 
 const MyPage = lazy(() => import('./components/MyPage').then(module => ({ default: module.MyPage })))
+const NotificationCenter = lazy(() => import('./components/NotificationCenter').then(module => ({ default: module.NotificationCenter })))
 
 type Section = 'places' | 'itinerary' | 'settings' | 'community' | 'natural-language'
 type PublicPage = 'home' | 'community' | 'auth' | 'create-trip' | 'trips' | 'profile' | 'workspace'
@@ -45,9 +47,17 @@ export function App() {
   const [section, setSection] = useState<Section>('places')
   const [booting, setBooting] = useState(true)
   const [notice, setNotice] = useState<Notice | null>(null)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const noticeId = useRef(0)
 
   const notify = useCallback((kind: Notice['kind'], message: string) => {
-    setNotice({ kind, message })
+    setNotice(kind === 'error' ? { kind, message } : null)
+    const item: Notification = { id: ++noticeId.current, kind, message, time: new Date().toISOString(), read: false }
+    setNotifications(current => {
+      const last = current[0]
+      if (last?.kind === kind && last.message === message && Date.now() - Date.parse(last.time) < 10_000) return current
+      return [item, ...current].slice(0, 30)
+    })
   }, [])
 
   const reportError = useCallback((error: unknown) => {
@@ -175,6 +185,7 @@ export function App() {
   }
 
   const handleAuthenticated = async (nextUser: User) => {
+    setNotifications([])
     setUser(nextUser)
     notify('success', `${nextUser.nickname}님, 반갑습니다.`)
     if (afterAuth === 'create-trip') {
@@ -203,6 +214,8 @@ export function App() {
   const logout = async () => {
     try {
       await api.logout()
+      setNotifications([])
+      setNotice(null)
       setUser(null)
       setTrip(null)
       await loadItineraryContext(null)
@@ -246,20 +259,23 @@ export function App() {
     return <main className="app-loading" aria-live="polite"><div className="brand-mark"><Route size={25} /></div><LoaderCircle className="spin" size={25} /><p>RoutePlan을 준비하는 중입니다</p></main>
   }
 
+  const notificationCenter = <Suspense fallback={<span className="icon-button" aria-label="알림 준비 중" />}><NotificationCenter items={notifications} onRead={() => setNotifications(current => current.map(item => ({ ...item, read: true })))} onClear={() => setNotifications([])} /></Suspense>
+  const errorNotice = <Toast notice={notice} onClose={() => setNotice(null)} />
+
   if (page === 'auth') {
-    return <><AuthPage initialMode={authMode} onAuthenticated={handleAuthenticated} onBack={showHome} onError={reportError} /><Toast notice={notice} onClose={() => setNotice(null)} /></>
+    return <>{errorNotice}<AuthPage initialMode={authMode} onAuthenticated={handleAuthenticated} onBack={showHome} onError={reportError} /></>
   }
 
   if (page !== 'workspace') {
     return (
       <div className="public-shell">
-        <PublicHeader user={user} activePage={page} onHome={showHome} onCommunity={() => showCommunity()} onMyTrip={openMyTrips} onProfile={openProfile} onNewTrip={createTrip} onLogin={() => showAuth('login')} onSignup={() => showAuth('signup')} onLogout={() => void logout()} />
+        <PublicHeader notifications={notificationCenter} user={user} activePage={page} onHome={showHome} onCommunity={() => showCommunity()} onMyTrip={openMyTrips} onProfile={openProfile} onNewTrip={createTrip} onLogin={() => showAuth('login')} onSignup={() => showAuth('signup')} onLogout={() => void logout()} />
+        {errorNotice}
         {page === 'home' && <LandingPage user={user} onExplore={showCommunity} onCreateTrip={createTrip} onError={reportError} />}
         {page === 'community' && <PublicCommunityPage user={user} initialRegion={communityRegion} onRequireAuth={() => showAuth('login', 'create-trip')} onCreateTrip={createTrip} onError={reportError} />}
         {page === 'create-trip' && <TripSetup onReady={handleTripReady} onError={reportError} />}
         {page === 'trips' && <MyTripsPage onOpenTrip={(tripId) => void loadTrip(tripId)} onNewTrip={createTrip} onError={reportError} />}
-        {page === 'profile' && user && <Suspense fallback={<p role="status">마이페이지를 불러오는 중…</p>}><MyPage user={user} onOpenTrips={openMyTrips} onNewTrip={createTrip} onLogout={() => void logout()} onError={reportError} /></Suspense>}
-        <Toast notice={notice} onClose={() => setNotice(null)} />
+        {page === 'profile' && user && <Suspense fallback={<p role="status">마이페이지를 불러오는 중…</p>}><MyPage user={user} onUserChanged={next => setUser(current => current?.id === next.id ? { ...current, profileImageUrl: next.profileImageUrl } : current)} onOpenTrips={openMyTrips} onNewTrip={createTrip} onLogout={() => void logout()} onError={reportError} /></Suspense>}
       </div>
     )
   }
@@ -268,7 +284,8 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <AppHeader trip={trip} user={user} onNewTrip={createTrip} onHome={showHome} onCommunity={() => setSection('community')} onProfile={openProfile} onLogout={() => void logout()} />
+      <AppHeader notifications={notificationCenter} trip={trip} user={user} onNewTrip={createTrip} onHome={showHome} onCommunity={() => setSection('community')} onProfile={openProfile} onLogout={() => void logout()} />
+      {errorNotice}
       <div className="workspace-shell">
         <nav className="workspace-nav" aria-label="여행 작업 단계">
           <button className={section === 'places' ? 'active' : ''} onClick={() => setSection('places')}><span><MapPinned size={19} /></span><span><strong>장소 담기</strong><small>{trip.places.length}곳 선택됨</small></span></button>
@@ -285,7 +302,6 @@ export function App() {
           {section === 'community' && <CommunityWorkspace user={user} trip={trip} itinerary={itinerary} onTripCopied={handleRouteCopied} onNotify={notify} onError={reportError} />}
         </main>
       </div>
-      <Toast notice={notice} onClose={() => setNotice(null)} />
     </div>
   )
 }

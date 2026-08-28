@@ -129,6 +129,7 @@ describe('public RoutePlan experience', () => {
   it('shows account information and travel totals on my page', async () => {
     render(
       <MyPage
+        onUserChanged={vi.fn()}
         user={authenticated.user!}
         onOpenTrips={vi.fn()}
         onNewTrip={vi.fn()}

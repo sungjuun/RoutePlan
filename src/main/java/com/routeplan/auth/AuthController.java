@@ -30,17 +30,20 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
     private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
+    private final com.routeplan.user.application.ProfileImageService images;
 
     public AuthController(
             AuthService authService,
             AuthenticationManager authenticationManager,
             SecurityContextRepository securityContextRepository,
-            SessionAuthenticationStrategy sessionAuthenticationStrategy
+            SessionAuthenticationStrategy sessionAuthenticationStrategy,
+            com.routeplan.user.application.ProfileImageService images
     ) {
         this.authService = authService;
         this.authenticationManager = authenticationManager;
         this.securityContextRepository = securityContextRepository;
         this.sessionAuthenticationStrategy = sessionAuthenticationStrategy;
+        this.images = images;
     }
 
     @GetMapping("/csrf")
@@ -55,7 +58,7 @@ public class AuthController {
                 || !(authentication.getPrincipal() instanceof RoutePlanPrincipal principal)) {
             return new AuthSessionView(false, null);
         }
-        return new AuthSessionView(true, AuthUserView.from(principal));
+        return new AuthSessionView(true, userView(principal));
     }
 
     @PostMapping("/signup")
@@ -99,7 +102,12 @@ public class AuthController {
 
     private AuthSessionView session(Authentication authentication) {
         RoutePlanPrincipal principal = (RoutePlanPrincipal) authentication.getPrincipal();
-        return new AuthSessionView(true, AuthUserView.from(principal));
+        return new AuthSessionView(true, userView(principal));
+    }
+
+    private AuthUserView userView(RoutePlanPrincipal principal) {
+        return new AuthUserView(principal.userId(), principal.email(), principal.nickname(),
+                principal.createdAt(), images.url(principal.userId()));
     }
 
     public record SignupRequest(
@@ -121,15 +129,5 @@ public class AuthController {
     public record AuthSessionView(boolean authenticated, AuthUserView user) {
     }
 
-    public record AuthUserView(Long id, String email, String nickname, Instant createdAt) {
-
-        static AuthUserView from(RoutePlanPrincipal principal) {
-            return new AuthUserView(
-                    principal.userId(),
-                    principal.email(),
-                    principal.nickname(),
-                    principal.createdAt()
-            );
-        }
-    }
+    public record AuthUserView(Long id, String email, String nickname, Instant createdAt, String profileImageUrl) {}
 }

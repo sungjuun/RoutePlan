@@ -159,7 +159,7 @@ export function ItineraryWorkspace(props: Props) {
       </details>
       {budgetBlocked && <p className="budget-dirty">예산·시간대 설정을 불러오는 중이거나 저장하지 않은 변경이 있습니다. 설정을 확인해 주세요.</p>}
       {itinerary.dataWarnings && <p className="data-warning" role="status">{itinerary.dataWarnings}</p>}
-      <p className="data-caption">일정 시간대: {itinerary.timeZoneId ?? 'Asia/Seoul'} · 대중교통 소요시간은 각 날짜의 출발 시각 기준 추정이며, 방문 후 출발 시각별 배차를 재탐색하지 않습니다.</p>
+      <p className="data-caption">일정 시간대: {itinerary.timeZoneId ?? 'Asia/Seoul'} · 새로 계산하는 Google 대중교통 일정은 각 방문 종료 시각으로 재검증합니다. 기존 버전에는 자동 소급되지 않으며 실제 운행은 변경될 수 있습니다.</p>
 
       {tab === 'route' && (
         <RouteView

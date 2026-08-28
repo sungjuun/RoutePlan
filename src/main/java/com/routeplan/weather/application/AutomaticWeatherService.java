@@ -25,10 +25,19 @@ public class AutomaticWeatherService {
     }
 
     public RefreshResult refresh(long tripId) {
+        return refresh(tripId, true, () -> true);
+    }
+
+    RefreshResult refreshScheduled(long tripId, java.util.function.BooleanSupplier stillEnabled) {
+        return refresh(tripId, false, stillEnabled);
+    }
+
+    private RefreshResult refresh(long tripId, boolean updateZone, java.util.function.BooleanSupplier stillEnabled) {
         Input input = tx.execute(s -> Input.from(require(tripId)));
         OpenMeteoClient.Forecast result = client.fetch(input.latitude(), input.longitude());
         return tx.execute(s -> {
             Trip trip = trips.findByIdForUpdate(tripId).orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_NOT_FOUND));
+            if (!stillEnabled.getAsBoolean()) return null;
             if (!input.equals(Input.from(trip))) throw new RoutePlanException(ErrorCode.OPTIMIZATION_INPUT_CHANGED);
             Map<LocalDate, TripWeatherForecast> byDate = new HashMap<>();
             forecasts.findAllByTripIdOrderByForecastDateAsc(tripId).forEach(f -> byDate.put(f.getForecastDate(), f));
@@ -41,8 +50,8 @@ public class AutomaticWeatherService {
                 existing.applyAutomatic(day.condition(), day.probability());
                 forecasts.save(existing); updated++;
             }
-            trip.updateTimeZone(result.timeZoneId());
-            return new RefreshResult(updated, manual, result.timeZoneId(), result.fetchedAt(),
+            if (updateZone && !trip.getTimeZoneId().equals(result.timeZoneId())) trip.updateTimeZone(result.timeZoneId());
+            return new RefreshResult(updated, manual, trip.getTimeZoneId(), result.fetchedAt(),
                     "Open-Meteo (CC BY 4.0)", "예보 가능 날짜만 갱신했습니다. 직접 입력한 날씨는 보존합니다.");
         });
     }

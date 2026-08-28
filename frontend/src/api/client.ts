@@ -50,7 +50,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     credentials: 'same-origin',
     headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init?.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
       ...(csrf ? { [csrf.headerName]: csrf.token } : {}),
       ...init?.headers,
     },
@@ -111,6 +111,13 @@ function json(method: string, body: unknown): RequestInit {
 
 export const api = {
   getAuthSession: () => request<AuthSession>('/auth/me'),
+
+  uploadProfileImage: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return request<{ profileImageUrl: string }>('/profile/avatar', { method: 'PUT', body })
+  },
+  removeProfileImage: () => request<{ profileImageUrl: null }>('/profile/avatar', { method: 'DELETE' }),
 
   signup: async (input: SignupInput) => {
     const session = await request<AuthSession>('/auth/signup', json('POST', input))

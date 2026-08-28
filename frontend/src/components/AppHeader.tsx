@@ -1,6 +1,8 @@
 import { CalendarDays, Home, LogOut, Plus, Route, UsersRound } from 'lucide-react'
 import { dateLabel, paceLabel, transportLabel } from '../lib/format'
 import type { Trip, User } from '../types'
+import type { ReactNode } from 'react'
+import { UserAvatar } from './UserAvatar'
 
 interface Props {
   trip: Trip
@@ -10,9 +12,10 @@ interface Props {
   onCommunity: () => void
   onProfile: () => void
   onLogout: () => void
+  notifications?: ReactNode
 }
 
-export function AppHeader({ trip, user, onNewTrip, onHome, onCommunity, onProfile, onLogout }: Props) {
+export function AppHeader({ trip, user, onNewTrip, onHome, onCommunity, onProfile, onLogout, notifications }: Props) {
   return (
     <header className="app-header">
       <button className="wordmark header-wordmark" onClick={onHome}>
@@ -28,13 +31,14 @@ export function AppHeader({ trip, user, onNewTrip, onHome, onCommunity, onProfil
         <span className="context-chip">{paceLabel(trip.pace)}</span>
       </div>
       <div className="header-actions">
+        {notifications}
         <button className="icon-button" onClick={onHome} aria-label="메인으로"><Home size={16} /></button>
         <button className="icon-button" onClick={onCommunity} aria-label="커뮤니티"><UsersRound size={16} /></button>
         <button className="button button-ghost button-small" onClick={onNewTrip}>
           <Plus size={16} /> 새 여행
         </button>
         <button className="profile-button" onClick={onProfile} aria-label="마이페이지">
-          <span>{user?.nickname?.slice(0, 1) ?? 'R'}</span>
+          <span className="header-avatar"><UserAvatar user={user} /></span>
           <span className="profile-name">{user?.nickname ?? '여행자'}</span>
         </button>
         <button className="icon-button" onClick={onLogout} aria-label="로그아웃"><LogOut size={16} /></button>

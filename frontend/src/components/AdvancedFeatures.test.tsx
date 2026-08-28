@@ -17,6 +17,7 @@ describe('live data and community', () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
   it('loads and saves the local time zone and refreshes automatic weather', async () => {
+    vi.spyOn(advanced, 'weatherRefreshSettings').mockResolvedValue({ enabled: false, nextRefreshAt: null, lastSuccessAt: null, lastError: null })
     vi.spyOn(advanced, 'zone').mockResolvedValue({ timeZoneId: 'Asia/Seoul' })
     const save = vi.spyOn(advanced, 'saveZone').mockResolvedValue({ timeZoneId: 'Europe/Paris' })
     const weather = vi.spyOn(advanced, 'weather').mockResolvedValue({ updatedDates: 1, preservedManualDates: 1, timeZoneId: 'Europe/Paris', message: '수동 보존' })

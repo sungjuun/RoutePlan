@@ -50,8 +50,10 @@ test.describe.serial('인증된 여행 생성과 공개 루트 재사용', () =>
     await page.getByLabel('지역', { exact: true }).fill(routeRegion)
     await page.getByLabel('한 줄 설명', { exact: true }).fill('Playwright가 생성한 V15 날씨 대응 회귀 테스트 루트')
     await page.getByRole('button', { name: '루트 공개하기', exact: true }).click()
-    await expect(page.getByText('현재 일정의 Snapshot을 루트 커뮤니티에 공개했습니다.')).toBeVisible()
     await expect(page.locator('.community-detail').getByRole('heading', { name: routeTitle })).toBeVisible()
+    await page.getByRole('button', { name: /^알림/ }).click()
+    await expect(page.getByText('현재 일정의 Snapshot을 루트 커뮤니티에 공개했습니다.')).toBeVisible()
+    await page.getByRole('button', { name: '알림함 닫기' }).click()
 
     await page.getByLabel('댓글 작성', { exact: true }).fill('E2E 운영 검토 댓글')
     await page.getByRole('button', { name: '댓글 등록', exact: true }).click()
@@ -106,8 +108,10 @@ test.describe.serial('인증된 여행 생성과 공개 루트 재사용', () =>
     await page.getByLabel('새 여행 이름', { exact: true }).fill(copiedTripName)
     await page.getByRole('button', { name: '복사 후 재최적화', exact: true }).click()
 
-    await expect(page.getByText(/공개 루트를 복사하고 내 조건으로 일정 버전 1을 만들었습니다/)).toBeVisible()
     await expect(page.getByRole('heading', { name: copiedTripName })).toBeVisible()
+    await page.getByRole('button', { name: /^알림/ }).click()
+    await expect(page.getByText(/공개 루트를 복사하고 내 조건으로 일정 버전 1을 만들었습니다/)).toBeVisible()
+    await page.getByRole('button', { name: '알림함 닫기' }).click()
     await expect(page.getByText('VERSION 1', { exact: true })).toBeVisible()
     await expect(page).not.toHaveURL(new RegExp(`tripId=${baseTripId}$`))
 

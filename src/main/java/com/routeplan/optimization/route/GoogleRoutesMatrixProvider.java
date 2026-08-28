@@ -115,6 +115,18 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
         );
     }
 
+    /** One billable matrix element at an exact departure, never a timeless cache lookup. */
+    public RouteResult transitLeg(Location origin, Location destination, java.time.Instant departure) {
+        if (origin.equals(destination)) return new RouteResult(0, 0);
+        var response = httpClient.post(ExternalApiOperation.GOOGLE_ROUTES, endpoint, FIELD_MASK,
+                requestBody(List.of(origin), List.of(destination), TransportMode.PUBLIC_TRANSIT, departure));
+        Map<RouteMatrix.Leg, RouteResult> routes = new LinkedHashMap<>();
+        merge(response, List.of(origin), List.of(destination), TransportMode.PUBLIC_TRANSIT, routes, new LinkedHashMap<>());
+        RouteResult result = routes.get(new RouteMatrix.Leg(origin, destination));
+        if (result == null) throw invalidResponse("출발 시각별 경로가 응답에 없습니다.");
+        return result;
+    }
+
     private void addZeroDistanceRoutes(
             List<Location> locations,
             Map<RouteMatrix.Leg, RouteResult> routes

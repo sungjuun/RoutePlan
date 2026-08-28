@@ -19,7 +19,10 @@ export type Target = 'ROUTE' | 'COMMENT' | 'REVIEW'
 export interface ReportInput { targetType: Target; targetId: number; reason: string; detail: string }
 export interface ModerationReport { id: number; routeId: number; targetType: Target; targetId: number; reason: string; detail: string; targetContent: string | null }
 export interface Usage { operation: string; month: string; attemptedUnits: number; limit: number }
+export interface WeatherRefreshSettings { enabled: boolean; nextRefreshAt: string | null; lastSuccessAt: string | null; lastError: string | null }
 export const advanced = {
+  weatherRefreshSettings: (id: number) => request<WeatherRefreshSettings>(`/trips/${id}/weather/auto-refresh`),
+  saveWeatherRefreshSettings: (id: number, enabled: boolean) => send<WeatherRefreshSettings>(`/trips/${id}/weather/auto-refresh`, 'PUT', { enabled }),
   zone: (id: number) => request<{ timeZoneId: string }>(`/trips/${id}/time-zone`),
   saveZone: (id: number, timeZoneId: string) => send<{ timeZoneId: string }>(`/trips/${id}/time-zone`, 'PUT', { timeZoneId }),
   weather: (id: number) => send<{ updatedDates: number; preservedManualDates: number; timeZoneId: string; message: string }>(`/trips/${id}/weather/refresh`, 'POST'),

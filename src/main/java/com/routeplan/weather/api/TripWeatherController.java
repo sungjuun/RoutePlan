@@ -27,14 +27,34 @@ public class TripWeatherController {
 
     private final TripWeatherService weatherService;
     private final ResourceAccessService accessService;
+    private final com.routeplan.weather.application.WeatherRefreshSettings refreshSettings;
 
     public TripWeatherController(
             TripWeatherService weatherService,
-            ResourceAccessService accessService
+            ResourceAccessService accessService,
+            com.routeplan.weather.application.WeatherRefreshSettings refreshSettings
     ) {
         this.weatherService = weatherService;
         this.accessService = accessService;
+        this.refreshSettings = refreshSettings;
     }
+
+    @GetMapping("/auto-refresh")
+    public com.routeplan.weather.application.WeatherRefreshSettings.Settings refreshSettings(
+            @PathVariable Long tripId, @AuthenticationPrincipal RoutePlanPrincipal principal) {
+        accessService.requireTripOwner(tripId, principal.userId());
+        return refreshSettings.get(tripId);
+    }
+
+    @PutMapping("/auto-refresh")
+    public com.routeplan.weather.application.WeatherRefreshSettings.Settings refreshSettings(
+            @PathVariable Long tripId, @AuthenticationPrincipal RoutePlanPrincipal principal,
+            @Valid @RequestBody AutoRefreshRequest request) {
+        accessService.requireTripOwner(tripId, principal.userId());
+        return refreshSettings.set(tripId, request.enabled());
+    }
+
+    public record AutoRefreshRequest(@NotNull Boolean enabled) {}
 
     @GetMapping
     public List<ForecastResult> get(

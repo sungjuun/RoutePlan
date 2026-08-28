@@ -75,6 +75,8 @@ public class ItineraryReoptimizationService {
     private final TransactionTemplate writeTransaction;
     @org.springframework.beans.factory.annotation.Autowired
     private com.routeplan.place.search.LiveOpeningHours liveHours;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.routeplan.optimization.constraint.DepartureAwareScheduleRefiner departureRefiner;
 
     public ItineraryReoptimizationService(
             TripRepository tripRepository,
@@ -122,18 +124,22 @@ public class ItineraryReoptimizationService {
                     snapshot.input().dailyCandidates().stream().map(DailyCandidates::visitDate).toList(),
                     snapshot.input().optimizationStartTime(), snapshot.input().tripDailyStartTime(), snapshot.input().timeZoneId()
             );
-            RouteMatrix routeMatrix = RouteMatrix.summarize(matrices.values());
-            metrics.recordRouteMatrix(routeMatrix);
+            RouteMatrix baseMatrix = RouteMatrix.summarize(matrices.values());
             OptimizationResult result = optimizationEngineRegistry.get(algorithm)
-                    .optimize(snapshot.input().optimizationRequest(), routeMatrix);
+                    .optimize(snapshot.input().optimizationRequest(), baseMatrix);
             var live = liveHours.apply(tripId, snapshot.input().toScheduleRequests(result));
-            MultiDaySchedule schedule = schedulePlanner.planByDate(
+            MultiDaySchedule initialSchedule = schedulePlanner.planByDate(
                     live.requests(),
                     matrices::get,
                     budget
             );
+            var refined = departureRefiner.refine(initialSchedule, live.requests(), snapshot.input().timeZoneId(), baseMatrix.dataType());
+            RouteMatrix routeMatrix = baseMatrix.withAdditionalElements(refined.calls(), refined.millis());
+            metrics.recordRouteMatrix(routeMatrix);
+            List<String> warnings = new ArrayList<>(live.warnings());
+            warnings.addAll(refined.warnings());
             ItineraryView itinerary = Objects.requireNonNull(writeTransaction.execute(status ->
-                    saveIfUnchanged(snapshot, result, schedule, routeMatrix, live.warnings())
+                    saveIfUnchanged(snapshot, result, refined.schedule(), routeMatrix, warnings)
             ));
             metrics.recordGeneration(
                     sample,

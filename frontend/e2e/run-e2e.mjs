@@ -37,6 +37,7 @@ const commandEnvironment = {
   ROUTEPLAN_AI_PROVIDER: 'RULE_BASED',
   OPENAI_API_KEY: '',
   ROUTEPLAN_ROUTE_CACHE_ENABLED: 'false',
+  ROUTEPLAN_WEATHER_AUTO_REFRESH_ENABLED: 'false',
   ROUTEPLAN_MODERATOR_EMAILS: 'routeplan-moderator@example.com',
 }
 

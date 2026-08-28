@@ -133,6 +133,11 @@ public class GlobalExceptionHandler {
         return response(ErrorCode.INVALID_INPUT, ErrorCode.INVALID_INPUT.message(), request);
     }
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    ResponseEntity<ErrorResponse> handleLargeUpload(Exception exception, HttpServletRequest request) {
+        return response(ErrorCode.INVALID_INPUT, "프로필 사진은 2MB 이하의 PNG 또는 JPEG 파일을 선택하세요.", request);
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     ResponseEntity<ErrorResponse> handleDataConflict(
             DataIntegrityViolationException exception,

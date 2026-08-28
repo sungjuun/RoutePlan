@@ -261,17 +261,9 @@ public class ConstraintSchedulePlanner {
             }
             RouteResult leg = routes.route(currentLocation, candidate.location());
             int arrivalMinute = currentMinute + leg.estimatedTravelMinutes();
-            int windowStart = Math.max(
-                    minuteOfDay(request.dailyStartTime()),
-                    maximumTime(candidate.openingTime(), candidate.preferredStartTime())
-            );
-            int windowEnd = Math.min(
-                    minuteOfDay(request.dailyEndTime()),
-                    minimumTime(candidate.closingTime(), candidate.preferredEndTime())
-            );
-            int startMinute = Math.max(arrivalMinute, windowStart);
+            int startMinute = candidate.earliestStart(arrivalMinute, request.dailyStartTime(), request.dailyEndTime());
             int endMinute = startMinute + candidate.stayMinutes();
-            if (windowEnd <= windowStart || endMinute > windowEnd) {
+            if (startMinute < 0) {
                 return Attempt.failure(candidate, ExclusionReason.TIME_WINDOW);
             }
 

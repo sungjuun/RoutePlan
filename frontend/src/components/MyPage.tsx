@@ -5,6 +5,8 @@ import type { TripSummary, User } from '../types'
 import { AsyncState } from './AsyncState'
 import { PreferencesPanel } from './PreferencesPanel'
 import { ModerationPanel } from './ModerationPanel'
+import { ProfileImageEditor } from './ProfileImageEditor'
+import { UserAvatar } from './UserAvatar'
 
 interface Props {
   user: User
@@ -12,9 +14,10 @@ interface Props {
   onNewTrip: () => void
   onLogout: () => void
   onError: (error: unknown) => void
+  onUserChanged: (user: User) => void
 }
 
-export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError }: Props) {
+export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError, onUserChanged }: Props) {
   const [trips, setTrips] = useState<TripSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
@@ -45,12 +48,13 @@ export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError }: Prop
   return (
     <main className="account-page profile-page">
       <section className="profile-hero">
-        <div className="profile-avatar"><UserRound size={34} /></div>
+        <div className="profile-avatar"><UserAvatar user={user} /></div>
         <div><span className="eyebrow eyebrow-light">MY ROUTEPLAN</span><h1>{user.nickname}님의 여행 공간</h1><p>{new Date(user.createdAt).toLocaleDateString('ko-KR')}부터 RoutePlan과 여행 중입니다.</p></div>
       </section>
 
       <section className="account-content profile-layout">
         <div className="profile-main">
+          <ProfileImageEditor user={user} onChanged={onUserChanged} />
           {loading ? (
             <AsyncState kind="loading" title="여행 현황을 불러오는 중입니다" className="profile-data-state" />
           ) : loadFailed ? (

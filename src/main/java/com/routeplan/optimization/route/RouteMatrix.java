@@ -109,6 +109,13 @@ public final class RouteMatrix implements RouteProvider {
         return buildMillis;
     }
 
+    public RouteMatrix withAdditionalElements(int calls, long millis) {
+        var combined = new RouteMatrix(transportMode, dataType, routes, providerCallCount + calls,
+                buildMillis + millis, cacheEnabled, cacheHitCount, cacheMissCount, cacheFailureCount);
+        combined.accountedElements = accountedElements + calls;
+        return combined;
+    }
+
     public boolean cacheEnabled() {
         return cacheEnabled;
     }

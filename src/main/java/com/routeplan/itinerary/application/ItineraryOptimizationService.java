@@ -64,6 +64,8 @@ public class ItineraryOptimizationService {
     private final TransactionTemplate writeTransaction;
     @org.springframework.beans.factory.annotation.Autowired
     private com.routeplan.place.search.LiveOpeningHours liveHours;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.routeplan.optimization.constraint.DepartureAwareScheduleRefiner departureRefiner;
 
     public ItineraryOptimizationService(
             TripRepository tripRepository,
@@ -107,18 +109,22 @@ public class ItineraryOptimizationService {
                     snapshot.dailyCandidates().stream().map(DailyCandidates::visitDate).toList(),
                     snapshot.dailyStartTime(), snapshot.dailyStartTime(), snapshot.timeZoneId()
             );
-            RouteMatrix routeMatrix = RouteMatrix.summarize(matrices.values());
-            metrics.recordRouteMatrix(routeMatrix);
+            RouteMatrix baseMatrix = RouteMatrix.summarize(matrices.values());
             OptimizationResult result = optimizationEngineRegistry.get(algorithm)
-                    .optimize(snapshot.optimizationRequest(), routeMatrix);
+                    .optimize(snapshot.optimizationRequest(), baseMatrix);
             var live = liveHours.apply(tripId, snapshot.toScheduleRequests(result));
-            MultiDaySchedule schedule = schedulePlanner.planByDate(
+            MultiDaySchedule initialSchedule = schedulePlanner.planByDate(
                     live.requests(),
                     matrices::get,
                     budget
             );
+            var refined = departureRefiner.refine(initialSchedule, live.requests(), snapshot.timeZoneId(), baseMatrix.dataType());
+            RouteMatrix routeMatrix = baseMatrix.withAdditionalElements(refined.calls(), refined.millis());
+            metrics.recordRouteMatrix(routeMatrix);
+            List<String> warnings = new ArrayList<>(live.warnings());
+            warnings.addAll(refined.warnings());
             ItineraryView itinerary = Objects.requireNonNull(writeTransaction.execute(status ->
-                    saveIfUnchanged(snapshot, result, schedule, routeMatrix, live.warnings())
+                    saveIfUnchanged(snapshot, result, refined.schedule(), routeMatrix, warnings)
             ));
             metrics.recordGeneration(
                     sample,

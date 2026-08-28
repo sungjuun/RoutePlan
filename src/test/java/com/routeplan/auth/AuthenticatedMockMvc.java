@@ -6,7 +6,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import java.time.Instant;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.AbstractMockHttpServletRequestBuilder;
 
 /**
  * Keeps API integration tests concise while exercising Spring Security and CSRF filters.
@@ -24,7 +24,7 @@ public final class AuthenticatedMockMvc {
         this.userId = userId;
     }
 
-    public ResultActions perform(MockHttpServletRequestBuilder request) throws Exception {
+    public ResultActions perform(AbstractMockHttpServletRequestBuilder<?> request) throws Exception {
         request.with(csrf());
         if (userId != null) {
             RoutePlanPrincipal principal = new RoutePlanPrincipal(
