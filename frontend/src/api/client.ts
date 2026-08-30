@@ -37,6 +37,7 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly body: ApiErrorBody,
+    public readonly retryAfterSeconds?: number,
   ) {
     super(body.message)
     this.name = 'ApiError'
@@ -81,7 +82,9 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // Keep a user-safe fallback for non-JSON proxy or server errors.
     }
-    throw new ApiError(response.status, body)
+    if (response.status === 401 || response.status === 403) csrfRequest = null
+    const retryAfter = Number(response.headers.get('Retry-After'))
+    throw new ApiError(response.status, body, retryAfter > 0 ? retryAfter : undefined)
   }
 
   if (response.status === 204) {
@@ -111,6 +114,18 @@ function json(method: string, body: unknown): RequestInit {
 
 export const api = {
   getAuthSession: () => request<AuthSession>('/auth/me'),
+  getAuthOptions: () => request<{ mailMode: 'DISABLED' | 'LOCAL' | 'SMTP' }>('/auth/options'),
+  requestEmailVerification: () => request<void>('/auth/email/verification-request', { method: 'POST' }),
+  verifyEmail: (token: string) => request<void>('/auth/email/verify', json('POST', { token })),
+  requestPasswordReset: (email: string) => request<{ message: string }>('/auth/password/reset-request', json('POST', { email })),
+  resetPassword: async (token: string, newPassword: string) => {
+    await request<void>('/auth/password/reset', json('POST', { token, newPassword }))
+    csrfRequest = null
+  },
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    await request<void>('/auth/password/change', json('POST', { currentPassword, newPassword }))
+    csrfRequest = null
+  },
 
   uploadProfileImage: (file: File) => {
     const body = new FormData()

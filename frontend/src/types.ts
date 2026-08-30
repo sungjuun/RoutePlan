@@ -49,6 +49,7 @@ export interface CostSummary {
 }
 
 export interface User {
+  emailVerified?: boolean
   profileImageUrl?: string | null
   id: number
   email: string

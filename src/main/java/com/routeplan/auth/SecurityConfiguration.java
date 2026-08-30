@@ -24,7 +24,8 @@ public class SecurityConfiguration {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             SecurityErrorWriter errorWriter,
-            SecurityContextRepository securityContextRepository
+            SecurityContextRepository securityContextRepository,
+            org.springframework.jdbc.core.JdbcTemplate jdbc
     ) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
@@ -36,9 +37,10 @@ public class SecurityConfiguration {
                                 "/swagger-ui.html",
                                 "/swagger-ui/**"
                         ).permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/auth/csrf", "/api/v1/auth/me")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/auth/csrf", "/api/v1/auth/me", "/api/v1/auth/options")
                         .permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/signup", "/api/v1/auth/login")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/signup", "/api/v1/auth/login",
+                                "/api/v1/auth/email/verify", "/api/v1/auth/password/reset-request", "/api/v1/auth/password/reset")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/routes", "/api/v1/routes/**")
                         .permitAll()
@@ -65,12 +67,26 @@ public class SecurityConfiguration {
                         .accessDeniedHandler((request, response, exception) ->
                                 errorWriter.write(ErrorCode.ACCESS_DENIED, request, response))
                 );
+        http.addFilterAfter(new SessionValidityFilter(jdbc),
+                org.springframework.security.web.context.SecurityContextHolderFilter.class);
         return http.build();
     }
 
     @Bean
     PasswordEncoder passwordEncoder() {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+    }
+
+    @Bean
+    org.springframework.session.web.http.CookieSerializer sessionCookieSerializer(
+            @org.springframework.beans.factory.annotation.Value("${server.servlet.session.cookie.secure:false}") boolean secure) {
+        var serializer = new org.springframework.session.web.http.DefaultCookieSerializer();
+        serializer.setCookieName("ROUTEPLAN_SESSION");
+        serializer.setCookiePath("/");
+        serializer.setUseHttpOnlyCookie(true);
+        serializer.setUseSecureCookie(secure);
+        serializer.setSameSite("Lax");
+        return serializer;
     }
 
     @Bean
@@ -87,6 +103,9 @@ public class SecurityConfiguration {
 
     @Bean
     SessionAuthenticationStrategy sessionAuthenticationStrategy() {
-        return new ChangeSessionIdAuthenticationStrategy();
+        return new org.springframework.security.web.authentication.session.CompositeSessionAuthenticationStrategy(
+                java.util.List.of(new ChangeSessionIdAuthenticationStrategy(),
+                        new org.springframework.security.web.csrf.CsrfAuthenticationStrategy(
+                                new org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository())));
     }
 }

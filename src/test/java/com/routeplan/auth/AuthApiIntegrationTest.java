@@ -16,7 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpSession;
+import jakarta.servlet.http.Cookie;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -54,14 +54,14 @@ class AuthApiIntegrationTest {
                 .andExpect(jsonPath("$.authenticated").value(true))
                 .andExpect(jsonPath("$.user.email").value("traveler@example.com"))
                 .andReturn();
-        MockHttpSession session = (MockHttpSession) signup.getRequest().getSession(false);
+        Cookie session = signup.getResponse().getCookie("ROUTEPLAN_SESSION");
 
         assertThat(session).isNotNull();
         User saved = userRepository.findByEmailIgnoreCase("traveler@example.com").orElseThrow();
         assertThat(saved.getPasswordHash()).isNotEqualTo("routeplan12!");
         assertThat(passwordEncoder.matches("routeplan12!", saved.getPasswordHash())).isTrue();
 
-        mockMvc.perform(get("/api/v1/auth/me").session(session))
+        mockMvc.perform(get("/api/v1/auth/me").cookie(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.authenticated").value(true))
                 .andExpect(jsonPath("$.user.id").value(saved.getId()))
@@ -105,15 +105,15 @@ class AuthApiIntegrationTest {
         MvcResult strangerSignup = signup(
                 "stranger@example.com", "auth-stranger", "routeplan12!"
         ).andExpect(status().isCreated()).andReturn();
-        MockHttpSession ownerSession = (MockHttpSession) ownerSignup.getRequest().getSession(false);
-        MockHttpSession strangerSession = (MockHttpSession) strangerSignup.getRequest().getSession(false);
+        Cookie ownerSession = ownerSignup.getResponse().getCookie("ROUTEPLAN_SESSION");
+        Cookie strangerSession = strangerSignup.getResponse().getCookie("ROUTEPLAN_SESSION");
         Number ownerId = JsonPath.read(ownerSignup.getResponse().getContentAsString(), "$.user.id");
         Number strangerId = JsonPath.read(
                 strangerSignup.getResponse().getContentAsString(), "$.user.id"
         );
 
         MvcResult created = mockMvc.perform(post("/api/v1/trips")
-                        .session(ownerSession)
+                        .cookie(ownerSession)
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -133,19 +133,19 @@ class AuthApiIntegrationTest {
                 .andReturn();
         Number tripId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
 
-        mockMvc.perform(get("/api/v1/trips").session(ownerSession))
+        mockMvc.perform(get("/api/v1/trips").cookie(ownerSession))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].id").value(tripId.longValue()))
                 .andExpect(jsonPath("$[0].name").value("세션 소유권 여행"))
                 .andExpect(jsonPath("$[0].placeCount").value(0));
 
-        mockMvc.perform(get("/api/v1/trips").session(strangerSession))
+        mockMvc.perform(get("/api/v1/trips").cookie(strangerSession))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
 
         mockMvc.perform(get("/api/v1/trips/{tripId}", tripId.longValue())
-                        .session(strangerSession))
+                        .cookie(strangerSession))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
     }

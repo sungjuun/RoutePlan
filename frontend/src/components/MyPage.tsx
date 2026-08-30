@@ -7,6 +7,7 @@ import { PreferencesPanel } from './PreferencesPanel'
 import { ModerationPanel } from './ModerationPanel'
 import { ProfileImageEditor } from './ProfileImageEditor'
 import { UserAvatar } from './UserAvatar'
+import { AccountSecurityPanel } from './AccountSecurityPanel'
 
 interface Props {
   user: User
@@ -14,10 +15,11 @@ interface Props {
   onNewTrip: () => void
   onLogout: () => void
   onError: (error: unknown) => void
-  onUserChanged: (user: User) => void
+  onUserChanged: (user: Pick<User, 'id'> & Partial<Pick<User, 'profileImageUrl' | 'emailVerified'>>) => void
+  onPasswordChanged: () => void
 }
 
-export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError, onUserChanged }: Props) {
+export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError, onUserChanged, onPasswordChanged }: Props) {
   const [trips, setTrips] = useState<TripSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
@@ -54,7 +56,8 @@ export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError, onUser
 
       <section className="account-content profile-layout">
         <div className="profile-main">
-          <ProfileImageEditor user={user} onChanged={onUserChanged} />
+          <ProfileImageEditor user={user} onChanged={next => onUserChanged({ id: next.id, profileImageUrl: next.profileImageUrl })} />
+          <AccountSecurityPanel user={user} onUserChanged={next => onUserChanged({ id: next.id, emailVerified: next.emailVerified })} onPasswordChanged={onPasswordChanged} />
           {loading ? (
             <AsyncState kind="loading" title="여행 현황을 불러오는 중입니다" className="profile-data-state" />
           ) : loadFailed ? (

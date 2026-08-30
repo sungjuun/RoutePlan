@@ -30,7 +30,8 @@ public class RoutePlanUserDetailsService implements UserDetailsService {
                 user.getEmail(),
                 user.getNickname(),
                 user.getPasswordHash(),
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                user.getSecurityVersion()
         );
     }
 }

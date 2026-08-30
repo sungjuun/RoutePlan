@@ -7,6 +7,9 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
+import java.time.Duration;
+import java.util.Locale;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -31,24 +34,96 @@ public class AuthController {
     private final SecurityContextRepository securityContextRepository;
     private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
     private final com.routeplan.user.application.ProfileImageService images;
+    private final AccountSecurityService accountSecurity;
+    private final AuthRateLimiter limits;
+    private final AuthMailQueue mail;
+    private final AuthMailSettings mailSettings;
 
     public AuthController(
             AuthService authService,
             AuthenticationManager authenticationManager,
             SecurityContextRepository securityContextRepository,
             SessionAuthenticationStrategy sessionAuthenticationStrategy,
-            com.routeplan.user.application.ProfileImageService images
+            com.routeplan.user.application.ProfileImageService images,
+            AccountSecurityService accountSecurity,
+            AuthRateLimiter limits,
+            AuthMailQueue mail,
+            AuthMailSettings mailSettings
     ) {
         this.authService = authService;
         this.authenticationManager = authenticationManager;
         this.securityContextRepository = securityContextRepository;
         this.sessionAuthenticationStrategy = sessionAuthenticationStrategy;
         this.images = images;
+        this.accountSecurity = accountSecurity;
+        this.limits = limits;
+        this.mail = mail;
+        this.mailSettings = mailSettings;
     }
 
     @GetMapping("/csrf")
     public CsrfView csrf(CsrfToken token) {
         return new CsrfView(token.getHeaderName(), token.getToken());
+    }
+
+    @GetMapping("/options")
+    public AuthOptions options() { return new AuthOptions(mailSettings.mode()); }
+
+    @PostMapping("/email/verification-request")
+    public ResponseEntity<Void> requestVerification(@AuthenticationPrincipal RoutePlanPrincipal principal) {
+        requireMail();
+        limits.require("verify-user", principal.userId().toString(), 1, Duration.ofMinutes(1));
+        mail.enqueue(principal.email(), "VERIFY_EMAIL");
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/email/verify")
+    public ResponseEntity<Void> verifyEmail(@Valid @RequestBody TokenRequest body, HttpServletRequest request) {
+        limitRedemption(request);
+        accountSecurity.verifyEmail(body.token());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/password/reset-request")
+    public ResponseEntity<MessageView> requestPasswordReset(@Valid @RequestBody EmailRequest body, HttpServletRequest request) {
+        requireMail();
+        limits.require("reset-ip", limits.clientAddress(request), 20, Duration.ofMinutes(15));
+        String email = body.email().strip().toLowerCase(Locale.ROOT);
+        if (limits.consume("reset-email", email, 3, Duration.ofMinutes(15)) == 0) {
+            mail.enqueue(email, "RESET_PASSWORD");
+        }
+        return ResponseEntity.accepted().body(new MessageView("가입된 이메일이라면 비밀번호 재설정 메일을 보냈습니다. 메일함을 확인해 주세요."));
+    }
+
+    @PostMapping("/password/reset")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest body, HttpServletRequest request) {
+        limitRedemption(request);
+        accountSecurity.resetPassword(body.token(), body.newPassword());
+        clearSession(request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/password/change")
+    public ResponseEntity<Void> changePassword(@AuthenticationPrincipal RoutePlanPrincipal principal,
+            @Valid @RequestBody ChangePasswordRequest body, HttpServletRequest request) {
+        limits.require("change-user", principal.userId().toString(), 5, Duration.ofMinutes(15));
+        accountSecurity.changePassword(principal, body.currentPassword(), body.newPassword());
+        clearSession(request);
+        return ResponseEntity.noContent().build();
+    }
+
+    private void limitRedemption(HttpServletRequest request) {
+        limits.require("token-ip", limits.clientAddress(request), 30, Duration.ofMinutes(15));
+    }
+
+    private void requireMail() {
+        if (!mailSettings.enabled()) throw new com.routeplan.common.error.RoutePlanException(
+                com.routeplan.common.error.ErrorCode.AUTH_MAIL_DISABLED);
+    }
+
+    private void clearSession(HttpServletRequest request) {
+        if (request.getSession(false) != null) request.getSession(false).invalidate();
+        SecurityContextHolder.clearContext();
     }
 
     @GetMapping("/me")
@@ -67,6 +142,7 @@ public class AuthController {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
+        limits.require("signup-ip", limits.clientAddress(request), 20, Duration.ofHours(1));
         authService.register(body.email(), body.nickname(), body.password());
         Authentication authentication = authenticate(
                 body.email(), body.password(), request, response
@@ -80,6 +156,8 @@ public class AuthController {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
+        limits.require("login-ip", limits.clientAddress(request), 100, Duration.ofMinutes(15));
+        limits.require("login-email", body.email().strip().toLowerCase(Locale.ROOT), 10, Duration.ofMinutes(15));
         return session(authenticate(body.email(), body.password(), request, response));
     }
 
@@ -107,7 +185,7 @@ public class AuthController {
 
     private AuthUserView userView(RoutePlanPrincipal principal) {
         return new AuthUserView(principal.userId(), principal.email(), principal.nickname(),
-                principal.createdAt(), images.url(principal.userId()));
+                principal.createdAt(), images.url(principal.userId()), accountSecurity.emailVerified(principal.userId()));
     }
 
     public record SignupRequest(
@@ -129,5 +207,13 @@ public class AuthController {
     public record AuthSessionView(boolean authenticated, AuthUserView user) {
     }
 
-    public record AuthUserView(Long id, String email, String nickname, Instant createdAt, String profileImageUrl) {}
+    public record AuthUserView(Long id, String email, String nickname, Instant createdAt, String profileImageUrl, boolean emailVerified) {}
+    public record AuthOptions(AuthMailSettings.Mode mailMode) { }
+    public record MessageView(String message) { }
+    public record EmailRequest(@NotBlank @Email @Size(max = 254) String email) { }
+    public record TokenRequest(@NotBlank @Size(max = 128) String token) { }
+    public record ResetPasswordRequest(@NotBlank @Size(max = 128) String token,
+            @NotBlank @Size(min = 10, max = 72) String newPassword) { }
+    public record ChangePasswordRequest(@NotBlank @Size(max = 72) String currentPassword,
+            @NotBlank @Size(min = 10, max = 72) String newPassword) { }
 }

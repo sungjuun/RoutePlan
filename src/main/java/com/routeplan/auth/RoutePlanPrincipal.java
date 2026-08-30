@@ -8,7 +8,7 @@ import java.util.List;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
-public final class RoutePlanPrincipal implements UserDetails, Serializable {
+public final class RoutePlanPrincipal implements UserDetails, Serializable, org.springframework.security.core.CredentialsContainer {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -16,8 +16,9 @@ public final class RoutePlanPrincipal implements UserDetails, Serializable {
     private final Long userId;
     private final String email;
     private final String nickname;
-    private final String passwordHash;
+    private transient String passwordHash;
     private final Instant createdAt;
+    private final long securityVersion;
 
     public RoutePlanPrincipal(
             Long userId,
@@ -26,12 +27,23 @@ public final class RoutePlanPrincipal implements UserDetails, Serializable {
             String passwordHash,
             Instant createdAt
     ) {
+        this(userId, email, nickname, passwordHash, createdAt, 0);
+    }
+
+    public RoutePlanPrincipal(Long userId, String email, String nickname, String passwordHash,
+                              Instant createdAt, long securityVersion) {
         this.userId = userId;
         this.email = email;
         this.nickname = nickname;
         this.passwordHash = passwordHash;
         this.createdAt = createdAt;
+        this.securityVersion = securityVersion;
     }
+
+    public long securityVersion() { return securityVersion; }
+
+    @Override
+    public void eraseCredentials() { passwordHash = null; }
 
     public Long userId() {
         return userId;

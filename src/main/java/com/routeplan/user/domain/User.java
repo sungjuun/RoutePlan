@@ -26,6 +26,12 @@ public class User {
     @Column(name = "password_hash", length = 255)
     private String passwordHash;
 
+    @Column(name = "email_verified_at")
+    private Instant emailVerifiedAt;
+
+    @Column(name = "security_version", nullable = false)
+    private long securityVersion;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -91,6 +97,10 @@ public class User {
     public String getPasswordHash() {
         return passwordHash;
     }
+
+    public boolean isEmailVerified() { return emailVerifiedAt != null; }
+
+    public long getSecurityVersion() { return securityVersion; }
 
     public Instant getCreatedAt() {
         return createdAt;

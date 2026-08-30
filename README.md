@@ -66,9 +66,11 @@ V17은 실제 예보·영업시간·현지 출발시각을 연결하고 날짜/�
 
 V18은 [영업시간·대중교통 정확도, 주기적 예보, 프로필 사진, 벨 알림함](docs/schedule-accuracy-profile.md)을 추가합니다.
 
+V19는 [이메일 인증·비밀번호 재설정/변경·로그인 시도 제한·DB 영속 세션](docs/account-security.md)을 추가합니다. 로컬 인증 메일은 [개발 메일함](http://localhost:8026)에서 확인하며 실제 외부 발송에는 별도 SMTP 설정이 필요합니다.
+
 설정과 사용법은 [실제 데이터·개인화·장부 안내](docs/advanced-integrations.md), 외부 API 검증 결과는 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 참고하세요. **2026-08-28 로컬 환경에서 날씨·영업시간·도보 경로·현지 날짜를 반영한 대중교통 응답과 Google 한국어 지도·실제 경로선 표시를 확인했습니다.** 대표 표본 검증이며 실제 청구액·무료 잔량·운영 환경 검증은 별도입니다. 다른 환경에서는 서버·브라우저 키와 해당 API 활성화가 필요합니다.
 
-## 구현 범위 (V1–V18)
+## 구현 범위 (V1–V19)
 
 ### 지원
 
@@ -83,6 +85,10 @@ V18은 [영업시간·대중교통 정확도, 주기적 예보, 프로필 사진
 - 마이페이지 여행 취향과 근거가 있는 공개 루트 개인화 추천
 - 댓글·후기·신고·운영자 숨김/기각·작성자 권한·시간당 작성 제한
 - 이메일·닉네임·비밀번호 회원가입과 로그인·로그아웃
+- 이메일 인증·재발송, 비밀번호 재설정·현재 비밀번호 확인 후 변경
+- 단일 사용·만료 토큰, 비동기 메일 큐·로컬 개발 메일함
+- PostgreSQL 기반 로그인/복구 요청 제한, 서버 재시작 후 유지되는 세션
+- 비밀번호 변경 시 모든 기기 세션 해제·인증 버전 검증
 - BCrypt 기반 적응형 비밀번호 해시와 HttpOnly 세션 쿠키
 - CSRF 보호와 인증 실패·권한 거부 표준 JSON 응답
 - 로그인 사용자를 기준으로 한 Trip·Itinerary 소유권 검사
@@ -171,7 +177,7 @@ V18은 [영업시간·대중교통 정확도, 주기적 예보, 프로필 사진
 - DB 영속 Route Matrix
 - 제공자 7일 범위 밖의 공휴일 예외 자동 확정, 시간 의존 전역 최적화
 - QueryDSL, PostGIS
-- OAuth·이메일 인증·비밀번호 재설정, 다중 턴 AI 대화, AI의 장소 자동 추가
+- OAuth·MFA, 다중 턴 AI 대화, AI의 장소 자동 추가
 
 기본 `SIMPLE` 모드의 `estimatedTravelMinutes`는 직선거리와 고정 평균속도로 계산한 추정치입니다. `GOOGLE` Route Provider를 활성화하면 Google Routes API가 반환한 실제 경로 거리와 이동시간을 사용합니다.
 
@@ -512,7 +518,7 @@ Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하�
 
 ## API
 
-공개 Route 조회와 인증 상태 확인을 제외한 API는 로그인이 필요합니다. 클라이언트가 `userId`를 보내더라도 소유자는 요청 본문이 아니라 서버 세션의 사용자로 결정됩니다. 상태 변경 요청은 먼저 CSRF 토큰을 조회해 서버가 알려준 헤더에 전달해야 합니다.
+공개 Route 조회·회원가입/로그인·인증 상태 확인·이메일 링크 인증/비밀번호 복구를 제외한 업무 API는 로그인이 필요합니다. 클라이언트가 `userId`를 보내더라도 소유자는 요청 본문이 아니라 서버 세션의 사용자로 결정됩니다. 공개 복구 API를 포함한 모든 상태 변경 요청은 먼저 CSRF 토큰을 조회해 서버가 알려준 헤더에 전달해야 합니다. 새 계정 보안 API와 한도는 [V19 안내](docs/account-security.md)를 참고하세요.
 
 | Method | Endpoint | 기능 |
 |---|---|---|
@@ -751,7 +757,7 @@ ROUTEPLAN_EXTERNAL_RETRY_JITTER=0.2
 docker compose up --build
 ```
 
-Frontend는 `http://localhost:3100`, Backend는 `http://localhost:8180`, PostgreSQL은 `localhost:5432`, Redis는 `localhost:6379`에서 실행됩니다.
+Frontend는 `http://localhost:3100`, Backend는 `http://localhost:8180`, PostgreSQL은 `localhost:5432`, Redis는 `localhost:6379`에서 실행됩니다. 개발 메일함은 [localhost:8026](http://localhost:8026)이며 호스트의 loopback에만 공개합니다. 로컬 기본값은 실제 외부 이메일을 보내지 않습니다.
 이미 사용 중인 포트가 있다면 `.env`의 `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`를 변경할 수 있습니다.
 Backend 컨테이너 healthcheck는 Swagger 문서가 아니라 `/actuator/health/readiness`를 사용합니다.
 첫 화면에서 공개 추천 루트를 확인할 수 있으며, 여행 생성·좋아요·복사·공개 기능은 회원가입 또는 로그인 후 사용할 수 있습니다.
@@ -835,7 +841,7 @@ npm run test:e2e:docker
 
 `test:e2e:docker`는 개발용 `localhost:3100`과 DB를 건드리지 않습니다. `routeplan-e2e` 프로젝트를 기본 포트 `3200`·`8280`·`55432`·`6479`에 띄우고, 테스트가 끝나면 전용 컨테이너와 DB 볼륨을 제거합니다. 이미 실행 중인 환경을 직접 검사할 때는 `E2E_BASE_URL`을 지정하고 `npm run test:e2e`를 사용합니다. 실패 시 `frontend/playwright-report`와 `frontend/test-results`에 Screenshot·Video·Trace·Compose 로그를 남깁니다.
 
-현재 기본 검증 묶음은 Backend 100개, Frontend 단위 테스트 34개, 브라우저 E2E 6개를 실행합니다. Backend 통합 테스트는 PostgreSQL Testcontainers로 Flyway V1–V13과 세션 인증·CSRF·소유권 경계를 함께 확인합니다. 경로 출처 표시 수정에는 Google/직선거리 추정 분기를 확인하는 프론트 회귀 테스트 2개를 추가했습니다. 실제 Google 경로 검증 결과와 각 검증의 실행 범위는 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 확인하세요.
+V19 검증은 기존 여행·지도·프로필 회귀 테스트에 이메일/비밀번호/요청 제한·DB 세션 테스트를 추가합니다. PostgreSQL Testcontainers로 Flyway V1–V15를 적용하며, 전용 E2E 메일함(8027)에서 실제 SMTP 수신과 테스트 백엔드 재시작 후 로그인 유지를 확인합니다. 자세한 실행 범위는 [회원·보안 안내](docs/account-security.md), 실제 Google 응답 검증은 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 확인하세요.
 
 `.github/workflows/ci.yml`은 push와 pull request마다 Backend와 Frontend Job을 병렬 실행하고, 둘 다 통과하면 격리된 Docker 환경에서 Browser E2E Job을 실행합니다. Backend는 Java 21과 Testcontainers PostgreSQL로 전체 테스트를 수행하고, Frontend는 Node.js 22에서 고정된 lockfile로 설치한 뒤 단위 테스트, ESLint, 프로덕션 빌드를 모두 통과해야 합니다. Benchmark는 실행시간 변동과 비용 때문에 일반 CI에서 분리합니다.
 
@@ -966,6 +972,8 @@ V15 장소 환경·날짜별 날씨·날씨 대응 일정 생성과 재최적화
 V16 통화·고정비·장소 비용·전체 예산 제약·비용 Snapshot 재최적화 ✓
 V17 자동 예보·영업시간·현지 시간·도로 지도·실제 지출·취향 추천·댓글/후기/신고 ✓
     2026-08-28 대표 경로 API·대중교통·Google 지도 실검증 및 출처 표시 수정 완료
+V18 분할/야간 영업·방문 종료시각 대중교통·주기적 예보·프로필 사진·벨 알림함 ✓
+V19 이메일 인증·비밀번호 복구/변경·로그인 제한·PostgreSQL 영속 세션 ✓
 ```
 
 ## Performance Benchmark
@@ -1042,7 +1050,7 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 예산 배치는 Priority 기반 결정적 휴리스틱으로 가능한 모든 장소 조합의 최대 만족도나 최소 비용을 보장하지 않습니다.
 - 일정 선택에는 여행 전체 예상 예산만 적용합니다. 날짜별·항목별 한도는 실제 지출 장부에서 독립적으로 비교하며 예상 비용과 합산하지 않습니다.
 - 개인 예산과 비용은 SharedRoute 공개 Snapshot이나 복사에 포함하지 않습니다. 이전 버전에서 비용이 미입력인 완료 구간에는 예산을 적용할 수 없으므로 제한을 해제하거나 전체 새 일정을 계산해야 합니다.
-- 계정 이메일 검증, 비밀번호 재설정, OAuth 로그인과 로그인 시도 Rate Limit은 아직 지원하지 않습니다.
+- OAuth·MFA는 아직 지원하지 않습니다. 이메일 인증은 기존 회원의 접근을 차단하지 않는 선택적 소유 확인이며, 실제 외부 메일 발송은 SMTP·발신 도메인 설정 후 검증해야 합니다.
 - 기본 `HttpSession`은 단일 Backend 메모리에 있으므로 다중 인스턴스 배포 전에는 외부 Session Store와 만료 정책을 구성해야 합니다.
 - Route 복사 시 방문 장소·Priority·Must Visit만 옮기며 공개 당시 선호 시간창은 복사하지 않습니다.
 - 조회수는 상세 요청마다 증가하며 사용자·세션별 중복 조회를 제거하지 않습니다.

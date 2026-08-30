@@ -17,10 +17,12 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuthMailQueue mail;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, AuthMailQueue mail) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.mail = mail;
     }
 
     @Transactional
@@ -33,18 +35,20 @@ public class AuthService {
         if (userRepository.existsByNickname(nickname.strip())) {
             throw new RoutePlanException(ErrorCode.DUPLICATE_NICKNAME);
         }
-        return userRepository.save(User.register(
+        User user = userRepository.saveAndFlush(User.register(
                 email,
                 nickname,
                 passwordEncoder.encode(rawPassword)
         ));
+        mail.enqueue(email, "VERIFY_EMAIL");
+        return user;
     }
 
     private String normalizeEmail(String email) {
         return email.strip().toLowerCase(Locale.ROOT);
     }
 
-    private void validatePassword(String password) {
+    static void validatePassword(String password) {
         if (password == null || password.length() < 10) {
             throw new IllegalArgumentException("비밀번호는 10자 이상이어야 합니다.");
         }

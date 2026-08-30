@@ -24,6 +24,16 @@ import org.springframework.security.core.AuthenticationException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(com.routeplan.auth.AuthRateLimitException.class)
+    ResponseEntity<ErrorResponse> handleAuthRateLimit(
+            com.routeplan.auth.AuthRateLimitException exception, HttpServletRequest request
+    ) {
+        ResponseEntity<ErrorResponse> result = response(exception.errorCode(), exception.getMessage(), request);
+        return ResponseEntity.status(result.getStatusCode())
+                .header("Retry-After", Long.toString(exception.retryAfterSeconds()))
+                .body(result.getBody());
+    }
+
     @ExceptionHandler(BudgetConstraintException.class)
     ResponseEntity<ErrorResponse> handleBudgetConstraint(
             BudgetConstraintException exception, HttpServletRequest request

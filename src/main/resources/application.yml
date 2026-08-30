@@ -19,6 +19,24 @@ spring:
           time_zone: UTC
   flyway:
     enabled: true
+  session:
+    jdbc:
+      initialize-schema: never
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    default-encoding: UTF-8
+    properties:
+      "[mail.smtp.auth]": ${SMTP_AUTH:false}
+      "[mail.smtp.starttls.enable]": ${SMTP_STARTTLS:false}
+      "[mail.smtp.starttls.required]": ${SMTP_STARTTLS:false}
+      "[mail.smtp.ssl.enable]": ${SMTP_SSL:false}
+      "[mail.smtp.ssl.checkserveridentity]": true
+      "[mail.smtp.connectiontimeout]": 5000
+      "[mail.smtp.timeout]": 5000
+      "[mail.smtp.writetimeout]": 5000
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -54,6 +72,8 @@ management:
         readiness:
           include: readinessState,db
   health:
+    mail:
+      enabled: false
     redis:
       enabled: false
   info:
@@ -73,6 +93,11 @@ logging:
     level: "%5p [cid:%X{correlationId:-none}]"
 
 routeplan:
+  auth:
+    mail-mode: ${ROUTEPLAN_AUTH_MAIL_MODE:DISABLED}
+    public-url: ${ROUTEPLAN_PUBLIC_URL:http://localhost:3100}
+    mail-from: ${SMTP_FROM:RoutePlan <noreply@routeplan.local>}
+    trusted-proxies: ${ROUTEPLAN_AUTH_TRUSTED_PROXIES:}
   community:
     moderator-emails: ${ROUTEPLAN_MODERATOR_EMAILS:}
   external:

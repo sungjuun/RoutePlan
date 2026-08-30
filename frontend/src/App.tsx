@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Compass, LoaderCircle, MapPinned, MessageSquareText, Route, Settings2, UsersRound } from 'lucide-react'
 import { ApiError, api } from './api/client'
 import { AppHeader } from './components/AppHeader'
-import { AuthPage } from './components/AuthPage'
 import { CommunityWorkspace } from './components/CommunityWorkspace'
 import { ItineraryWorkspace } from './components/ItineraryWorkspace'
 import { LandingPage } from './components/LandingPage'
@@ -16,8 +15,11 @@ import { Toast } from './components/Toast'
 import type { Notification } from './components/NotificationCenter'
 import { clearTripReference, saveWorkspace } from './lib/storage'
 import type { Itinerary, Place, Trip, User } from './types'
+import { parseAccountLink } from './lib/accountSecurity'
 
 const MyPage = lazy(() => import('./components/MyPage').then(module => ({ default: module.MyPage })))
+const AuthPage = lazy(() => import('./components/AuthPage').then(module => ({ default: module.AuthPage })))
+const AccountLinkPage = lazy(() => import('./components/AccountLinkPage').then(module => ({ default: module.AccountLinkPage })))
 const NotificationCenter = lazy(() => import('./components/NotificationCenter').then(module => ({ default: module.NotificationCenter })))
 
 type Section = 'places' | 'itinerary' | 'settings' | 'community' | 'natural-language'
@@ -31,6 +33,8 @@ interface Notice {
 }
 
 export function App() {
+  const initialAccountLink = useMemo(() => parseAccountLink(window.location.hash), [])
+  const [accountLink, setAccountLink] = useState(initialAccountLink)
   const requestedTripId = useMemo(() => {
     const value = Number(new URLSearchParams(window.location.search).get('tripId'))
     return Number.isSafeInteger(value) && value > 0 ? value : null
@@ -49,6 +53,19 @@ export function App() {
   const [notice, setNotice] = useState<Notice | null>(null)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const noticeId = useRef(0)
+
+  useEffect(() => {
+    if (parseAccountLink(window.location.hash)) window.history.replaceState(null, '', window.location.pathname)
+    const onLink = () => {
+      const next = parseAccountLink(window.location.hash)
+      if (next) {
+        setAccountLink(next)
+        window.history.replaceState(null, '', window.location.pathname)
+      }
+    }
+    window.addEventListener('hashchange', onLink)
+    return () => window.removeEventListener('hashchange', onLink)
+  }, [])
 
   const notify = useCallback((kind: Notice['kind'], message: string) => {
     setNotice(kind === 'error' ? { kind, message } : null)
@@ -116,7 +133,7 @@ export function App() {
         const session = await api.getAuthSession()
         if (cancelled) return
         setUser(session.user)
-        if (requestedTripId != null) {
+        if (requestedTripId != null && !initialAccountLink) {
           if (session.user) await loadTrip(requestedTripId)
           else {
             setAfterAuth('requested-trip')
@@ -133,7 +150,7 @@ export function App() {
     }
     void boot()
     return () => { cancelled = true }
-  }, [loadTrip, notify, reportError, requestedTripId])
+  }, [loadTrip, notify, reportError, requestedTripId, initialAccountLink])
 
   const showAuth = (mode: AuthMode, next: AfterAuth = 'home') => {
     setAuthMode(mode)
@@ -144,6 +161,34 @@ export function App() {
   const showHome = () => {
     setPage('home')
     window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  const clearAccountSession = () => {
+    setUser(null)
+    setTrip(null)
+    setItinerary(null)
+    setPreviousItinerary(null)
+    setItineraryPlaces({})
+    setNotifications([])
+    setNotice(null)
+    clearTripReference()
+    window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  const passwordChanged = () => {
+    clearAccountSession()
+    showAuth('login')
+    notify('info', '비밀번호를 변경했습니다. 모든 기기에서 로그아웃했으니 새 비밀번호로 로그인해 주세요.')
+  }
+
+  const closeAccountLink = async () => {
+    setAccountLink(null)
+    try {
+      const session = await api.getAuthSession()
+      setUser(session.user)
+      if (session.user) setPage('profile')
+      else showAuth('login')
+    } catch (error) { reportError(error); showAuth('login') }
   }
 
   const showCommunity = (region = '') => {
@@ -259,11 +304,15 @@ export function App() {
     return <main className="app-loading" aria-live="polite"><div className="brand-mark"><Route size={25} /></div><LoaderCircle className="spin" size={25} /><p>RoutePlan을 준비하는 중입니다</p></main>
   }
 
+  if (accountLink) {
+    return <Suspense fallback={<p role="status">계정 보안 화면을 불러오는 중…</p>}><AccountLinkPage key={`${accountLink.kind}-${accountLink.token}`} link={accountLink} onSessionRevoked={clearAccountSession} onClose={() => void closeAccountLink()} /></Suspense>
+  }
+
   const notificationCenter = <Suspense fallback={<span className="icon-button" aria-label="알림 준비 중" />}><NotificationCenter items={notifications} onRead={() => setNotifications(current => current.map(item => ({ ...item, read: true })))} onClear={() => setNotifications([])} /></Suspense>
   const errorNotice = <Toast notice={notice} onClose={() => setNotice(null)} />
 
   if (page === 'auth') {
-    return <>{errorNotice}<AuthPage initialMode={authMode} onAuthenticated={handleAuthenticated} onBack={showHome} onError={reportError} /></>
+    return <>{errorNotice}<Suspense fallback={<p role="status">로그인 화면을 불러오는 중…</p>}><AuthPage initialMode={authMode} onAuthenticated={handleAuthenticated} onBack={showHome} onError={reportError} /></Suspense></>
   }
 
   if (page !== 'workspace') {
@@ -275,7 +324,7 @@ export function App() {
         {page === 'community' && <PublicCommunityPage user={user} initialRegion={communityRegion} onRequireAuth={() => showAuth('login', 'create-trip')} onCreateTrip={createTrip} onError={reportError} />}
         {page === 'create-trip' && <TripSetup onReady={handleTripReady} onError={reportError} />}
         {page === 'trips' && <MyTripsPage onOpenTrip={(tripId) => void loadTrip(tripId)} onNewTrip={createTrip} onError={reportError} />}
-        {page === 'profile' && user && <Suspense fallback={<p role="status">마이페이지를 불러오는 중…</p>}><MyPage user={user} onUserChanged={next => setUser(current => current?.id === next.id ? { ...current, profileImageUrl: next.profileImageUrl } : current)} onOpenTrips={openMyTrips} onNewTrip={createTrip} onLogout={() => void logout()} onError={reportError} /></Suspense>}
+        {page === 'profile' && user && <Suspense fallback={<p role="status">마이페이지를 불러오는 중…</p>}><MyPage user={user} onUserChanged={next => setUser(current => current?.id === next.id ? { ...current, ...next } : current)} onPasswordChanged={passwordChanged} onOpenTrips={openMyTrips} onNewTrip={createTrip} onLogout={() => void logout()} onError={reportError} /></Suspense>}
       </div>
     )
   }

@@ -25,6 +25,16 @@ services:
       timeout: 3s
       retries: 10
 
+  # Development-only mailbox. SMTP stays internal; the UI is bound to the local machine.
+  mailpit:
+    image: axllent/mailpit:v1.27.4
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8026}:8025"
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_MAX_AGE: 24h
+      MP_DISABLE_VERSION_CHECK: "true"
+
   backend:
     build:
       context: .
@@ -47,6 +57,17 @@ services:
       ROUTEPLAN_EXTERNAL_RETRY_MULTIPLIER: ${ROUTEPLAN_EXTERNAL_RETRY_MULTIPLIER:-2.0}
       ROUTEPLAN_EXTERNAL_RETRY_JITTER: ${ROUTEPLAN_EXTERNAL_RETRY_JITTER:-0.2}
       ROUTEPLAN_SESSION_TIMEOUT: ${ROUTEPLAN_SESSION_TIMEOUT:-12h}
+      ROUTEPLAN_AUTH_MAIL_MODE: ${ROUTEPLAN_AUTH_MAIL_MODE:-LOCAL}
+      ROUTEPLAN_PUBLIC_URL: ${ROUTEPLAN_PUBLIC_URL:-http://localhost:3100}
+      ROUTEPLAN_AUTH_TRUSTED_PROXIES: ${ROUTEPLAN_AUTH_TRUSTED_PROXIES:-}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_AUTH: ${SMTP_AUTH:-false}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      SMTP_SSL: ${SMTP_SSL:-false}
+      SMTP_FROM: ${SMTP_FROM:-RoutePlan <noreply@routeplan.local>}
       ROUTEPLAN_WEATHER_AUTO_REFRESH_ENABLED: ${ROUTEPLAN_WEATHER_AUTO_REFRESH_ENABLED:-true}
       ROUTEPLAN_SESSION_COOKIE_SECURE: ${ROUTEPLAN_SESSION_COOKIE_SECURE:-false}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
@@ -72,6 +93,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      mailpit:
+        condition: service_started
 
   frontend:
     build:

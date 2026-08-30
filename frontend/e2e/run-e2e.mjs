@@ -8,10 +8,14 @@ const frontendDirectory = resolve(e2eDirectory, '..')
 const repositoryDirectory = resolve(frontendDirectory, '..')
 const composeFile = join(repositoryDirectory, 'compose.yaml')
 const projectName = process.env.E2E_COMPOSE_PROJECT ?? 'routeplan-e2e'
+if (!/^routeplan-e2e(?:-[a-z0-9-]+)?$/.test(projectName)) {
+  throw new Error('E2E_COMPOSE_PROJECT must start with routeplan-e2e; development stacks must never be removed.')
+}
 const frontendPort = process.env.E2E_FRONTEND_PORT ?? '3200'
 const backendPort = process.env.E2E_BACKEND_PORT ?? '8280'
 const postgresPort = process.env.E2E_POSTGRES_PORT ?? '55432'
 const redisPort = process.env.E2E_REDIS_PORT ?? '6479'
+const mailboxPort = process.env.E2E_MAILPIT_PORT ?? '8027'
 const baseURL = `http://127.0.0.1:${frontendPort}`
 const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker'
 const playwrightCli = join(
@@ -29,6 +33,21 @@ const commandEnvironment = {
   BACKEND_PORT: backendPort,
   FRONTEND_PORT: frontendPort,
   E2E_BASE_URL: baseURL,
+  MAILPIT_PORT: mailboxPort,
+  E2E_MAILBOX_URL: `http://127.0.0.1:${mailboxPort}`,
+  E2E_RESTART_PROJECT: projectName,
+  ROUTEPLAN_PUBLIC_URL: baseURL,
+  ROUTEPLAN_AUTH_MAIL_MODE: 'LOCAL',
+  ROUTEPLAN_AUTH_TRUSTED_PROXIES: '',
+  ROUTEPLAN_SESSION_COOKIE_SECURE: 'false',
+  SMTP_HOST: 'mailpit',
+  SMTP_PORT: '1025',
+  SMTP_USERNAME: '',
+  SMTP_PASSWORD: '',
+  SMTP_AUTH: 'false',
+  SMTP_STARTTLS: 'false',
+  SMTP_SSL: 'false',
+  SMTP_FROM: 'RoutePlan E2E <noreply@routeplan.test>',
   // Never reuse developer credentials or paid providers in the disposable test stack.
   ROUTEPLAN_PLACE_PROVIDER: 'DISABLED',
   ROUTEPLAN_ROUTE_PROVIDER: 'SIMPLE',

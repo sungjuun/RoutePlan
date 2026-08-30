@@ -14,12 +14,14 @@ vi.mock('../api/advanced', async (importOriginal) => ({
   advanced: { preferences: vi.fn(), moderator: vi.fn(), recommendations: vi.fn() },
 }))
 
-vi.mock('../api/client', () => ({
+vi.mock('../api/client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../api/client')>(),
   api: {
     discoverRoutes: vi.fn(),
     login: vi.fn(),
     signup: vi.fn(),
     getTrips: vi.fn(),
+    getAuthOptions: vi.fn().mockResolvedValue({ mailMode: 'LOCAL' }),
   },
 }))
 
@@ -129,6 +131,7 @@ describe('public RoutePlan experience', () => {
   it('shows account information and travel totals on my page', async () => {
     render(
       <MyPage
+        onPasswordChanged={vi.fn()}
         onUserChanged={vi.fn()}
         user={authenticated.user!}
         onOpenTrips={vi.fn()}
@@ -139,7 +142,7 @@ describe('public RoutePlan experience', () => {
     )
 
     expect(screen.getByText('여행자님의 여행 공간')).toBeInTheDocument()
-    expect(screen.getByText('traveler@example.com')).toBeInTheDocument()
+    expect(screen.getAllByText('traveler@example.com')).toHaveLength(2)
     await waitFor(() => expect(api.getTrips).toHaveBeenCalled())
     expect(screen.getByText('담은 장소')).toBeInTheDocument()
   })
