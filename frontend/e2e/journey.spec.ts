@@ -41,7 +41,7 @@ test.describe.serial('인증된 여행 생성과 공개 루트 재사용', () =>
     await page.screenshot({ path: testInfo.outputPath('advanced-spending-mobile.png'), fullPage: true })
     await page.setViewportSize({ width: 1440, height: 1000 })
     await page.getByRole('button', { name: '실제 도로 경로', exact: true }).click()
-    await expect(page.getByText(/GOOGLE_MAPS_BROWSER_KEY 설정/)).toBeVisible()
+    await expect(page.locator('.road-map')).toContainText(/Google Maps|GOOGLE_MAPS_BROWSER_KEY 설정/)
 
     await page.getByRole('button', { name: /루트 커뮤니티/ }).click()
     await expect(page.getByRole('heading', { name: /좋은 동선을 발견하고/ })).toBeVisible()

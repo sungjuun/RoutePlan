@@ -68,6 +68,29 @@ class RedisRouteLegCacheIntegrationTest {
         }
     }
 
+    @Test
+    void coordinatesRefreshWithAnOwnershipCheckedDistributedLock() {
+        try (RedisFixture fixture = fixture(REDIS.getHost(), REDIS.getMappedPort(REDIS_PORT))) {
+            RedisRouteLegCache cache = new RedisRouteLegCache(fixture.template(), properties());
+            RouteCacheKey key = key(TransportMode.WALKING);
+
+            RouteCacheLease leader = cache.acquireRefreshLock(Set.of(key));
+            RouteCacheLease follower = cache.acquireRefreshLock(Set.of(key));
+            assertThat(leader.acquired()).isTrue();
+            assertThat(follower.contended()).isTrue();
+
+            cache.putAll(Map.of(key, new RouteResult(1_250, 18)));
+            assertThat(cache.waitForRefresh(Set.of(key)).routes())
+                    .containsEntry(key, new RouteResult(1_250, 18));
+
+            follower.close();
+            leader.close();
+            try (RouteCacheLease next = cache.acquireRefreshLock(Set.of(key))) {
+                assertThat(next.acquired()).isTrue();
+            }
+        }
+    }
+
     private RedisFixture fixture(String host, int port) {
         RedisStandaloneConfiguration server = new RedisStandaloneConfiguration(host, port);
         LettuceClientConfiguration client = LettuceClientConfiguration.builder()
@@ -87,6 +110,9 @@ class RedisRouteLegCacheIntegrationTest {
         properties.setWalkingTtl(Duration.ofSeconds(30));
         properties.setDrivingTtl(Duration.ofSeconds(20));
         properties.setTransitTtl(Duration.ofSeconds(10));
+        properties.setRefreshLockTtl(Duration.ofSeconds(5));
+        properties.setRefreshWait(Duration.ofMillis(500));
+        properties.setRefreshPollInterval(Duration.ofMillis(25));
         return properties;
     }
 

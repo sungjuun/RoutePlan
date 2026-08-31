@@ -38,19 +38,22 @@ describe('live data and community', () => {
   it('shows durable API limits, quality and configured cost estimates', async () => {
     vi.spyOn(advanced, 'weatherRefreshSettings').mockResolvedValue({ enabled: false, nextRefreshAt: null, lastSuccessAt: null, lastError: null })
     vi.spyOn(advanced, 'zone').mockResolvedValue({ timeZoneId: 'Asia/Seoul' })
-    vi.spyOn(advanced, 'usage').mockResolvedValue([{
+    vi.spyOn(advanced, 'operations').mockResolvedValue({ usage: [{
       operation: 'OPENAI_RESPONSES', provider: 'openai', month: '2026-08-01',
       attemptedUnits: 8, limit: 10, remainingUnits: 2, usagePercent: 80, status: 'WARNING',
       attemptCount: 8, successCount: 7, failureCount: 1, successfulUnits: 7, failedUnits: 1, unclassifiedUnits: 0,
       successRatePercent: 87.5, averageLatencyMs: 420, maxLatencyMs: 900,
       inputTokens: 1200, outputTokens: 300, tokenLimit: 10000, remainingTokens: 8500,
       tokenUsagePercent: 15, estimatedCostUsd: 0.0036, costConfigured: true,
-    }])
+    }], providers: [{ provider: 'openai', state: 'CLOSED', consecutiveFailures: 0, openUntil: null, activeCalls: 0, maxConcurrentCalls: 20 }],
+    costs: [{ provider: 'openai', estimatedCostUsd: 0.0036, monthlyBudgetUsd: 10, budgetUsagePercent: 0, costConfigured: true }], alerts: [{ code: 'USAGE_OPENAI_RESPONSES', severity: 'WARNING', provider: 'openai', operation: 'OPENAI_RESPONSES', message: '앱 월간 안전 한도의 80.0%를 사용했습니다.' }] })
     render(<LiveDataPanel trip={trip} onError={vi.fn()} onRefreshed={vi.fn()} onBlockedChange={vi.fn()} />)
     fireEvent.click(screen.getByText('API 품질·비용 대시보드'))
     fireEvent.click(screen.getByRole('button', { name: '이번 달 운영 지표 조회' }))
     expect(await screen.findByText('OpenAI 여행 조건 해석')).toBeVisible()
     expect(screen.getByText('주의')).toBeVisible()
+    expect(screen.getByText(/활성 경고 1건/)).toBeVisible()
+    expect(screen.getByText(/연속 장애 0회/)).toBeVisible()
     expect(screen.getByText('87.5%')).toBeVisible()
     expect(screen.getByText(/설정 단가 기준 추정 \$0.003600/)).toBeVisible()
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '80')

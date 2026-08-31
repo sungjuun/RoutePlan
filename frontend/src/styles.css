@@ -905,10 +905,24 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; letter-spacing: -.03
 .usage-card dl div { min-width: 0; }
 .usage-card dt { color: #738078; font-size: 10px; }
 .usage-card dd { margin: 3px 0 0; font-size: 11px; overflow-wrap: anywhere; }
+.operations-alerts { margin: 12px 0; padding: 12px; border: 1px solid #efc8a4; border-radius: 10px; background: #fffaf3; }
+.operations-alerts h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13px; }
+.operations-alert { margin: 6px 0; padding: 7px 9px; border-radius: 7px; font-size: 11px; line-height: 1.5; background: #fff0cc; color: #714d08; }
+.operations-alert-critical { background: #ffe2df; color: #8d3029; }
+.operations-healthy { display: flex; align-items: center; gap: 6px; margin: 12px 0; color: #2f6d50; font-size: 12px; font-weight: 700; }
+.provider-health-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+.provider-health { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding: 10px; border: 1px solid #cfe2d7; border-radius: 9px; background: #f7fbf8; font-size: 11px; }
+.provider-health span { color: #2f6d50; font-weight: 700; }
+.provider-health small { grid-column: 1 / -1; }
+.provider-health-open, .provider-health-half-open { border-color: #efb8b2; background: #fff7f6; }
+.provider-health-open span, .provider-health-half-open span { color: #a33b32; }
+.provider-costs { margin: 10px 0; padding: 9px 11px; border-radius: 8px; background: #f4f6f5; font-size: 11px; }
+.provider-costs p { margin: 4px 0; }
 
 @media (max-width: 540px) {
   .advanced-grid { grid-template-columns: 1fr; }
   .usage-grid { grid-template-columns: 1fr; }
+  .provider-health-grid { grid-template-columns: 1fr; }
   .advanced-panel { padding: 14px; }
   .google-road-canvas { height: 330px; }
   .trip-form, .manual-place-form, .place-constraints, .reopt-form-grid { grid-template-columns: 1fr; }

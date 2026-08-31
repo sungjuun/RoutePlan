@@ -16,6 +16,8 @@ public class ExternalUsageProperties {
     private BigDecimal googleGeometryUsdPerThousand = BigDecimal.ZERO;
     private BigDecimal openAiInputUsdPerMillion = BigDecimal.ZERO;
     private BigDecimal openAiOutputUsdPerMillion = BigDecimal.ZERO;
+    private BigDecimal googleMonthlyBudgetUsd = BigDecimal.ZERO;
+    private BigDecimal openAiMonthlyBudgetUsd = BigDecimal.ZERO;
 
     public void validate() {
         if (warningPercent < 1 || warningPercent > 100) {
@@ -29,7 +31,9 @@ public class ExternalUsageProperties {
                 || googleRoutesUsdPerThousand.signum() < 0
                 || googleGeometryUsdPerThousand.signum() < 0
                 || openAiInputUsdPerMillion.signum() < 0
-                || openAiOutputUsdPerMillion.signum() < 0) {
+                || openAiOutputUsdPerMillion.signum() < 0
+                || googleMonthlyBudgetUsd.signum() < 0
+                || openAiMonthlyBudgetUsd.signum() < 0) {
             throw new IllegalArgumentException("외부 API 비용 단가는 음수일 수 없습니다.");
         }
     }
@@ -52,4 +56,8 @@ public class ExternalUsageProperties {
     public void setOpenAiInputUsdPerMillion(BigDecimal value) { openAiInputUsdPerMillion = value; }
     public BigDecimal getOpenAiOutputUsdPerMillion() { return openAiOutputUsdPerMillion; }
     public void setOpenAiOutputUsdPerMillion(BigDecimal value) { openAiOutputUsdPerMillion = value; }
+    public BigDecimal getGoogleMonthlyBudgetUsd() { return googleMonthlyBudgetUsd; }
+    public void setGoogleMonthlyBudgetUsd(BigDecimal value) { googleMonthlyBudgetUsd = value; }
+    public BigDecimal getOpenAiMonthlyBudgetUsd() { return openAiMonthlyBudgetUsd; }
+    public void setOpenAiMonthlyBudgetUsd(BigDecimal value) { openAiMonthlyBudgetUsd = value; }
 }

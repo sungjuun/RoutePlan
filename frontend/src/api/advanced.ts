@@ -29,6 +29,21 @@ export interface Usage {
   remainingTokens: number | null; tokenUsagePercent: number | null
   estimatedCostUsd: number; costConfigured: boolean
 }
+export interface ProviderStatus {
+  provider: string; state: 'CLOSED' | 'HALF_OPEN' | 'OPEN'; consecutiveFailures: number
+  openUntil: string | null; activeCalls: number; maxConcurrentCalls: number
+}
+export interface ProviderCost {
+  provider: string; estimatedCostUsd: number; monthlyBudgetUsd: number
+  budgetUsagePercent: number | null; costConfigured: boolean
+}
+export interface OperationalAlert {
+  code: string; severity: 'WARNING' | 'CRITICAL'; provider: string
+  operation: string | null; message: string
+}
+export interface OperationsSnapshot {
+  usage: Usage[]; providers: ProviderStatus[]; costs: ProviderCost[]; alerts: OperationalAlert[]
+}
 export interface WeatherRefreshSettings { enabled: boolean; nextRefreshAt: string | null; lastSuccessAt: string | null; lastError: string | null }
 export const advanced = {
   weatherRefreshSettings: (id: number) => request<WeatherRefreshSettings>(`/trips/${id}/weather/auto-refresh`),
@@ -38,6 +53,7 @@ export const advanced = {
   weather: (id: number) => send<{ updatedDates: number; preservedManualDates: number; timeZoneId: string; message: string }>(`/trips/${id}/weather/refresh`, 'POST'),
   hours: (tripId: number, placeId: number) => send<{ weekdayDescriptions: string[]; warning: string }>(`/trips/${tripId}/places/${placeId}/opening-hours/refresh`, 'POST'),
   usage: () => request<Usage[]>('/integrations/usage'),
+  operations: () => request<OperationsSnapshot>('/integrations/operations'),
   maps: () => request<{ browserKey: string }>('/integrations/maps-config'),
   geometry: (id: number, date: string) => send<{ encodedPolylines: string[] }>(`/itineraries/${id}/road-geometry?date=${encodeURIComponent(date)}`, 'POST'),
   spending: (id: number) => request<Spending>(`/trips/${id}/spending`),

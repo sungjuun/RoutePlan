@@ -1,6 +1,8 @@
-# V21 외부 API 품질·비용 운영
+# V21–V22 외부 API 품질·비용·장애 격리 운영
 
 V21은 Google Maps Platform과 OpenAI의 실제 HTTP **시도마다** 앱 안전 한도를 먼저 예약하고 결과를 PostgreSQL에 기록합니다. 애플리케이션 재시작이나 여러 Backend 인스턴스에서도 같은 UTC 월 집계를 공유합니다.
+
+V22는 Google과 OpenAI를 서로 독립된 Circuit Breaker·동시 호출 제한으로 격리합니다. 기본값은 재시도를 모두 소진한 일시적 장애가 5회 연속되면 30초 동안 해당 공급자만 차단하고, 이후 단일 시험 호출 성공 시 자동 복구합니다. Redis 경로 캐시는 동일한 미스 집합에 분산 잠금을 사용해 다중 Backend의 중복 Google 조회를 줄입니다. 잠금 또는 Redis 장애 시에는 서비스 가용성을 위해 잠금 없이 진행합니다.
 
 ## 집계 범위
 
@@ -30,6 +32,10 @@ docker compose up -d --build backend frontend
 - `OPENAI_MONTHLY_REQUEST_LIMIT`: OpenAI 실제 시도 횟수 한도, 기본 500
 - `OPENAI_MONTHLY_TOKEN_LIMIT`: 응답으로 확인된 입력+출력 토큰 한도, 기본 1,000,000
 - `GOOGLE_MONTHLY_*_LIMIT`: Google 작업별 앱 한도
+- `ROUTEPLAN_CIRCUIT_FAILURE_THRESHOLD`, `ROUTEPLAN_CIRCUIT_OPEN_DURATION`: 회로 차단 조건과 복구 대기
+- `ROUTEPLAN_PROVIDER_MAX_CONCURRENT_CALLS`: Google/OpenAI 각각의 동시 호출 제한
+- `GOOGLE_MONTHLY_BUDGET_USD`, `OPENAI_MONTHLY_BUDGET_USD`: 0보다 클 때 앱 추정비용 경고 기준
+- `ROUTEPLAN_ROUTE_CACHE_REFRESH_*`: Redis 분산 갱신 잠금·대기 설정
 
 OpenAI 토큰은 응답 뒤에 확정되므로 마지막 성공 응답이 토큰 한도를 조금 넘을 수 있습니다. 그 다음 시도부터 차단합니다. 요청 횟수 한도는 전송 전에 원자적으로 차단합니다.
 
@@ -52,4 +58,4 @@ OpenAI 토큰은 응답 뒤에 확정되므로 마지막 성공 응답이 토큰
 4. 같은 시간대의 공급자 Usage/Cloud Metrics와 비교합니다. 앱 외 호출 때문에 공급자 값이 더 큰 것은 정상입니다.
 5. Google Cloud에서 API별 일/분 쿼터와 예산 알림을 함께 설정합니다. RoutePlan 월 한도는 DB가 삭제되거나 우회 호출이 발생하면 과금을 막지 못합니다.
 
-대시보드 상태는 요청 또는 토큰 중 높은 사용률을 기준으로 `정상`, `주의`, `차단`을 표시합니다. 공급자 장애 시 실패율과 최대 지연시간을 먼저 확인하고 Correlation ID, `routeplan.external.api.*` Prometheus 지표를 함께 추적하세요.
+대시보드는 요청/토큰 사용량, 공급자 회로 상태, 동시 호출 수, 실패율과 설정 예산 초과를 활성 경고로 표시합니다. 공급자 장애 시 Correlation ID와 `routeplan.external.api.*`, `routeplan.external.circuit.*`, `routeplan.external.calls.rejected`, `routeplan.route.cache.refresh.*` Prometheus 지표를 함께 추적하세요.

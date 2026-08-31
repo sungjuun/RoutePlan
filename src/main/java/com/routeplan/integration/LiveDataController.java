@@ -19,9 +19,12 @@ public class LiveDataController {
     private final LiveOpeningHours hours;
     private final TripPlaceRepository places;
     private final ExternalUsageGuard usage;
+    private final ExternalOperationsService operations;
     public LiveDataController(ResourceAccessService access, AutomaticWeatherService weather,
-            LiveOpeningHours hours, TripPlaceRepository places, ExternalUsageGuard usage) {
-        this.access = access; this.weather = weather; this.hours = hours; this.places = places; this.usage = usage;
+            LiveOpeningHours hours, TripPlaceRepository places, ExternalUsageGuard usage,
+            ExternalOperationsService operations) {
+        this.access = access; this.weather = weather; this.hours = hours; this.places = places;
+        this.usage = usage; this.operations = operations;
     }
     @GetMapping("/trips/{tripId}/time-zone")
     public Map<String, String> zone(@PathVariable long tripId, @AuthenticationPrincipal RoutePlanPrincipal user) {
@@ -47,5 +50,7 @@ public class LiveDataController {
     }
     @GetMapping("/integrations/usage")
     public List<ExternalUsageGuard.Usage> usage() { return usage.current(); }
+    @GetMapping("/integrations/operations")
+    public ExternalOperationsService.Snapshot operations() { return operations.current(); }
     public record ZoneRequest(@NotBlank @Size(max = 100) String timeZoneId) {}
 }

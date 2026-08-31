@@ -37,7 +37,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
         "routeplan.external.usage.open-ai-monthly-request-limit=3",
         "routeplan.external.usage.open-ai-monthly-token-limit=100",
         "routeplan.external.usage.open-ai-input-usd-per-million=2",
-        "routeplan.external.usage.open-ai-output-usd-per-million=10"})
+        "routeplan.external.usage.open-ai-output-usd-per-million=10",
+        "routeplan.external.usage.open-ai-monthly-budget-usd=0.0003"})
 @AutoConfigureMockMvc
 @Testcontainers
 class AdvancedFeaturesApiIntegrationTest {
@@ -203,6 +204,13 @@ class AdvancedFeaturesApiIntegrationTest {
         assertThat(value.status()).isEqualTo(ExternalUsageGuard.UsageStatus.BLOCKED);
         assertThat(value.estimatedCostUsd()).isEqualByComparingTo("0.000360");
         assertThat(value.costConfigured()).isTrue();
+        mvc.perform(get("/api/v1/integrations/operations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.providers[?(@.provider == 'openai')].state").value("CLOSED"))
+                .andExpect(jsonPath("$.alerts[?(@.code == 'USAGE_OPENAI_RESPONSES')].severity")
+                        .value("CRITICAL"))
+                .andExpect(jsonPath("$.alerts[?(@.code == 'COST_openai')].severity")
+                        .value("CRITICAL"));
         assertThatThrownBy(() -> usage.reserve(ExternalApiOperation.OPENAI_RESPONSES, 1))
                 .isInstanceOf(ExternalProviderException.class);
     }

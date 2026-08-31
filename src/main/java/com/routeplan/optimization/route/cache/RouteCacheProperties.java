@@ -13,6 +13,9 @@ public class RouteCacheProperties {
     private Duration walkingTtl = Duration.ofDays(7);
     private Duration drivingTtl = Duration.ofMinutes(15);
     private Duration transitTtl = Duration.ofMinutes(5);
+    private Duration refreshLockTtl = Duration.ofSeconds(15);
+    private Duration refreshWait = Duration.ofSeconds(2);
+    private Duration refreshPollInterval = Duration.ofMillis(100);
 
     public boolean isEnabled() {
         return enabled;
@@ -56,6 +59,13 @@ public class RouteCacheProperties {
     public void setTransitTtl(Duration transitTtl) {
         this.transitTtl = positive(transitTtl, "transit");
     }
+
+    public Duration getRefreshLockTtl() { return refreshLockTtl; }
+    public void setRefreshLockTtl(Duration value) { refreshLockTtl = positive(value, "refresh lock"); }
+    public Duration getRefreshWait() { return refreshWait; }
+    public void setRefreshWait(Duration value) { refreshWait = positive(value, "refresh wait"); }
+    public Duration getRefreshPollInterval() { return refreshPollInterval; }
+    public void setRefreshPollInterval(Duration value) { refreshPollInterval = positive(value, "refresh poll"); }
 
     private Duration positive(Duration duration, String mode) {
         if (duration == null || duration.isZero() || duration.isNegative()) {

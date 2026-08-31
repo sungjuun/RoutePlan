@@ -10,6 +10,7 @@ import com.routeplan.optimization.domain.Location;
 import com.routeplan.optimization.domain.RouteResult;
 import com.routeplan.optimization.route.cache.RouteCacheKey;
 import com.routeplan.optimization.route.cache.RouteCacheRead;
+import com.routeplan.optimization.route.cache.RouteCacheLease;
 import com.routeplan.optimization.route.cache.RouteLegCache;
 import com.routeplan.trip.domain.TransportMode;
 import java.math.BigDecimal;
@@ -81,25 +82,35 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
         ));
         Map<RouteCacheKey, RouteResult> fetchedRoutes = new LinkedHashMap<>();
         int requestCount = 0;
-
-        for (List<Location> origins : chunks) {
-            for (List<Location> destinations : chunks) {
-                if (containsAll(routes, origins, destinations)) {
-                    continue;
-                }
-                JsonNode response = httpClient.post(
-                        ExternalApiOperation.GOOGLE_ROUTES,
-                        endpoint,
-                        FIELD_MASK,
-                        requestBody(origins, destinations, transportMode, departure)
-                );
-                requestCount++;
-                merge(response, origins, destinations, transportMode, routes, fetchedRoutes);
-            }
-        }
         int cacheFailures = cacheRead.failureCount();
-        if (useCache) {
-            cacheFailures += routeLegCache.putAll(fetchedRoutes);
+        Set<RouteCacheKey> missingKeys = new LinkedHashSet<>(cacheKeys);
+        missingKeys.removeAll(cacheRead.routes().keySet());
+        RouteCacheLease refreshLease = useCache
+                ? routeLegCache.acquireRefreshLock(missingKeys)
+                : RouteCacheLease.bypass();
+        try (refreshLease) {
+            if (refreshLease.contended()) {
+                RouteCacheRead refreshed = routeLegCache.waitForRefresh(missingKeys);
+                cacheFailures += refreshed.failureCount();
+                refreshed.routes().forEach((key, route) -> routes.put(
+                        new RouteMatrix.Leg(key.origin(), key.destination()), route));
+            }
+            for (List<Location> origins : chunks) {
+                for (List<Location> destinations : chunks) {
+                    if (containsAll(routes, origins, destinations)) {
+                        continue;
+                    }
+                    JsonNode response = httpClient.post(
+                            ExternalApiOperation.GOOGLE_ROUTES,
+                            endpoint,
+                            FIELD_MASK,
+                            requestBody(origins, destinations, transportMode, departure)
+                    );
+                    requestCount++;
+                    merge(response, origins, destinations, transportMode, routes, fetchedRoutes);
+                }
+            }
+            if (useCache) cacheFailures += routeLegCache.putAll(fetchedRoutes);
         }
         verifyComplete(uniqueLocations, routes);
         return new RouteMatrix(

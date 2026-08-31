@@ -108,6 +108,13 @@ routeplan:
       max-delay: ${ROUTEPLAN_EXTERNAL_RETRY_MAX_DELAY:2s}
       multiplier: ${ROUTEPLAN_EXTERNAL_RETRY_MULTIPLIER:2.0}
       jitter: ${ROUTEPLAN_EXTERNAL_RETRY_JITTER:0.2}
+    resilience:
+      enabled: ${ROUTEPLAN_EXTERNAL_RESILIENCE_ENABLED:true}
+      failure-threshold: ${ROUTEPLAN_CIRCUIT_FAILURE_THRESHOLD:5}
+      open-duration: ${ROUTEPLAN_CIRCUIT_OPEN_DURATION:30s}
+      max-concurrent-calls: ${ROUTEPLAN_PROVIDER_MAX_CONCURRENT_CALLS:20}
+      failure-rate-minimum-calls: ${ROUTEPLAN_FAILURE_RATE_MINIMUM_CALLS:5}
+      failure-rate-warning-percent: ${ROUTEPLAN_FAILURE_RATE_WARNING_PERCENT:50}
     usage:
       warning-percent: ${ROUTEPLAN_USAGE_WARNING_PERCENT:80}
       open-ai-monthly-request-limit: ${OPENAI_MONTHLY_REQUEST_LIMIT:500}
@@ -118,6 +125,8 @@ routeplan:
       google-geometry-usd-per-thousand: ${GOOGLE_GEOMETRY_USD_PER_THOUSAND:0}
       open-ai-input-usd-per-million: ${OPENAI_INPUT_USD_PER_MILLION:0}
       open-ai-output-usd-per-million: ${OPENAI_OUTPUT_USD_PER_MILLION:0}
+      google-monthly-budget-usd: ${GOOGLE_MONTHLY_BUDGET_USD:0}
+      open-ai-monthly-budget-usd: ${OPENAI_MONTHLY_BUDGET_USD:0}
   ai:
     provider: ${ROUTEPLAN_AI_PROVIDER:RULE_BASED}
   place:
@@ -130,6 +139,9 @@ routeplan:
       walking-ttl: ${ROUTEPLAN_ROUTE_CACHE_WALKING_TTL:7d}
       driving-ttl: ${ROUTEPLAN_ROUTE_CACHE_DRIVING_TTL:15m}
       transit-ttl: ${ROUTEPLAN_ROUTE_CACHE_TRANSIT_TTL:5m}
+      refresh-lock-ttl: ${ROUTEPLAN_ROUTE_CACHE_REFRESH_LOCK_TTL:15s}
+      refresh-wait: ${ROUTEPLAN_ROUTE_CACHE_REFRESH_WAIT:2s}
+      refresh-poll-interval: ${ROUTEPLAN_ROUTE_CACHE_REFRESH_POLL_INTERVAL:100ms}
   google:
     browser-key: ${GOOGLE_MAPS_BROWSER_KEY:}
     monthly-search-limit: ${GOOGLE_MONTHLY_SEARCH_LIMIT:4000}

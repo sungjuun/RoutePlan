@@ -5,17 +5,23 @@ import com.routeplan.optimization.domain.RouteResult;
 import com.routeplan.trip.domain.TransportMode;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.connection.SetCondition;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.types.Expiration;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.stereotype.Component;
@@ -32,13 +38,26 @@ public class RedisRouteLegCache implements RouteLegCache {
 
     private final StringRedisTemplate redisTemplate;
     private final RouteCacheProperties properties;
+    private final RouteCacheStampedeMetrics stampedeMetrics;
+    private static final DefaultRedisScript<Long> RELEASE_LOCK = new DefaultRedisScript<>(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then "
+                    + "return redis.call('del', KEYS[1]) else return 0 end",
+            Long.class
+    );
 
+    @org.springframework.beans.factory.annotation.Autowired
     public RedisRouteLegCache(
             StringRedisTemplate redisTemplate,
-            RouteCacheProperties properties
+            RouteCacheProperties properties,
+            RouteCacheStampedeMetrics stampedeMetrics
     ) {
         this.redisTemplate = redisTemplate;
         this.properties = properties;
+        this.stampedeMetrics = stampedeMetrics;
+    }
+
+    public RedisRouteLegCache(StringRedisTemplate redisTemplate, RouteCacheProperties properties) {
+        this(redisTemplate, properties, null);
     }
 
     @Override
@@ -108,12 +127,91 @@ public class RedisRouteLegCache implements RouteLegCache {
         }
     }
 
+    @Override
+    public RouteCacheLease acquireRefreshLock(Set<RouteCacheKey> keys) {
+        if (keys.isEmpty()) return RouteCacheLease.bypass();
+        String lockKey = refreshLockKey(keys);
+        String token = UUID.randomUUID().toString();
+        try {
+            Boolean acquired = redisTemplate.opsForValue().setIfAbsent(
+                    lockKey, token, properties.getRefreshLockTtl());
+            if (Boolean.TRUE.equals(acquired)) {
+                lockMetric("acquired");
+                return RouteCacheLease.acquired(() -> release(lockKey, token));
+            }
+            lockMetric("contended");
+            return RouteCacheLease.waiting();
+        } catch (RuntimeException exception) {
+            lockMetric("bypass");
+            log.warn("Route Cache 갱신 잠금을 사용할 수 없어 잠금 없이 진행합니다: {}",
+                    exception.getClass().getSimpleName());
+            return RouteCacheLease.bypass();
+        }
+    }
+
+    @Override
+    public RouteCacheRead waitForRefresh(Set<RouteCacheKey> keys) {
+        long started = System.nanoTime();
+        long deadline = started + properties.getRefreshWait().toNanos();
+        RouteCacheRead latest = RouteCacheRead.empty();
+        while (System.nanoTime() < deadline) {
+            latest = getAll(keys);
+            if (latest.routes().size() == keys.size()) {
+                waitMetric("filled", started);
+                return latest;
+            }
+            if (latest.failureCount() > 0) {
+                waitMetric("cache_failure", started);
+                return latest;
+            }
+            try {
+                Thread.sleep(properties.getRefreshPollInterval().toMillis());
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                waitMetric("interrupted", started);
+                return latest;
+            }
+        }
+        latest = getAll(keys);
+        waitMetric(latest.routes().size() == keys.size() ? "filled" : "timeout", started);
+        return latest;
+    }
+
     String redisKey(RouteCacheKey key) {
         return properties.getKeyPrefix()
                 + ":google-routes:"
                 + key.transportMode().name()
                 + ":" + coordinate(key.origin())
                 + ":" + coordinate(key.destination());
+    }
+
+    String refreshLockKey(Set<RouteCacheKey> keys) {
+        String material = keys.stream().map(this::redisKey).sorted().reduce("", (left, right) -> left + "\n" + right);
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(material.getBytes(StandardCharsets.UTF_8));
+            return properties.getKeyPrefix() + ":refresh-lock:" + HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256을 사용할 수 없습니다.", exception);
+        }
+    }
+
+    private void release(String lockKey, String token) {
+        try {
+            redisTemplate.execute(RELEASE_LOCK, List.of(lockKey), token);
+        } catch (RuntimeException exception) {
+            log.warn("Route Cache 갱신 잠금 해제에 실패했습니다: {}", exception.getClass().getSimpleName());
+        }
+    }
+
+    private void lockMetric(String outcome) {
+        if (stampedeMetrics != null) stampedeMetrics.lock(outcome);
+    }
+
+    private void waitMetric(String outcome, long started) {
+        if (stampedeMetrics != null) {
+            stampedeMetrics.waitCompleted(outcome, Math.max(0, (System.nanoTime() - started) / 1_000_000));
+        }
     }
 
     private String coordinate(Location location) {
