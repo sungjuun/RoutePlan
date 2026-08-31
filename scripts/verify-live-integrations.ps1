@@ -1,5 +1,6 @@
-param([switch]$IncludeGoogle)
-# Read-only public-location probes. -IncludeGoogle makes at most five billable API requests.
+param([switch]$IncludeGoogle, [switch]$IncludeOpenAI)
+# Read-only probes. -IncludeGoogle makes at most five billable requests;
+# -IncludeOpenAI makes one minimal Responses API request and never prints generated text.
 # Keys, raw provider payloads, and project identifiers are never printed or saved.
 $ErrorActionPreference = 'Stop'
 $routeRepository = Split-Path -Parent $PSScriptRoot
@@ -19,6 +20,12 @@ function Invoke-RouteProbe {
             $reason = [string]$payload.error.status
             foreach ($item in $payload.error.details) {
                 if ($item.reason -match '^[A-Z_]+$') { $reason = [string]$item.reason; break }
+            }
+            if ([string]::IsNullOrWhiteSpace($reason) -and [string]$payload.error.code -match '^[a-zA-Z0-9_-]+$') {
+                $reason = [string]$payload.error.code
+            }
+            if ([string]::IsNullOrWhiteSpace($reason) -and [string]$payload.error.type -match '^[a-zA-Z0-9_-]+$') {
+                $reason = [string]$payload.error.type
             }
         }
         $routeReport.Add([ordered]@{ probe = $Name; httpStatus = $status; latencyMs = $clock.ElapsedMilliseconds; reason = $reason })
@@ -63,5 +70,39 @@ if ($IncludeGoogle) {
         if ($transit) { $routeReport.Add([ordered]@{ validation = 'datedTransit'; condition = $transit[0].condition; duration = $transit[0].duration; elementStatus = $transit[0].status.code }) }
     } catch { $routeReport.Add([ordered]@{ probe = 'Google configuration'; reason = 'CONFIGURATION_NOT_AVAILABLE' }) }
     finally { Pop-Location; $routeServerKey = $null; $routeConfig = $null; $routeConfigText = $null; $headers = $null }
+}
+
+if ($IncludeOpenAI) {
+    Push-Location $routeRepository
+    try {
+        $routeConfigText = & docker compose config --format json 2>$null
+        if ($LASTEXITCODE -ne 0) { throw 'config unavailable' }
+        $routeConfig = $routeConfigText | ConvertFrom-Json
+        $openAiKey = [string]$routeConfig.services.backend.environment.OPENAI_API_KEY
+        $openAiModel = [string]$routeConfig.services.backend.environment.OPENAI_MODEL
+        $openAiBaseUrl = [string]$routeConfig.services.backend.environment.OPENAI_BASE_URL
+        if ([string]::IsNullOrWhiteSpace($openAiKey)) { throw 'key unavailable' }
+        if ([string]::IsNullOrWhiteSpace($openAiModel)) { throw 'model unavailable' }
+        if ([string]::IsNullOrWhiteSpace($openAiBaseUrl)) { $openAiBaseUrl = 'https://api.openai.com' }
+        $openAiHeaders = @{ Authorization = 'Bearer ' + $openAiKey }
+        $response = Invoke-RouteProbe -Name 'OpenAI Responses (1 minimal request)' `
+                -Uri ($openAiBaseUrl.TrimEnd('/') + '/v1/responses') -Method POST `
+                -Headers $openAiHeaders -Body @{ model = $openAiModel; input = 'Reply with exactly OK.'; store = $false }
+        if ($response) {
+            $routeReport.Add([ordered]@{
+                validation = 'openAiResponses'
+                status = [string]$response.status
+                modelConfigured = $openAiModel
+                inputTokens = [long]$response.usage.input_tokens
+                outputTokens = [long]$response.usage.output_tokens
+                outputItems = @($response.output).Count
+            })
+        }
+    } catch {
+        $routeReport.Add([ordered]@{ probe = 'OpenAI configuration'; reason = 'CONFIGURATION_NOT_AVAILABLE' })
+    } finally {
+        Pop-Location
+        $openAiKey = $null; $openAiHeaders = $null; $routeConfig = $null; $routeConfigText = $null
+    }
 }
 $routeReport | ConvertTo-Json -Depth 4

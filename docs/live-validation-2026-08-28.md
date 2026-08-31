@@ -4,6 +4,14 @@
 
 로컬 개발 환경에서 날씨·영업시간·도보 경로·날짜 지정 대중교통 응답과 Google 한국어 지도·실제 경로선 표시를 확인했습니다. 초기 `403 SERVICE_DISABLED`는 Routes API 활성화 후 해소됐습니다. 대표 공개 장소의 단일 표본이며 성능·운행 정확도·모든 지역의 경로 제공을 보장하지 않습니다.
 
+### 2026-08-31 V22 재점검
+
+공급자 장애 격리 적용 후 Open-Meteo 1회와 Google 공개 표본 5회를 다시 실행했고 모두 HTTP 200이었습니다. 장소 검색 398ms, 장소 상세 190ms, 도보 Matrix 282ms, 도로 Geometry 228ms, 날짜 지정 서울 대중교통 292ms였습니다. 도보는 `ROUTE_EXISTS`·1,237m·1,036초, 대중교통은 `ROUTE_EXISTS`·1,169초, Geometry는 encoded polyline을 반환했습니다.
+
+RoutePlan 백엔드 경유 검증에서는 임시 계정으로 한국어 장소 검색 1회만 실행했습니다. 결과 1개를 받았고 PostgreSQL `GOOGLE_PLACES` 시도량·성공량이 각각 정확히 1 증가했습니다. Google Circuit Breaker는 `CLOSED`, 활성 운영 경고는 0건이었으며 임시 계정은 API로 삭제한 뒤 DB에 남지 않았습니다. 현재 UTC 월 앱 집계는 Google Places 1/1 성공, Geometry 4/4 성공, Routes 9/9 성공이며 기록된 실패는 없습니다. 재시작 후 Prometheus의 Google·OpenAI 회로 상태도 모두 0(`CLOSED`)이었습니다.
+
+현재 `.env`에는 OpenAI API 키가 없으므로 OpenAI 실호출은 계속 보류했습니다. `scripts/verify-live-integrations.ps1 -IncludeOpenAI`는 키를 설정한 환경에서 응답 본문을 출력하지 않고 Responses API 최소 요청 1회, 상태와 토큰 수만 검사합니다. RoutePlan 요청은 `store=false`를 사용합니다. 실제 비용·잔액은 OpenAI Usage/Billing이 최종 기준입니다.
+
 ### 2026-08-31 V21 재점검
 
 V21 품질·비용 계측 구현 후 같은 안전 스크립트로 다시 확인했습니다. Open-Meteo 1회와 Google 최대 5회의 공개 표본만 사용했으며 모두 HTTP 200이었습니다. 장소 검색 413ms, 장소 상세 187ms, 도보 Matrix 322ms, 도로 Geometry 304ms, 날짜 지정 서울 대중교통 287ms였습니다. 도보 표본은 `ROUTE_EXISTS`·1,237m·1,036초, 대중교통 표본은 `ROUTE_EXISTS`·1,169초를 반환했습니다. 진단 스크립트는 애플리케이션을 우회하므로 새 V21 DB 집계에는 포함되지 않습니다.
@@ -59,10 +67,13 @@ V21 품질·비용 계측 구현 후 같은 안전 스크립트로 다시 확인
 - 실제 quota 소진 동작 및 운영 환경의 호출 한도
 - 다른 국가·이동수단·여행 날짜 조합, 대규모 입력의 실환경 성능
 - 운영 도메인·서버 IP의 키 제한, 허용하지 않은 출처에서의 차단 동작
+- 실제 OpenAI 키·결제 프로젝트를 사용한 Responses API와 앱 집계 비교
 
 한도 소진은 비용을 발생시켜 재현하지 않고 기존 Retry HTTP stub과 월별 원자적 예약 통합 테스트로 검사했습니다. 키, 프로젝트 ID, 계정 식별 정보와 원본 Places/Routes 응답은 이 기록에 포함하지 않았습니다. 테스트 통과나 앱 내부 호출 한도가 무료 사용을 보장하지 않습니다.
 
 ## 자동 검증 범위
+
+- V22 구현 검증: Backend 134개, Frontend 49개, Chromium/모바일 E2E 11개, ESLint와 Backend/Frontend 프로덕션 빌드 통과.
 
 - V17 구현 검증: Backend 100개, Chromium E2E 6개 통과. 이 두 묶음은 출처 문구만 수정하는 후속 작업에서 다시 실행하지 않았습니다.
 - 출처 문구 수정 후: Frontend 34개 전체 테스트, ESLint, TypeScript·Vite 프로덕션 빌드 통과. Docker 프론트 빌드와 실제 화면 반영도 확인했습니다.

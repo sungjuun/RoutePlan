@@ -115,6 +115,9 @@ PowerShell 7에서 아래 명령은 Open-Meteo 1회만 호출합니다. `-Includ
 ```powershell
 .\scripts\verify-live-integrations.ps1
 .\scripts\verify-live-integrations.ps1 -IncludeGoogle
+.\scripts\verify-live-integrations.ps1 -IncludeOpenAI
 ```
+
+`-IncludeOpenAI`는 `.env`의 키와 모델로 Responses API 최소 요청 1회를 실행합니다. 생성 텍스트·응답 ID·키는 출력하지 않고 상태와 토큰 수만 표시합니다. Google과 OpenAI 옵션을 함께 사용하면 두 공급자를 한 번에 점검합니다.
 
 이 스크립트는 Compose에서 서버 키를 메모리로만 읽고 키/프로젝트 ID/원본 응답을 출력하지 않습니다. 이 직접 진단 호출은 앱 월별 집계 밖에 있습니다.
