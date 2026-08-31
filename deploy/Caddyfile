@@ -1,0 +1,26 @@
+{
+	email {$TLS_EMAIL}
+}
+
+{$ROUTEPLAN_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+		-Server
+	}
+
+	reverse_proxy frontend:8080 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto https
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

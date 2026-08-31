@@ -74,9 +74,13 @@ V21은 [외부 API 품질·비용 운영 대시보드](docs/provider-operations.
 
 V22는 같은 대시보드에 공급자별 Circuit Breaker·동시 호출 격리·실패율/예산 경고를 추가하고, Redis 분산 갱신 잠금으로 동일 경로 캐시 미스의 중복 Google 호출을 줄입니다.
 
+V23은 [운영 배포 기반](docs/production-deployment.md)을 추가합니다. 운영 전용 Compose는 HTTPS 자동 인증서, 내부 전용 DB·Redis·Backend Network, Secure Cookie·SMTP 사전 검사, GHCR 커밋 SHA 이미지 배포, 배포 전 백업과 명시적 복구·이미지 롤백 절차를 제공합니다.
+
+V23 로컬 격리 검증에서는 운영 Backend·Frontend를 비루트·읽기 전용으로 기동하고 외부 Port 비공개, Backup/Restore 왕복, Caddy 런타임과 전체 Backend 137개·Frontend 49개 테스트를 확인했습니다. 실제 배포에는 도메인·Linux 서버·SMTP·GitHub `production` Environment Secret이 별도로 필요합니다.
+
 설정과 사용법은 [실제 데이터·개인화·장부 안내](docs/advanced-integrations.md), 외부 API 검증 결과는 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 참고하세요. **2026-08-31 로컬 환경에서 날씨·영업시간·도보 경로·현지 날짜를 반영한 대중교통 응답, Google 한국어 지도·실제 경로선과 V22 앱 집계를 다시 확인했습니다.** 대표 표본 검증이며 실제 청구액·무료 잔량·운영 환경 검증은 별도입니다. 다른 환경에서는 서버·브라우저 키와 해당 API 활성화가 필요합니다.
 
-## 구현 범위 (V1–V22)
+## 구현 범위 (V1–V23)
 
 ### 지원
 
@@ -180,6 +184,9 @@ V22는 같은 대시보드에 공급자별 Circuit Breaker·동시 호출 격리
 - Playwright Chromium 기반 데스크톱·모바일 전체 사용자 흐름 E2E
 - 전용 Docker 프로젝트·포트·DB 볼륨을 사용하는 격리 E2E 실행기
 - PostgreSQL, Flyway, OpenAPI, Docker Compose
+- 운영 전용 HTTPS Reverse Proxy와 외부 비공개 DB·Redis·Backend Network
+- 운영 환경 사전 검사, GHCR 불변 이미지 배포와 상태 확인·이미지 롤백
+- PostgreSQL Custom Format 백업·체크섬·보존 기간과 확인 문구 기반 복구
 - JUnit 5, AssertJ, Testcontainers, Vitest 테스트
 
 ### 지원하지 않음

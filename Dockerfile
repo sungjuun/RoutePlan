@@ -10,6 +10,8 @@ RUN ./gradlew bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-COPY --from=builder /workspace/build/libs/routeplan-0.0.1-SNAPSHOT.jar app.jar
+RUN addgroup -S routeplan && adduser -S routeplan -G routeplan
+COPY --from=builder --chown=routeplan:routeplan /workspace/build/libs/routeplan-0.0.1-SNAPSHOT.jar app.jar
+USER routeplan
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

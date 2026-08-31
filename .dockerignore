@@ -5,4 +5,6 @@ build
 frontend/node_modules
 frontend/dist
 *.iml
-.env
+.env*
+backups
+.routeplan-release.env

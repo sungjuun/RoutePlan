@@ -43,3 +43,6 @@ out/
 
 ### Local environment ###
 .env
+.env.production
+.routeplan-release.env
+backups/
