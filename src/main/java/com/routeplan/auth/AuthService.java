@@ -44,7 +44,7 @@ public class AuthService {
         return user;
     }
 
-    private String normalizeEmail(String email) {
+    static String normalizeEmail(String email) {
         return email.strip().toLowerCase(Locale.ROOT);
     }
 

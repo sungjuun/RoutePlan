@@ -11,11 +11,14 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class GoogleMapsHttpClient {
+    private static final Logger log = LoggerFactory.getLogger(GoogleMapsHttpClient.class);
 
     private final GoogleMapsProperties properties;
     private final ObjectMapper objectMapper;
@@ -65,20 +68,40 @@ public class GoogleMapsHttpClient {
             units = (long) node.path("origins").size() * node.path("destinations").size();
         }
         long billableUnits = units;
-        return retryExecutor.execute(operation, () -> {
-            if (usageGuard != null) usageGuard.reserve(operation, billableUnits);
-            return send(request);
-        });
+        return retryExecutor.execute(operation, () -> tracked(operation, billableUnits, request));
     }
 
     public JsonNode get(ExternalApiOperation operation, URI uri, String fieldMask) {
         HttpRequest request = HttpRequest.newBuilder(uri).timeout(properties.getRequestTimeout())
                 .header("X-Goog-Api-Key", properties.requireApiKey())
                 .header("X-Goog-FieldMask", fieldMask).GET().build();
-        return retryExecutor.execute(operation, () -> {
-            if (usageGuard != null) usageGuard.reserve(operation, 1);
-            return send(request);
-        });
+        return retryExecutor.execute(operation, () -> tracked(operation, 1, request));
+    }
+
+    private JsonNode tracked(ExternalApiOperation operation, long units, HttpRequest request) {
+        if (usageGuard != null) usageGuard.reserve(operation, units);
+        long started = System.nanoTime();
+        try {
+            JsonNode response = send(request);
+            recordOutcome(operation, units, true, elapsedMillis(started));
+            return response;
+        } catch (RuntimeException exception) {
+            recordOutcome(operation, units, false, elapsedMillis(started));
+            throw exception;
+        }
+    }
+
+    private void recordOutcome(ExternalApiOperation operation, long units, boolean success, long latencyMs) {
+        if (usageGuard == null) return;
+        try {
+            usageGuard.recordOutcome(operation, units, success, latencyMs);
+        } catch (RuntimeException exception) {
+            log.warn("외부 API 결과 계측 저장에 실패했습니다. operation={}", operation.name());
+        }
+    }
+
+    private long elapsedMillis(long started) {
+        return Math.max(0, (System.nanoTime() - started) / 1_000_000);
     }
 
     private HttpRequest request(URI uri, String fieldMask, Object body) {

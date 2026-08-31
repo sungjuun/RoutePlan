@@ -132,6 +132,8 @@ describe('public RoutePlan experience', () => {
     render(
       <MyPage
         onPasswordChanged={vi.fn()}
+        onEmailChanged={vi.fn()}
+        onAccountDeleted={vi.fn()}
         onUserChanged={vi.fn()}
         user={authenticated.user!}
         onOpenTrips={vi.fn()}
@@ -149,6 +151,7 @@ describe('public RoutePlan experience', () => {
 
   it('opens the compact public menu and closes it after navigation', () => {
     const onCommunity = vi.fn()
+    const onProfile = vi.fn()
     render(
       <PublicHeader
         user={authenticated.user}
@@ -156,7 +159,7 @@ describe('public RoutePlan experience', () => {
         onHome={vi.fn()}
         onCommunity={onCommunity}
         onMyTrip={vi.fn()}
-        onProfile={vi.fn()}
+        onProfile={onProfile}
         onNewTrip={vi.fn()}
         onLogin={vi.fn()}
         onSignup={vi.fn()}
@@ -170,6 +173,11 @@ describe('public RoutePlan experience', () => {
     fireEvent.click(screen.getByRole('button', { name: '커뮤니티' }))
     expect(onCommunity).toHaveBeenCalledOnce()
     expect(screen.getByRole('button', { name: '메뉴 열기' })).toHaveAttribute('aria-expanded', 'false')
+    const profile = screen.getByRole('button', { name: '여행자 마이페이지' })
+    expect(document.querySelectorAll('.public-profile')).toHaveLength(1)
+    expect(document.querySelector('.public-profile-icon')).toBeNull()
+    fireEvent.click(profile)
+    expect(onProfile).toHaveBeenCalledOnce()
   })
 
   it('shows a recoverable error when saved trips fail to load', async () => {

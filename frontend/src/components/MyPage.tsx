@@ -8,6 +8,8 @@ import { ModerationPanel } from './ModerationPanel'
 import { ProfileImageEditor } from './ProfileImageEditor'
 import { UserAvatar } from './UserAvatar'
 import { AccountSecurityPanel } from './AccountSecurityPanel'
+import { AccountManagementPanel } from './AccountManagementPanel'
+import { ProviderOperationsPanel } from './ProviderOperationsPanel'
 
 interface Props {
   user: User
@@ -15,11 +17,13 @@ interface Props {
   onNewTrip: () => void
   onLogout: () => void
   onError: (error: unknown) => void
-  onUserChanged: (user: Pick<User, 'id'> & Partial<Pick<User, 'profileImageUrl' | 'emailVerified'>>) => void
+  onUserChanged: (user: Pick<User, 'id'> & Partial<Pick<User, 'email' | 'nickname' | 'profileImageUrl' | 'emailVerified'>>) => void
   onPasswordChanged: () => void
+  onEmailChanged: () => void
+  onAccountDeleted: () => void
 }
 
-export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError, onUserChanged, onPasswordChanged }: Props) {
+export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError, onUserChanged, onPasswordChanged, onEmailChanged, onAccountDeleted }: Props) {
   const [trips, setTrips] = useState<TripSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
@@ -57,6 +61,7 @@ export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError, onUser
       <section className="account-content profile-layout">
         <div className="profile-main">
           <ProfileImageEditor user={user} onChanged={next => onUserChanged({ id: next.id, profileImageUrl: next.profileImageUrl })} />
+          <AccountManagementPanel user={user} onUserChanged={onUserChanged} onEmailChanged={onEmailChanged} onAccountDeleted={onAccountDeleted} />
           <AccountSecurityPanel user={user} onUserChanged={next => onUserChanged({ id: next.id, emailVerified: next.emailVerified })} onPasswordChanged={onPasswordChanged} />
           {loading ? (
             <AsyncState kind="loading" title="여행 현황을 불러오는 중입니다" className="profile-data-state" />
@@ -75,6 +80,7 @@ export function MyPage({ user, onOpenTrips, onNewTrip, onLogout, onError, onUser
             <button onClick={onNewTrip}><Plus size={18} /><span><strong>새 여행 만들기</strong><small>숙소와 날짜부터 새로 계획</small></span><ArrowRight size={17} /></button>
           </section>
           <PreferencesPanel onError={onError} />
+          <ProviderOperationsPanel onError={onError} />
           <ModerationPanel onError={onError} />
         </div>
         <aside className="profile-account panel">

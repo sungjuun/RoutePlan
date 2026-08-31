@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../api/client'
 import { AccountLinkPage } from './AccountLinkPage'
 import { AccountSecurityPanel } from './AccountSecurityPanel'
+import { AccountManagementPanel } from './AccountManagementPanel'
 import { AuthPage } from './AuthPage'
 
 vi.mock('../api/client', async (importOriginal) => ({
   ...await importOriginal<typeof import('../api/client')>(),
   api: {
     verifyEmail: vi.fn(), resetPassword: vi.fn(), changePassword: vi.fn(),
+    changeNickname: vi.fn(), changeEmail: vi.fn(), deleteAccount: vi.fn(),
     getAuthOptions: vi.fn(), requestEmailVerification: vi.fn(), getAuthSession: vi.fn(),
     requestPasswordReset: vi.fn(),
   },
@@ -83,5 +85,37 @@ describe('account security screens', () => {
     fireEvent.click(screen.getByRole('button', { name: '비밀번호 변경하고 로그아웃' }))
     await waitFor(() => expect(changed).toHaveBeenCalledOnce())
     expect(api.changePassword).toHaveBeenCalledWith('current-password', 'new-password-2026')
+  })
+
+  it('changes the nickname and protects email change and account deletion', async () => {
+    const renamed = { ...user, nickname: '새 여행자' }
+    vi.mocked(api.changeNickname).mockResolvedValue(renamed)
+    vi.mocked(api.changeEmail).mockResolvedValue(undefined)
+    vi.mocked(api.deleteAccount).mockResolvedValue(undefined)
+    const updated = vi.fn()
+    const emailChanged = vi.fn()
+    const deleted = vi.fn()
+    render(<AccountManagementPanel user={user} onUserChanged={updated} onEmailChanged={emailChanged} onAccountDeleted={deleted} />)
+
+    fireEvent.change(screen.getByLabelText('닉네임'), { target: { value: renamed.nickname } })
+    fireEvent.click(screen.getByRole('button', { name: '닉네임 저장' }))
+    await waitFor(() => expect(updated).toHaveBeenCalledWith(renamed))
+    expect(api.changeNickname).toHaveBeenCalledWith(renamed.nickname)
+
+    fireEvent.click(screen.getByText('이메일 변경', { exact: true }))
+    fireEvent.change(screen.getByLabelText('새 이메일'), { target: { value: 'new@example.com' } })
+    fireEvent.change(screen.getAllByLabelText('현재 비밀번호')[0], { target: { value: 'current-password' } })
+    fireEvent.click(screen.getByRole('button', { name: '이메일 변경하고 로그아웃' }))
+    await waitFor(() => expect(emailChanged).toHaveBeenCalledOnce())
+    expect(api.changeEmail).toHaveBeenCalledWith('current-password', 'new@example.com')
+
+    fireEvent.click(screen.getByText('회원 탈퇴', { exact: true }))
+    const deleteButton = screen.getByRole('button', { name: '계정과 모든 데이터 삭제' })
+    expect(deleteButton).toBeDisabled()
+    fireEvent.change(screen.getAllByLabelText('현재 비밀번호')[1], { target: { value: 'current-password' } })
+    fireEvent.change(screen.getByLabelText('확인 문구'), { target: { value: '회원 탈퇴' } })
+    fireEvent.click(deleteButton)
+    await waitFor(() => expect(deleted).toHaveBeenCalledOnce())
+    expect(api.deleteAccount).toHaveBeenCalledWith('current-password', '회원 탈퇴')
   })
 })

@@ -59,7 +59,7 @@ docker compose up -d --build
 | 지도 경로 선 | Compute Routes Essentials (현재 옵션) | 9,000 | 구간 요청 |
 | 브라우저 지도 | Dynamic Maps | Google Cloud에서 별도 설정 | 지도 로드 |
 
-`GOOGLE_MONTHLY_SEARCH_LIMIT`, `GOOGLE_MONTHLY_DETAILS_LIMIT`, `GOOGLE_MONTHLY_MATRIX_LIMIT`, `GOOGLE_MONTHLY_GEOMETRY_LIMIT`로 조정합니다. `0`은 해당 호출 차단입니다. PostgreSQL의 UTC 월별 원자적 예약으로 여러 요청이 동시에 들어와도 앱 한도를 넘겨 전송하지 않습니다. 재시도마다 다시 집계하고 실패 요청도 보수적으로 차감합니다. 조회 경로: 일정 → 실제 여행 데이터 → API 사용량. 이 수치는 **앱 시도량이지 청구서가 아닙니다**.
+`GOOGLE_MONTHLY_SEARCH_LIMIT`, `GOOGLE_MONTHLY_DETAILS_LIMIT`, `GOOGLE_MONTHLY_MATRIX_LIMIT`, `GOOGLE_MONTHLY_GEOMETRY_LIMIT`로 조정합니다. `0`은 해당 호출 차단입니다. PostgreSQL의 UTC 월별 원자적 예약으로 여러 요청이 동시에 들어와도 앱 한도를 넘겨 전송하지 않습니다. 재시도마다 다시 집계하고 실패 요청도 보수적으로 차감합니다. V21부터 성공/실패·평균/최대 지연시간과 OpenAI 요청·토큰도 영속 집계합니다. 조회 경로: 일정 → 실제 여행 데이터 → API 품질·비용 대시보드. 이 수치는 **앱 시도량이지 청구서가 아닙니다**. 한도·단가·검증 절차는 [외부 API 운영 안내](provider-operations.md)를 확인하세요.
 
 Google의 무료 사용량은 SKU별로 다르고 청구 계정 내 다른 앱의 사용량도 합쳐질 수 있습니다. 문서 확인일(2026-08-28)의 Text Search Pro 5,000회, Details Enterprise 1,000회, 위 Routes Essentials 각각 10,000단위 무료 구간을 참고해 보수적인 기본값을 정했지만 무료를 보장하지 않습니다. 현재 Field Mask/옵션 변경 시 SKU도 다시 확인해야 합니다. 가격은 지역·계약·시점에 따라 달라질 수 있습니다. [Google 공식 요금표](https://developers.google.com/maps/billing-and-pricing/pricing), [Place Details 필드와 SKU](https://developers.google.com/maps/documentation/places/web-service/place-details).
 

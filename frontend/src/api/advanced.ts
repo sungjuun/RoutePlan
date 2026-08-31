@@ -18,7 +18,17 @@ export interface Discussion { comments: Entry[]; reviews: Entry[]; averageRating
 export type Target = 'ROUTE' | 'COMMENT' | 'REVIEW'
 export interface ReportInput { targetType: Target; targetId: number; reason: string; detail: string }
 export interface ModerationReport { id: number; routeId: number; targetType: Target; targetId: number; reason: string; detail: string; targetContent: string | null }
-export interface Usage { operation: string; month: string; attemptedUnits: number; limit: number }
+export interface Usage {
+  operation: string; provider: string; month: string
+  attemptedUnits: number; limit: number; remainingUnits: number; usagePercent: number
+  status: 'NORMAL' | 'WARNING' | 'BLOCKED'
+  attemptCount: number; successCount: number; failureCount: number
+  successfulUnits: number; failedUnits: number; unclassifiedUnits: number
+  successRatePercent: number | null; averageLatencyMs: number | null; maxLatencyMs: number
+  inputTokens: number; outputTokens: number; tokenLimit: number | null
+  remainingTokens: number | null; tokenUsagePercent: number | null
+  estimatedCostUsd: number; costConfigured: boolean
+}
 export interface WeatherRefreshSettings { enabled: boolean; nextRefreshAt: string | null; lastSuccessAt: string | null; lastError: string | null }
 export const advanced = {
   weatherRefreshSettings: (id: number) => request<WeatherRefreshSettings>(`/trips/${id}/weather/auto-refresh`),

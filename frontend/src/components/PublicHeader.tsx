@@ -64,8 +64,7 @@ export function PublicHeader({
             <button className="button button-ghost button-small" onClick={() => navigate(onNewTrip)}>
               <Plus size={15} /> 새 여행
             </button>
-            <button className="public-profile" onClick={() => navigate(onProfile)}><i><UserAvatar user={user} /></i>{user.nickname}</button>
-            <button className={`icon-button public-profile-icon ${activePage === 'profile' ? 'active' : ''}`} onClick={() => navigate(onProfile)} aria-label="마이페이지"><UserAvatar user={user} /></button>
+            <button className={`public-profile ${activePage === 'profile' ? 'active' : ''}`} onClick={() => navigate(onProfile)} aria-label={`${user.nickname} 마이페이지`}><i><UserAvatar user={user} /></i><span>{user.nickname}</span></button>
             <button className="icon-button" onClick={() => navigate(onLogout)} aria-label="로그아웃">
               <LogOut size={17} />
             </button>

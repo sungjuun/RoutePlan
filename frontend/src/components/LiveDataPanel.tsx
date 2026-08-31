@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { advanced, type Usage } from '../api/advanced'
+import { advanced } from '../api/advanced'
 import type { Trip } from '../types'
 import { WeatherAutoRefresh } from './WeatherAutoRefresh'
+import { ProviderOperationsPanel } from './ProviderOperationsPanel'
 
 export function LiveDataPanel({ trip, onError, onRefreshed, onBlockedChange }: {
   trip: Trip; onError: (error: unknown) => void; onRefreshed: () => void; onBlockedChange: (value: boolean) => void
@@ -10,7 +11,6 @@ export function LiveDataPanel({ trip, onError, onRefreshed, onBlockedChange }: {
   const [storedZone, setStoredZone] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  const [usage, setUsage] = useState<Usage[]>([])
   const [reload, setReload] = useState(0)
   useEffect(() => {
     let active = true
@@ -18,7 +18,7 @@ export function LiveDataPanel({ trip, onError, onRefreshed, onBlockedChange }: {
     return () => { active = false }
   }, [trip.id, onError, reload])
   useEffect(() => { onBlockedChange(busy || !storedZone || zone !== storedZone) }, [busy, zone, storedZone, onBlockedChange])
-  const run = async (action: 'weather' | 'zone' | 'usage') => {
+  const run = async (action: 'weather' | 'zone') => {
     setBusy(true); setMessage('')
     try {
       if (action === 'weather') {
@@ -29,7 +29,7 @@ export function LiveDataPanel({ trip, onError, onRefreshed, onBlockedChange }: {
       } else if (action === 'zone') {
         const value = await advanced.saveZone(trip.id, zone)
         setStoredZone(value.timeZoneId); setMessage('시간대를 저장했습니다. 새 일정 계산에 적용됩니다.')
-      } else setUsage(await advanced.usage())
+      }
     } catch (error) { onError(error) } finally { setBusy(false) }
   }
   return <section className="advanced-panel live-data-panel" aria-label="실제 여행 데이터">
@@ -42,6 +42,6 @@ export function LiveDataPanel({ trip, onError, onRefreshed, onBlockedChange }: {
     {!storedZone && <button type="button" onClick={() => setReload(r => r + 1)}>시간대 다시 불러오기</button>}
     {zone !== storedZone && storedZone && <p role="status">시간대 변경을 저장해야 일정을 계산할 수 있습니다.</p>}
     {message && <p role="status">{message}</p>}
-    <details><summary>API 사용량과 주의사항</summary><p>Google 장소는 분할·야간 영업시간과 제공된 현지 7일 특별 영업시간을 반영합니다. 그 밖의 공휴일·임시 휴무는 별도 확인하세요. 대중교통은 방문 종료 시각별 추가 조회가 사용량에 포함됩니다. 무료 Open-Meteo API는 비상업 개발용입니다.</p><button type="button" disabled={busy} onClick={() => void run('usage')}>이번 달 호출량 조회</button>{usage.map(row => <p key={row.operation}>{row.operation}: {row.attemptedUnits.toLocaleString()} / {row.limit.toLocaleString()} {row.operation === 'GOOGLE_ROUTES' ? '행렬 요소' : '요청'}</p>)}<small>재시도 포함 앱 집계이며 Google 청구서가 아닙니다. 다른 앱 사용량과 브라우저 지도 호출은 포함하지 않습니다.</small></details>
+    <details><summary>API 품질·비용 대시보드</summary><p>Google 장소는 분할·야간 영업시간과 제공된 현지 7일 특별 영업시간을 반영합니다. 그 밖의 공휴일·임시 휴무는 별도 확인하세요. 대중교통은 방문 종료 시각별 추가 조회가 사용량에 포함됩니다. 무료 Open-Meteo API는 비상업 개발용입니다.</p><ProviderOperationsPanel onError={onError} compact /></details>
   </section>
 }

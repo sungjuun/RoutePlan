@@ -60,14 +60,15 @@ test('비밀번호 변경·다른 기기 로그아웃·메일 재설정 후 재�
   try {
     const other = await otherContext.newPage()
     await logIn(other, account)
-    await page.getByRole('button', { name: '마이페이지', exact: true }).click()
-    await page.getByText('비밀번호 변경', { exact: true }).click()
+    await page.locator('.public-profile').click()
+    const accountSecurity = page.getByRole('region', { name: '계정 보안' })
+    await accountSecurity.getByText('비밀번호 변경', { exact: true }).click()
     await page.setViewportSize({ width: 393, height: 851 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    await page.getByLabel('현재 비밀번호').fill(account.password)
-    await page.getByLabel('새 비밀번호', { exact: true }).fill('Changed-e2e-password-2026!')
-    await page.getByLabel('새 비밀번호 확인').fill('Changed-e2e-password-2026!')
-    await page.getByRole('button', { name: '비밀번호 변경하고 로그아웃' }).click()
+    await accountSecurity.getByLabel('현재 비밀번호').fill(account.password)
+    await accountSecurity.getByLabel('새 비밀번호', { exact: true }).fill('Changed-e2e-password-2026!')
+    await accountSecurity.getByLabel('새 비밀번호 확인').fill('Changed-e2e-password-2026!')
+    await accountSecurity.getByRole('button', { name: '비밀번호 변경하고 로그아웃' }).click()
     await expect(page.getByRole('heading', { name: '다시 여행을 이어가세요' })).toBeVisible()
     expect((await (await other.request.get('/api/v1/auth/me')).json()).authenticated).toBe(false)
     await page.getByRole('button', { name: '비밀번호를 잊으셨나요?' }).click()
@@ -111,4 +112,47 @@ test('백엔드를 실제로 재시작해도 로그인과 저장 여행 유지',
   await page.reload()
   await expect(page.getByRole('heading', { name: '오늘의 장면을 골라보세요' })).toBeVisible()
   expect(new URL(page.url()).searchParams.get('tripId')).toBe(String(tripId))
+})
+
+test('마이페이지에서 닉네임·이메일을 변경하고 계정 데이터를 삭제', async ({ page }) => {
+  test.setTimeout(90_000)
+  const seed = `lifecycle-${Date.now()}`
+  const account = testAccount(seed, 'owner')
+  const nickname = `새여행자-${seed.slice(-8)}`
+  const nextEmail = `changed-${seed}@example.com`
+  await signUp(page, account)
+
+  await page.getByRole('button', { name: new RegExp(account.nickname) }).click()
+  const management = page.getByRole('region', { name: '계정 관리' })
+  await management.getByLabel('닉네임').fill(nickname)
+  await management.getByRole('button', { name: '닉네임 저장' }).click()
+  await expect(management.getByRole('status')).toContainText('닉네임을 변경')
+  await expect(page.getByRole('heading', { name: `${nickname}님의 여행 공간` })).toBeVisible()
+
+  await management.getByText('이메일 변경', { exact: true }).click()
+  await management.getByLabel('새 이메일').fill(nextEmail)
+  await management.getByLabel('현재 비밀번호').first().fill(account.password)
+  await management.getByRole('button', { name: '이메일 변경하고 로그아웃' }).click()
+  await expect(page.getByRole('heading', { name: '다시 여행을 이어가세요' })).toBeVisible()
+
+  await page.getByLabel('이메일', { exact: true }).fill(nextEmail)
+  await page.getByLabel('비밀번호', { exact: true }).fill(account.password)
+  await page.locator('form').getByRole('button', { name: '로그인', exact: true }).click()
+  await expect(page.getByRole('heading', { name: /좋은 여행 동선을 발견하고/ })).toBeVisible()
+  await page.getByRole('button', { name: new RegExp(nickname) }).click()
+
+  const refreshedManagement = page.getByRole('region', { name: '계정 관리' })
+  await refreshedManagement.getByText('회원 탈퇴', { exact: true }).click()
+  await refreshedManagement.getByLabel('현재 비밀번호').last().fill(account.password)
+  await refreshedManagement.getByLabel('확인 문구').fill('회원 탈퇴')
+  await refreshedManagement.getByRole('button', { name: '계정과 모든 데이터 삭제' }).click()
+  await expect(page.getByRole('heading', { name: /좋은 여행 동선을 발견하고/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: '로그인', exact: true })).toBeVisible()
+
+  const csrf = await (await page.request.get('/api/v1/auth/csrf')).json() as { headerName: string; token: string }
+  const recreated = await page.request.post('/api/v1/auth/signup', {
+    headers: { [csrf.headerName]: csrf.token },
+    data: { email: nextEmail, nickname, password: account.password },
+  })
+  expect(recreated.status()).toBe(201)
 })

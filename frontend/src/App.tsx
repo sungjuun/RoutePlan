@@ -181,6 +181,18 @@ export function App() {
     notify('info', '비밀번호를 변경했습니다. 모든 기기에서 로그아웃했으니 새 비밀번호로 로그인해 주세요.')
   }
 
+  const emailChanged = () => {
+    clearAccountSession()
+    showAuth('login')
+    notify('info', '이메일을 변경했습니다. 새 이메일로 다시 로그인한 뒤 받은 메일에서 인증을 완료해 주세요.')
+  }
+
+  const accountDeleted = () => {
+    clearAccountSession()
+    showHome()
+    notify('success', '계정과 저장된 개인 데이터를 삭제했습니다.')
+  }
+
   const closeAccountLink = async () => {
     setAccountLink(null)
     try {
@@ -324,7 +336,7 @@ export function App() {
         {page === 'community' && <PublicCommunityPage user={user} initialRegion={communityRegion} onRequireAuth={() => showAuth('login', 'create-trip')} onCreateTrip={createTrip} onError={reportError} />}
         {page === 'create-trip' && <TripSetup onReady={handleTripReady} onError={reportError} />}
         {page === 'trips' && <MyTripsPage onOpenTrip={(tripId) => void loadTrip(tripId)} onNewTrip={createTrip} onError={reportError} />}
-        {page === 'profile' && user && <Suspense fallback={<p role="status">마이페이지를 불러오는 중…</p>}><MyPage user={user} onUserChanged={next => setUser(current => current?.id === next.id ? { ...current, ...next } : current)} onPasswordChanged={passwordChanged} onOpenTrips={openMyTrips} onNewTrip={createTrip} onLogout={() => void logout()} onError={reportError} /></Suspense>}
+        {page === 'profile' && user && <Suspense fallback={<p role="status">마이페이지를 불러오는 중…</p>}><MyPage user={user} onUserChanged={next => setUser(current => current?.id === next.id ? { ...current, ...next } : current)} onPasswordChanged={passwordChanged} onEmailChanged={emailChanged} onAccountDeleted={accountDeleted} onOpenTrips={openMyTrips} onNewTrip={createTrip} onLogout={() => void logout()} onError={reportError} /></Suspense>}
       </div>
     )
   }

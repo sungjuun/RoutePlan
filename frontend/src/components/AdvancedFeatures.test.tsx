@@ -35,6 +35,27 @@ describe('live data and community', () => {
     expect(weather).toHaveBeenCalledOnce(); expect(refreshed).toHaveBeenCalledOnce()
   })
 
+  it('shows durable API limits, quality and configured cost estimates', async () => {
+    vi.spyOn(advanced, 'weatherRefreshSettings').mockResolvedValue({ enabled: false, nextRefreshAt: null, lastSuccessAt: null, lastError: null })
+    vi.spyOn(advanced, 'zone').mockResolvedValue({ timeZoneId: 'Asia/Seoul' })
+    vi.spyOn(advanced, 'usage').mockResolvedValue([{
+      operation: 'OPENAI_RESPONSES', provider: 'openai', month: '2026-08-01',
+      attemptedUnits: 8, limit: 10, remainingUnits: 2, usagePercent: 80, status: 'WARNING',
+      attemptCount: 8, successCount: 7, failureCount: 1, successfulUnits: 7, failedUnits: 1, unclassifiedUnits: 0,
+      successRatePercent: 87.5, averageLatencyMs: 420, maxLatencyMs: 900,
+      inputTokens: 1200, outputTokens: 300, tokenLimit: 10000, remainingTokens: 8500,
+      tokenUsagePercent: 15, estimatedCostUsd: 0.0036, costConfigured: true,
+    }])
+    render(<LiveDataPanel trip={trip} onError={vi.fn()} onRefreshed={vi.fn()} onBlockedChange={vi.fn()} />)
+    fireEvent.click(screen.getByText('API 품질·비용 대시보드'))
+    fireEvent.click(screen.getByRole('button', { name: '이번 달 운영 지표 조회' }))
+    expect(await screen.findByText('OpenAI 여행 조건 해석')).toBeVisible()
+    expect(screen.getByText('주의')).toBeVisible()
+    expect(screen.getByText('87.5%')).toBeVisible()
+    expect(screen.getByText(/설정 단가 기준 추정 \$0.003600/)).toBeVisible()
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '80')
+  })
+
   it('records decimal money exactly and reuses the request id after a network failure', async () => {
     vi.spyOn(advanced, 'spending').mockResolvedValue(spending)
     const save = vi.spyOn(advanced, 'expense').mockRejectedValueOnce(new Error('network')).mockResolvedValue(spending)

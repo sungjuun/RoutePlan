@@ -2,6 +2,7 @@ package com.routeplan.auth;
 
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -26,6 +27,65 @@ public class AccountSecurityService {
                 "SELECT email_verified_at IS NOT NULL FROM users WHERE id = ?", Boolean.class, userId));
     }
 
+    public AccountSnapshot snapshot(long userId) {
+        return jdbc.query("""
+                        SELECT id, email, nickname, created_at, email_verified_at IS NOT NULL, security_version
+                        FROM users WHERE id = ?
+                        """, (rs, row) -> new AccountSnapshot(
+                        rs.getLong("id"), rs.getString("email"), rs.getString("nickname"),
+                        rs.getTimestamp("created_at").toInstant(), rs.getBoolean(5), rs.getLong("security_version")),
+                        userId)
+                .stream().findFirst().orElseThrow(() -> new RoutePlanException(ErrorCode.USER_NOT_FOUND));
+    }
+
+    @Transactional
+    public AccountSnapshot changeNickname(RoutePlanPrincipal principal, String rawNickname) {
+        String nickname = normalizeNickname(rawNickname);
+        Account account = lockAccount(principal.userId());
+        requireCurrentVersion(principal, account);
+        if (nickname.equals(account.nickname())) return snapshot(account.id());
+        if (Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE nickname = ? AND id <> ?)",
+                Boolean.class, nickname, account.id()))) {
+            throw new RoutePlanException(ErrorCode.DUPLICATE_NICKNAME);
+        }
+        jdbc.update("UPDATE users SET nickname = ? WHERE id = ?", nickname, account.id());
+        return snapshot(account.id());
+    }
+
+    @Transactional
+    public void changeEmail(RoutePlanPrincipal principal, String currentPassword, String rawEmail) {
+        String email = AuthService.normalizeEmail(rawEmail);
+        Account account = lockAccount(principal.userId());
+        requireCurrentPassword(principal, account, currentPassword);
+        if (email.equals(account.email())) {
+            throw new IllegalArgumentException("현재 이메일과 다른 이메일을 입력해 주세요.");
+        }
+        if (Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE lower(email) = lower(?) AND id <> ?)",
+                Boolean.class, email, account.id()))) {
+            throw new RoutePlanException(ErrorCode.DUPLICATE_EMAIL);
+        }
+        jdbc.update("""
+                UPDATE users SET email = ?, email_verified_at = NULL,
+                    security_version = security_version + 1 WHERE id = ?
+                """, email, account.id());
+        revokeAccountAccess(account);
+        mail.enqueue(email, "VERIFY_EMAIL");
+    }
+
+    @Transactional
+    public void deleteAccount(RoutePlanPrincipal principal, String currentPassword, String confirmation) {
+        if (!"회원 탈퇴".equals(confirmation == null ? "" : confirmation.strip())) {
+            throw new IllegalArgumentException("확인 문구에 ‘회원 탈퇴’를 정확히 입력해 주세요.");
+        }
+        Account account = lockAccount(principal.userId());
+        requireCurrentPassword(principal, account, currentPassword);
+        revokeAccountAccess(account);
+        int removed = jdbc.update("DELETE FROM users WHERE id = ?", account.id());
+        if (removed != 1) throw new RoutePlanException(ErrorCode.USER_NOT_FOUND);
+    }
+
     @Transactional
     public void verifyEmail(String token) {
         Account account = consume(token, "VERIFY_EMAIL");
@@ -44,10 +104,7 @@ public class AccountSecurityService {
     public void changePassword(RoutePlanPrincipal principal, String currentPassword, String newPassword) {
         AuthService.validatePassword(newPassword);
         Account account = lockAccount(principal.userId());
-        if (account.version() != principal.securityVersion()
-                || !passwords.matches(currentPassword, account.passwordHash())) {
-            throw new BadCredentialsException("Invalid credentials");
-        }
+        requireCurrentPassword(principal, account, currentPassword);
         replacePassword(account, newPassword);
     }
 
@@ -57,10 +114,36 @@ public class AccountSecurityService {
         }
         jdbc.update("UPDATE users SET password_hash = ?, security_version = security_version + 1 WHERE id = ?",
                 passwords.encode(newPassword), account.id());
-        jdbc.update("DELETE FROM auth_tokens WHERE user_id = ?", account.id());
-        jdbc.update("DELETE FROM spring_session WHERE principal_name = ?", account.email());
+        revokeAccountAccess(account);
         // Already queued messages from an older version are discarded by the worker.
         mail.enqueue(account.email(), "PASSWORD_CHANGED");
+    }
+
+    private void revokeAccountAccess(Account account) {
+        jdbc.update("DELETE FROM auth_tokens WHERE user_id = ?", account.id());
+        jdbc.update("DELETE FROM auth_mail_jobs WHERE user_id = ?", account.id());
+        jdbc.update("DELETE FROM spring_session WHERE principal_name = ?", account.email());
+    }
+
+    private void requireCurrentPassword(RoutePlanPrincipal principal, Account account, String currentPassword) {
+        requireCurrentVersion(principal, account);
+        if (!passwords.matches(currentPassword == null ? "" : currentPassword, account.passwordHash())) {
+            throw new BadCredentialsException("Invalid credentials");
+        }
+    }
+
+    private static void requireCurrentVersion(RoutePlanPrincipal principal, Account account) {
+        if (account.version() != principal.securityVersion()) {
+            throw new BadCredentialsException("Invalid credentials");
+        }
+    }
+
+    private static String normalizeNickname(String rawNickname) {
+        String nickname = rawNickname == null ? "" : rawNickname.strip();
+        if (nickname.length() < 2 || nickname.length() > 50) {
+            throw new IllegalArgumentException("닉네임은 공백을 제외하고 2자 이상 50자 이하여야 합니다.");
+        }
+        return nickname;
     }
 
     private Account consume(String rawToken, String purpose) {
@@ -80,11 +163,13 @@ public class AccountSecurityService {
     }
 
     private Account lockAccount(long userId) {
-        return jdbc.query("SELECT id, email, password_hash, security_version FROM users WHERE id = ? FOR UPDATE",
-                        (rs, row) -> new Account(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getLong(4)), userId)
+        return jdbc.query("SELECT id, email, nickname, password_hash, security_version FROM users WHERE id = ? FOR UPDATE",
+                        (rs, row) -> new Account(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getLong(5)), userId)
                 .stream().findFirst().orElseThrow(AccountSecurityService::invalidToken);
     }
 
     private static RoutePlanException invalidToken() { return new RoutePlanException(ErrorCode.AUTH_TOKEN_INVALID); }
-    private record Account(long id, String email, String passwordHash, long version) { }
+    public record AccountSnapshot(long id, String email, String nickname, Instant createdAt,
+                                  boolean emailVerified, long securityVersion) { }
+    private record Account(long id, String email, String nickname, String passwordHash, long version) { }
 }

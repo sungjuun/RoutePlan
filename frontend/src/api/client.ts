@@ -24,6 +24,7 @@ import type {
   TripWeatherForecastInput,
   TripBudget,
   TripBudgetInput,
+  User,
 } from '../types'
 
 interface CsrfView {
@@ -124,6 +125,15 @@ export const api = {
   },
   changePassword: async (currentPassword: string, newPassword: string) => {
     await request<void>('/auth/password/change', json('POST', { currentPassword, newPassword }))
+    csrfRequest = null
+  },
+  changeNickname: (nickname: string) => request<User>('/auth/profile', json('PATCH', { nickname })),
+  changeEmail: async (currentPassword: string, newEmail: string) => {
+    await request<void>('/auth/email/change', json('POST', { currentPassword, newEmail }))
+    csrfRequest = null
+  },
+  deleteAccount: async (currentPassword: string, confirmation: string) => {
+    await request<void>('/auth/account', json('DELETE', { currentPassword, confirmation }))
     csrfRequest = null
   },
 

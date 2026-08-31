@@ -33,7 +33,11 @@ import org.testcontainers.junit.jupiter.*;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest(properties = {"routeplan.community.moderator-emails=moderator@routeplan.test",
-        "routeplan.google.monthly-details-limit=3", "routeplan.google.browser-key=test-browser-key"})
+        "routeplan.google.monthly-details-limit=3", "routeplan.google.browser-key=test-browser-key",
+        "routeplan.external.usage.open-ai-monthly-request-limit=3",
+        "routeplan.external.usage.open-ai-monthly-token-limit=100",
+        "routeplan.external.usage.open-ai-input-usd-per-million=2",
+        "routeplan.external.usage.open-ai-output-usd-per-million=10"})
 @AutoConfigureMockMvc
 @Testcontainers
 class AdvancedFeaturesApiIntegrationTest {
@@ -180,6 +184,27 @@ class AdvancedFeaturesApiIntegrationTest {
         }
         assertThat(usage.current().stream().filter(u->u.operation().equals("GOOGLE_PLACE_DETAILS")).findFirst().orElseThrow().attemptedUnits()).isEqualTo(3);
         assertThatThrownBy(()->usage.reserve(ExternalApiOperation.GOOGLE_PLACE_DETAILS,1)).isInstanceOf(ExternalProviderException.class);
+    }
+
+    @Test void usageDashboardPersistsOutcomesLatencyTokensAndConfiguredEstimate() throws Exception {
+        jdbc.update("DELETE FROM external_api_usage WHERE operation='OPENAI_RESPONSES'");
+        usage.reserve(ExternalApiOperation.OPENAI_RESPONSES, 1);
+        usage.recordOutcome(ExternalApiOperation.OPENAI_RESPONSES, 1, true, 25);
+        usage.recordOpenAiTokens(80, 20);
+
+        var value = usage.current().stream()
+                .filter(row -> row.operation().equals("OPENAI_RESPONSES")).findFirst().orElseThrow();
+        assertThat(value.attemptedUnits()).isEqualTo(1);
+        assertThat(value.successCount()).isEqualTo(1);
+        assertThat(value.failureCount()).isZero();
+        assertThat(value.successRatePercent()).isEqualTo(100.0);
+        assertThat(value.averageLatencyMs()).isEqualTo(25);
+        assertThat(value.remainingTokens()).isZero();
+        assertThat(value.status()).isEqualTo(ExternalUsageGuard.UsageStatus.BLOCKED);
+        assertThat(value.estimatedCostUsd()).isEqualByComparingTo("0.000360");
+        assertThat(value.costConfigured()).isTrue();
+        assertThatThrownBy(() -> usage.reserve(ExternalApiOperation.OPENAI_RESPONSES, 1))
+                .isInstanceOf(ExternalProviderException.class);
     }
 
     @Test void geometryIsOnDemandAndOwnerProtected() throws Exception {

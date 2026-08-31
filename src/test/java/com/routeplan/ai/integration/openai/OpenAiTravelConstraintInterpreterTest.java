@@ -3,12 +3,17 @@ package com.routeplan.ai.integration.openai;
 import static com.routeplan.integration.retry.ExternalRetryTestSupport.noDelayRetryExecutor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.routeplan.ai.application.TravelInterpretationContext;
 import com.routeplan.ai.domain.MealType;
 import com.routeplan.ai.domain.PlacePreference;
+import com.routeplan.integration.ExternalUsageGuard;
 import com.routeplan.integration.google.ExternalProviderException;
 import com.routeplan.integration.google.ExternalProviderFailure;
 import com.routeplan.trip.domain.TransportMode;
@@ -119,6 +124,27 @@ class OpenAiTravelConstraintInterpreterTest {
                             assertThat(exception.failure())
                                     .isEqualTo(ExternalProviderFailure.INVALID_RESPONSE));
             assertThat(server.requests()).hasSize(1);
+        }
+    }
+
+    @Test
+    void recordsEachOpenAiAttemptAndSuccessfulResponseTokens() throws Exception {
+        try (StubServer server = new StubServer()) {
+            server.respond(200, """
+                    {"status":"completed","usage":{"input_tokens":120,"output_tokens":30}}
+                    """);
+            OpenAiProperties properties = new OpenAiProperties();
+            properties.setApiKey("secret-key");
+            properties.setBaseUrl(server.baseUri());
+            ExternalUsageGuard usage = mock(ExternalUsageGuard.class);
+            OpenAiHttpClient client = new OpenAiHttpClient(properties, noDelayRetryExecutor(3), usage);
+
+            client.createResponse(Map.of("input", "여행 조건"));
+
+            verify(usage).reserve(com.routeplan.integration.retry.ExternalApiOperation.OPENAI_RESPONSES, 1);
+            verify(usage).recordOutcome(
+                    eq(com.routeplan.integration.retry.ExternalApiOperation.OPENAI_RESPONSES), eq(1L), eq(true), anyLong());
+            verify(usage).recordOpenAiTokens(120, 30);
         }
     }
 

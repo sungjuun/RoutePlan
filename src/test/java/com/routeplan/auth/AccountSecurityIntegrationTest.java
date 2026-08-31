@@ -10,6 +10,8 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -178,6 +180,77 @@ class AccountSecurityIntegrationTest {
     }
 
     @Test
+    void changesNicknameAndReturnsFreshAccountDataFromExistingSessions() throws Exception {
+        Account account = signup();
+        Account other = signup();
+        String nickname = "새여행자-" + UUID.randomUUID().toString().substring(0, 8);
+
+        mvc.perform(patch("/api/v1/auth/profile").with(csrf()).cookie(account.cookie())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickname\":\"" + nickname + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nickname").value(nickname));
+        mvc.perform(get("/api/v1/auth/me").cookie(account.cookie()))
+                .andExpect(jsonPath("$.user.nickname").value(nickname));
+
+        String occupied = users.findById(other.id()).orElseThrow().getNickname();
+        mvc.perform(patch("/api/v1/auth/profile").with(csrf()).cookie(account.cookie())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickname\":\"" + occupied + "\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_NICKNAME"));
+    }
+
+    @Test
+    void emailChangeRequiresPasswordRevokesAllSessionsAndStartsReverification() throws Exception {
+        Account account = signup();
+        Cookie second = login(account.email(), PASSWORD).andReturn().getResponse().getCookie("ROUTEPLAN_SESSION");
+        String nextEmail = "changed-" + UUID.randomUUID() + "@example.com";
+
+        perform("/auth/email/change", emailChangeBody("incorrect-password", nextEmail), account.cookie())
+                .andExpect(status().isUnauthorized());
+        perform("/auth/email/change", emailChangeBody(PASSWORD, nextEmail), account.cookie())
+                .andExpect(status().isNoContent());
+
+        anonymous(account.cookie());
+        anonymous(second);
+        login(account.email(), PASSWORD).andExpect(status().isUnauthorized());
+        Cookie refreshed = login(nextEmail.toUpperCase(), PASSWORD).andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.email").value(nextEmail))
+                .andExpect(jsonPath("$.user.emailVerified").value(false))
+                .andReturn().getResponse().getCookie("ROUTEPLAN_SESSION");
+        String token = deliverAndReadToken("verify-email");
+        perform("/auth/email/verify", tokenBody(token), null).andExpect(status().isNoContent());
+        mvc.perform(get("/api/v1/auth/me").cookie(refreshed))
+                .andExpect(jsonPath("$.user.emailVerified").value(true));
+    }
+
+    @Test
+    void accountDeletionRequiresExplicitConfirmationCascadesOwnedDataAndFreesIdentity() throws Exception {
+        Account account = signup();
+        mvc.perform(post("/api/v1/trips").with(csrf()).cookie(account.cookie())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"name":"삭제될 여행","startDate":"2026-09-10","endDate":"2026-09-10",
+                                 "accommodationName":"테스트 숙소","accommodationLatitude":37.57,
+                                 "accommodationLongitude":126.98,"transportMode":"WALKING"}
+                                """))
+                .andExpect(status().isCreated());
+        String nickname = users.findById(account.id()).orElseThrow().getNickname();
+
+        deleteAccount(account, PASSWORD, "확인 안 함").andExpect(status().isBadRequest());
+        deleteAccount(account, "incorrect-password", "회원 탈퇴").andExpect(status().isUnauthorized());
+        deleteAccount(account, PASSWORD, "회원 탈퇴").andExpect(status().isNoContent());
+
+        anonymous(account.cookie());
+        assertThat(users.findById(account.id())).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM trips WHERE user_id = ?", Integer.class, account.id())).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM spring_session WHERE principal_name = ?",
+                Integer.class, account.email())).isZero();
+        perform("/auth/signup", "{\"email\":\"" + account.email() + "\",\"nickname\":\"" + nickname
+                + "\",\"password\":\"" + PASSWORD + "\"}", null).andExpect(status().isCreated());
+    }
+
+    @Test
     void publicRecoveryAndAuthenticatedPasswordChangesKeepCsrfProtection() throws Exception {
         Account account = signup();
         for (String path : List.of("/auth/password/reset-request", "/auth/email/verify", "/auth/password/reset")) {
@@ -308,6 +381,12 @@ class AccountSecurityIntegrationTest {
         return perform("/auth/login", "{\"email\":\"" + email + "\",\"password\":\"" + password + "\"}", null);
     }
 
+    private ResultActions deleteAccount(Account account, String password, String confirmation) throws Exception {
+        return mvc.perform(delete("/api/v1/auth/account").with(csrf()).cookie(account.cookie())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"currentPassword\":\"" + password + "\",\"confirmation\":\"" + confirmation + "\"}"));
+    }
+
     private void anonymous(Cookie cookie) throws Exception {
         mvc.perform(get("/api/v1/auth/me").cookie(cookie)).andExpect(jsonPath("$.authenticated").value(false));
     }
@@ -335,5 +414,6 @@ class AccountSecurityIntegrationTest {
     private String emailBody(String email) { return "{\"email\":\"" + email + "\"}"; }
     private String resetBody(String token) { return "{\"token\":\"" + token + "\",\"newPassword\":\"" + NEW_PASSWORD + "\"}"; }
     private String changeBody(String current, String next) { return "{\"currentPassword\":\"" + current + "\",\"newPassword\":\"" + next + "\"}"; }
+    private String emailChangeBody(String current, String email) { return "{\"currentPassword\":\"" + current + "\",\"newEmail\":\"" + email + "\"}"; }
     private record Account(long id, String email, Cookie cookie) { }
 }

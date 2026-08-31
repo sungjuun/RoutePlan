@@ -20,6 +20,8 @@ import org.springframework.security.web.authentication.session.SessionAuthentica
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -112,6 +114,32 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @PatchMapping("/profile")
+    public AuthUserView changeNickname(@AuthenticationPrincipal RoutePlanPrincipal principal,
+            @Valid @RequestBody ChangeNicknameRequest body) {
+        limits.require("nickname-user", principal.userId().toString(), 10, Duration.ofHours(1));
+        return userView(accountSecurity.changeNickname(principal, body.nickname()));
+    }
+
+    @PostMapping("/email/change")
+    public ResponseEntity<Void> changeEmail(@AuthenticationPrincipal RoutePlanPrincipal principal,
+            @Valid @RequestBody ChangeEmailRequest body, HttpServletRequest request) {
+        requireMail();
+        limits.require("email-change-user", principal.userId().toString(), 5, Duration.ofDays(1));
+        accountSecurity.changeEmail(principal, body.currentPassword(), body.newEmail());
+        clearSession(request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/account")
+    public ResponseEntity<Void> deleteAccount(@AuthenticationPrincipal RoutePlanPrincipal principal,
+            @Valid @RequestBody DeleteAccountRequest body, HttpServletRequest request) {
+        limits.require("account-delete-user", principal.userId().toString(), 3, Duration.ofDays(1));
+        accountSecurity.deleteAccount(principal, body.currentPassword(), body.confirmation());
+        clearSession(request);
+        return ResponseEntity.noContent().build();
+    }
+
     private void limitRedemption(HttpServletRequest request) {
         limits.require("token-ip", limits.clientAddress(request), 30, Duration.ofMinutes(15));
     }
@@ -133,7 +161,7 @@ public class AuthController {
                 || !(authentication.getPrincipal() instanceof RoutePlanPrincipal principal)) {
             return new AuthSessionView(false, null);
         }
-        return new AuthSessionView(true, userView(principal));
+        return new AuthSessionView(true, userView(accountSecurity.snapshot(principal.userId())));
     }
 
     @PostMapping("/signup")
@@ -180,12 +208,12 @@ public class AuthController {
 
     private AuthSessionView session(Authentication authentication) {
         RoutePlanPrincipal principal = (RoutePlanPrincipal) authentication.getPrincipal();
-        return new AuthSessionView(true, userView(principal));
+        return new AuthSessionView(true, userView(accountSecurity.snapshot(principal.userId())));
     }
 
-    private AuthUserView userView(RoutePlanPrincipal principal) {
-        return new AuthUserView(principal.userId(), principal.email(), principal.nickname(),
-                principal.createdAt(), images.url(principal.userId()), accountSecurity.emailVerified(principal.userId()));
+    private AuthUserView userView(AccountSecurityService.AccountSnapshot account) {
+        return new AuthUserView(account.id(), account.email(), account.nickname(),
+                account.createdAt(), images.url(account.id()), account.emailVerified());
     }
 
     public record SignupRequest(
@@ -216,4 +244,9 @@ public class AuthController {
             @NotBlank @Size(min = 10, max = 72) String newPassword) { }
     public record ChangePasswordRequest(@NotBlank @Size(max = 72) String currentPassword,
             @NotBlank @Size(min = 10, max = 72) String newPassword) { }
+    public record ChangeNicknameRequest(@NotBlank @Size(min = 2, max = 50) String nickname) { }
+    public record ChangeEmailRequest(@NotBlank @Size(max = 72) String currentPassword,
+            @NotBlank @Email @Size(max = 254) String newEmail) { }
+    public record DeleteAccountRequest(@NotBlank @Size(max = 72) String currentPassword,
+            @NotBlank @Size(max = 20) String confirmation) { }
 }

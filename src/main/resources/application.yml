@@ -108,6 +108,16 @@ routeplan:
       max-delay: ${ROUTEPLAN_EXTERNAL_RETRY_MAX_DELAY:2s}
       multiplier: ${ROUTEPLAN_EXTERNAL_RETRY_MULTIPLIER:2.0}
       jitter: ${ROUTEPLAN_EXTERNAL_RETRY_JITTER:0.2}
+    usage:
+      warning-percent: ${ROUTEPLAN_USAGE_WARNING_PERCENT:80}
+      open-ai-monthly-request-limit: ${OPENAI_MONTHLY_REQUEST_LIMIT:500}
+      open-ai-monthly-token-limit: ${OPENAI_MONTHLY_TOKEN_LIMIT:1000000}
+      google-places-usd-per-thousand: ${GOOGLE_PLACES_USD_PER_THOUSAND:0}
+      google-place-details-usd-per-thousand: ${GOOGLE_PLACE_DETAILS_USD_PER_THOUSAND:0}
+      google-routes-usd-per-thousand: ${GOOGLE_ROUTES_USD_PER_THOUSAND:0}
+      google-geometry-usd-per-thousand: ${GOOGLE_GEOMETRY_USD_PER_THOUSAND:0}
+      open-ai-input-usd-per-million: ${OPENAI_INPUT_USD_PER_MILLION:0}
+      open-ai-output-usd-per-million: ${OPENAI_OUTPUT_USD_PER_MILLION:0}
   ai:
     provider: ${ROUTEPLAN_AI_PROVIDER:RULE_BASED}
   place:

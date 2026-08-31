@@ -13,7 +13,12 @@ test('프로필 사진 저장·새로고침·초기화와 알림함·날씨 설�
   await page.keyboard.press('Escape')
   await expect(page.getByRole('button', { name: '알림', exact: true })).toHaveAttribute('aria-expanded', 'false')
 
-  await page.getByRole('button', { name: '마이페이지', exact: true }).click()
+  await page.locator('.public-profile').click()
+  const operations = page.getByRole('region', { name: '외부 API 품질과 비용' })
+  await expect(operations).toBeVisible()
+  await operations.getByRole('button', { name: '이번 달 운영 지표 조회' }).click()
+  await expect(operations.getByText('Google 경로 행렬')).toBeVisible()
+  await expect(operations.getByText('OpenAI 여행 조건 해석')).toBeVisible()
   // A synthetic 1px PNG, not a personal photo or an external URL.
   await page.getByLabel('프로필 사진 파일').setInputFiles({
     name: 'test-profile.png', mimeType: 'image/png',
@@ -24,7 +29,7 @@ test('프로필 사진 저장·새로고침·초기화와 알림함·날씨 설�
   await expect(page.getByText('프로필 사진을 저장했습니다.')).toBeVisible()
   await expect(page.locator('.profile-avatar img')).toHaveAttribute('src', /\/api\/v1\/profile\/avatar\?v=/)
   await page.reload()
-  await page.getByRole('button', { name: '마이페이지', exact: true }).click()
+  await page.locator('.public-profile').click()
   await expect(page.locator('.profile-avatar img')).toBeVisible()
   await page.setViewportSize({ width: 393, height: 851 })
   await page.getByRole('button', { name: /^알림/ }).click()
