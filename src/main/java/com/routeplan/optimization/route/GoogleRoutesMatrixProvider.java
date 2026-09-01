@@ -75,6 +75,7 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
         Set<RouteCacheKey> cacheKeys = cacheKeys(uniqueLocations, transportMode, departure);
         boolean useCache = routeLegCache.enabled();
         RouteCacheRead cacheRead = useCache ? readCache(cacheKeys) : RouteCacheRead.empty();
+        int cacheHitCount = cacheRead.routes().size();
         cacheRead.routes().forEach((key, route) -> routes.put(
                 new RouteMatrix.Leg(key.origin(), key.destination()),
                 route
@@ -91,6 +92,9 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
             if (refreshLease.contended()) {
                 RouteCacheRead refreshed = routeLegCache.waitForRefresh(missingKeys);
                 cacheFailures += refreshed.failureCount();
+                cacheHitCount += (int) refreshed.routes().keySet().stream()
+                        .filter(missingKeys::contains)
+                        .count();
                 refreshed.routes().forEach((key, route) -> routes.put(
                         new RouteMatrix.Leg(key.origin(), key.destination()), route));
             }
@@ -119,8 +123,8 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
                 requestCount,
                 elapsedMillis(startedAt),
                 useCache,
-                cacheRead.routes().size(),
-                useCache ? cacheKeys.size() - cacheRead.routes().size() : 0,
+                cacheHitCount,
+                useCache ? cacheKeys.size() - cacheHitCount : 0,
                 cacheFailures
         );
     }

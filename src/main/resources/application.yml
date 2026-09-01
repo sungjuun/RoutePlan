@@ -155,7 +155,7 @@ routeplan:
       max-days: ${ROUTEPLAN_TIME_DEPENDENT_MAX_DAYS:3}
       max-matrix-builds: ${ROUTEPLAN_TIME_DEPENDENT_MAX_MATRIX_BUILDS:36}
       max-matrix-elements: ${ROUTEPLAN_TIME_DEPENDENT_MAX_MATRIX_ELEMENTS:2500}
-      beam-width: ${ROUTEPLAN_TIME_DEPENDENT_BEAM_WIDTH:512}
+      beam-width: ${ROUTEPLAN_TIME_DEPENDENT_BEAM_WIDTH:128}
       max-evaluated-states: ${ROUTEPLAN_TIME_DEPENDENT_MAX_STATES:250000}
       max-search-duration: ${ROUTEPLAN_TIME_DEPENDENT_MAX_SEARCH_DURATION:5s}
   google:

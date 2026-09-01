@@ -1,0 +1,36 @@
+services:
+  google-routes-stub:
+    build:
+      context: ./frontend/e2e/stub
+    ports:
+      - "127.0.0.1:${E2E_GOOGLE_STUB_PORT:-8390}:8090"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8090/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  backend:
+    environment:
+      ROUTEPLAN_ROUTE_PROVIDER: GOOGLE
+      ROUTEPLAN_ROUTE_CACHE_ENABLED: "true"
+      ROUTEPLAN_ROUTE_DB_CACHE_ENABLED: "true"
+      ROUTEPLAN_ROUTE_CACHE_KEY_PREFIX: routeplan:e2e:v25
+      ROUTEPLAN_ROUTE_CACHE_DRIVING_TTL: 30m
+      ROUTEPLAN_ROUTE_CACHE_DEPARTURE_BUCKET: 15m
+      ROUTEPLAN_TIME_DEPENDENT_GLOBAL_ENABLED: "true"
+      ROUTEPLAN_TIME_DEPENDENT_BUCKET: 1h
+      # Two-place tests exercise the global path; four places exercise the visible safety fallback.
+      ROUTEPLAN_TIME_DEPENDENT_MAX_CANDIDATES: 3
+      ROUTEPLAN_TIME_DEPENDENT_MAX_DAYS: 3
+      ROUTEPLAN_TIME_DEPENDENT_MAX_MATRIX_BUILDS: 24
+      ROUTEPLAN_TIME_DEPENDENT_MAX_MATRIX_ELEMENTS: 1000
+      ROUTEPLAN_TIME_DEPENDENT_BEAM_WIDTH: 128
+      ROUTEPLAN_TIME_DEPENDENT_MAX_STATES: 50000
+      ROUTEPLAN_TIME_DEPENDENT_MAX_SEARCH_DURATION: 3s
+      ROUTEPLAN_EXTERNAL_RETRY_MAX_ATTEMPTS: 1
+      GOOGLE_MAPS_API_KEY: routeplan-e2e-google-stub-key
+      GOOGLE_ROUTES_BASE_URL: http://google-routes-stub:8090
+    depends_on:
+      google-routes-stub:
+        condition: service_healthy

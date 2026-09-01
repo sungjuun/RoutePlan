@@ -76,13 +76,15 @@ V22는 같은 대시보드에 공급자별 Circuit Breaker·동시 호출 격리
 
 V23은 [운영 배포 기반](docs/production-deployment.md)을 추가합니다. 운영 전용 Compose는 HTTPS 자동 인증서, 내부 전용 DB·Redis·Backend Network, Secure Cookie·SMTP 사전 검사, GHCR 커밋 SHA 이미지 배포, 배포 전 백업과 명시적 복구·이미지 롤백 절차를 제공합니다.
 
-로컬 격리 검증에서는 운영 Backend·Frontend를 비루트·읽기 전용으로 기동하고 외부 Port 비공개, Backup/Restore 왕복, Caddy 런타임과 전체 Backend 142개·Frontend 49개 테스트를 확인했습니다. 실제 배포에는 도메인·Linux 서버·SMTP·GitHub `production` Environment Secret이 별도로 필요합니다.
+로컬 격리 검증에서는 운영 Backend·Frontend를 비루트·읽기 전용으로 기동하고 외부 Port 비공개, Backup/Restore 왕복, Caddy 런타임과 전체 Backend 145개·Frontend 49개 테스트를 확인했습니다. 실제 배포에는 도메인·Linux 서버·SMTP·GitHub `production` Environment Secret이 별도로 필요합니다.
 
 V24는 [운영 모니터링과 경고](docs/production-monitoring.md)를 추가합니다. Backend 관리 포트를 내부 `monitoring` Network로 분리하고 Prometheus 수집·기록/경고 규칙, 코드로 관리되는 Grafana 운영 대시보드, Alertmanager SMTP 알림을 운영 Compose와 배포 절차에 연결합니다.
 
+V25는 [시간대별 교통량 전역 최적화와 PostGIS 영속 경로 캐시](docs/time-dependent-routing.md)를 추가합니다. 비용·탐색 상한 안에서 날짜와 방문 순서를 함께 재탐색하고, Redis L1 miss를 PostGIS L2에서 복구하며 동일 동시 miss는 분산 잠금으로 병합합니다.
+
 설정과 사용법은 [실제 데이터·개인화·장부 안내](docs/advanced-integrations.md), 외부 API 검증 결과는 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 참고하세요. **2026-09-01 로컬 환경에서 미래 날짜의 Google `TRAFFIC_AWARE` 자동차 Matrix, 시간 의존 전역 탐색, Redis L1 재사용과 PostGIS L2 재가열까지 실제 응답으로 확인했습니다.** 대표 표본 검증이며 실제 청구액·무료 잔량·운영 환경 검증은 별도입니다. 다른 환경에서는 서버·브라우저 키와 해당 API 활성화가 필요합니다.
 
-## 구현 범위 (V1–V24)
+## 구현 범위 (V1–V25)
 
 ### 지원
 
@@ -849,10 +851,12 @@ Benchmark는 일반 테스트와 분리해서 실행합니다.
 # Windows
 gradlew.bat algorithmBenchmark
 gradlew.bat routeCacheBenchmark
+gradlew.bat timeDependentBenchmark
 
 # macOS/Linux
 ./gradlew algorithmBenchmark
 ./gradlew routeCacheBenchmark
+./gradlew timeDependentBenchmark
 ```
 
 Frontend 검증은 다음 명령으로 실행합니다.
@@ -870,9 +874,12 @@ npm run build
 cd frontend
 npx playwright install chromium
 npm run test:e2e:docker
+npm run test:e2e:v25
 ```
 
 `test:e2e:docker`는 개발용 `localhost:3100`과 DB를 건드리지 않습니다. `routeplan-e2e` 프로젝트를 기본 포트 `3200`·`8280`·`55432`·`6479`에 띄우고, 테스트가 끝나면 전용 컨테이너와 DB 볼륨을 제거합니다. 이미 실행 중인 환경을 직접 검사할 때는 `E2E_BASE_URL`을 지정하고 `npm run test:e2e`를 사용합니다. 실패 시 `frontend/playwright-report`와 `frontend/test-results`에 Screenshot·Video·Trace·Compose 로그를 남깁니다.
+
+`test:e2e:v25`는 실제 과금 키 대신 결정적 Google Routes Stub을 붙인 별도 `routeplan-e2e-v25` 스택을 사용합니다. 교통량 전역 최적화 성공·안전 상한 fallback 문구, Redis L1 재사용, Redis 키 제거 후 PostGIS L2 재가열, 서로 다른 두 사용자의 동일 요청 중복 호출 방지를 브라우저에서 검증합니다. 실제 Google 계약 검증은 이 테스트와 분리합니다.
 
 Backend 통합 테스트는 PostGIS Testcontainers로 Flyway V1–V18을 적용하며, 전용 E2E 메일함(8027)에서 실제 SMTP 수신과 테스트 백엔드 재시작 후 로그인 유지를 확인합니다. 자세한 실행 범위는 [회원·보안 안내](docs/account-security.md), 실제 Google 응답 검증은 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 확인하세요.
 
@@ -916,6 +923,9 @@ Backend 통합 테스트는 PostGIS Testcontainers로 Flyway V1–V18을 적용�
 - 동일 Matrix 재요청의 100% Cache hit와 외부 호출 0회
 - 실제 Redis TTL·이동수단별 key 분리·pipelined write
 - Redis 장애 시 외부 Provider fallback과 failure 측정
+- Redis 장애 시 PostGIS 조회·재가열, PostGIS 장애 시 Google·Redis fallback
+- 두 Provider 인스턴스의 동일 동시 miss를 Redis 분산 잠금으로 단일 Google 호출로 병합
+- 4·6·8개 장소와 Beam 128·256·512 조합의 시간 의존 탐색 성능·품질 비교
 - Cache 적용 전후 전용 Benchmark
 - 지연 후 현재 위치부터 잔여 일정만 재계산
 - 다일 여행의 지난 날짜 Snapshot 고정과 현재 날짜 이후 장소 재배분
@@ -938,6 +948,8 @@ Backend 통합 테스트는 PostGIS Testcontainers로 Flyway V1–V18을 적용�
 - 모바일 폭의 예산 입력, 비용 저장 후 예산 부족 장소 제외와 결과 합계 E2E
 - 다른 사용자의 Trip 접근 차단과 공개 Route 좋아요·복사·재최적화 E2E
 - Pixel 5 Viewport의 모바일 메뉴·가로 폭·인증 경계 E2E
+- V25 교통량 전역 최적화 성공·안전 상한 fallback·경고 문구·Redis/PostGIS 계층 캐시 E2E
+- 서로 다른 두 사용자의 동일 시간대 최적화에서 Google Matrix 중복 호출 방지 E2E
 - 한국어 자연어의 시간·여행 강도·이동수단·장소 우선순위 결정적 해석
 - 자연어 미리보기와 검토한 조건의 Trip 원자적 적용 API
 - OpenAI 요청의 Strict JSON Schema·`store=false`·API key 비노출 계약

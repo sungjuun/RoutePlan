@@ -7,7 +7,10 @@ const e2eDirectory = dirname(fileURLToPath(import.meta.url))
 const frontendDirectory = resolve(e2eDirectory, '..')
 const repositoryDirectory = resolve(frontendDirectory, '..')
 const composeFile = join(repositoryDirectory, 'compose.yaml')
-const projectName = process.env.E2E_COMPOSE_PROJECT ?? 'routeplan-e2e'
+const v25Mode = process.argv.slice(2).includes('--v25')
+const playwrightArguments = process.argv.slice(2).filter((argument) => argument !== '--v25')
+const v25ComposeFile = join(repositoryDirectory, 'compose.e2e-v25.yaml')
+const projectName = process.env.E2E_COMPOSE_PROJECT ?? (v25Mode ? 'routeplan-e2e-v25' : 'routeplan-e2e')
 if (!/^routeplan-e2e(?:-[a-z0-9-]+)?$/.test(projectName)) {
   throw new Error('E2E_COMPOSE_PROJECT must start with routeplan-e2e; development stacks must never be removed.')
 }
@@ -16,6 +19,7 @@ const backendPort = process.env.E2E_BACKEND_PORT ?? '8280'
 const postgresPort = process.env.E2E_POSTGRES_PORT ?? '55432'
 const redisPort = process.env.E2E_REDIS_PORT ?? '6479'
 const mailboxPort = process.env.E2E_MAILPIT_PORT ?? '8027'
+const googleStubPort = process.env.E2E_GOOGLE_STUB_PORT ?? '8390'
 const baseURL = `http://127.0.0.1:${frontendPort}`
 const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker'
 const playwrightCli = join(
@@ -26,6 +30,7 @@ const playwrightCli = join(
   'cli.js',
 )
 const composeArguments = ['compose', '-p', projectName, '-f', composeFile]
+if (v25Mode) composeArguments.push('-f', v25ComposeFile)
 const commandEnvironment = {
   ...process.env,
   POSTGRES_PORT: postgresPort,
@@ -36,6 +41,10 @@ const commandEnvironment = {
   MAILPIT_PORT: mailboxPort,
   E2E_MAILBOX_URL: `http://127.0.0.1:${mailboxPort}`,
   E2E_RESTART_PROJECT: projectName,
+  E2E_BACKEND_URL: `http://127.0.0.1:${backendPort}`,
+  E2E_GOOGLE_STUB_URL: `http://127.0.0.1:${googleStubPort}`,
+  E2E_GOOGLE_STUB_PORT: googleStubPort,
+  E2E_V25: v25Mode ? 'true' : 'false',
   ROUTEPLAN_PUBLIC_URL: baseURL,
   ROUTEPLAN_AUTH_MAIL_MODE: 'LOCAL',
   ROUTEPLAN_AUTH_TRUSTED_PROXIES: '',
@@ -50,12 +59,14 @@ const commandEnvironment = {
   SMTP_FROM: 'RoutePlan E2E <noreply@routeplan.test>',
   // Never reuse developer credentials or paid providers in the disposable test stack.
   ROUTEPLAN_PLACE_PROVIDER: 'DISABLED',
-  ROUTEPLAN_ROUTE_PROVIDER: 'SIMPLE',
-  GOOGLE_MAPS_API_KEY: '',
+  ROUTEPLAN_ROUTE_PROVIDER: v25Mode ? 'GOOGLE' : 'SIMPLE',
+  GOOGLE_MAPS_API_KEY: v25Mode ? 'routeplan-e2e-google-stub-key' : '',
   GOOGLE_MAPS_BROWSER_KEY: '',
   ROUTEPLAN_AI_PROVIDER: 'RULE_BASED',
   OPENAI_API_KEY: '',
-  ROUTEPLAN_ROUTE_CACHE_ENABLED: 'false',
+  ROUTEPLAN_ROUTE_CACHE_ENABLED: v25Mode ? 'true' : 'false',
+  ROUTEPLAN_ROUTE_DB_CACHE_ENABLED: v25Mode ? 'true' : 'false',
+  ROUTEPLAN_TIME_DEPENDENT_GLOBAL_ENABLED: v25Mode ? 'true' : 'false',
   ROUTEPLAN_WEATHER_AUTO_REFRESH_ENABLED: 'false',
   ROUTEPLAN_MODERATOR_EMAILS: 'routeplan-moderator@example.com',
 }
@@ -102,7 +113,7 @@ try {
   if (startup.status !== 0) throw new Error('Could not start the dedicated E2E Docker stack.')
   await waitForFrontend()
 
-  const result = run(process.execPath, [playwrightCli, 'test', ...process.argv.slice(2)], {
+  const result = run(process.execPath, [playwrightCli, 'test', ...playwrightArguments], {
     cwd: frontendDirectory,
   })
   if (result.error) throw result.error

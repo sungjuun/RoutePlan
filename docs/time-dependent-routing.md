@@ -45,7 +45,7 @@ ROUTEPLAN_TIME_DEPENDENT_MAX_CANDIDATES=8
 ROUTEPLAN_TIME_DEPENDENT_MAX_DAYS=3
 ROUTEPLAN_TIME_DEPENDENT_MAX_MATRIX_BUILDS=36
 ROUTEPLAN_TIME_DEPENDENT_MAX_MATRIX_ELEMENTS=2500
-ROUTEPLAN_TIME_DEPENDENT_BEAM_WIDTH=512
+ROUTEPLAN_TIME_DEPENDENT_BEAM_WIDTH=128
 ROUTEPLAN_TIME_DEPENDENT_MAX_STATES=250000
 ROUTEPLAN_TIME_DEPENDENT_MAX_SEARCH_DURATION=5s
 ```
@@ -53,6 +53,26 @@ ROUTEPLAN_TIME_DEPENDENT_MAX_SEARCH_DURATION=5s
 예상 추가 요소 수는 대략 `시간 버킷 수 × 위치 수²`입니다. 앱의 `GOOGLE_MONTHLY_MATRIX_LIMIT`과 Google Cloud의 quota·예산 알림을 이 상한보다 먼저 검토하세요. 한도 초과로 fallback하더라도 이미 성공한 Matrix 요소는 사용량에 포함되며, 일정 응답의 Provider 호출·요소·캐시 수치에도 합산됩니다.
 
 운영 지표는 계층별 캐시 read/write, 만료 정리, 시간 의존 탐색 결과·상태 수·버킷 수·소요시간을 제공합니다. 캐시 장애와 반복 fallback은 Prometheus 경고 대상으로 포함합니다.
+
+## 성능·동시 요청 검증
+
+2026-09-01 로컬 JDK 21 환경에서 결정적 시간대별 Matrix로 장소 수와 Beam 폭을 교차 검증했습니다. 각 조합은 한 번 준비 실행 후 7회 측정한 중앙값이며 모든 조합에서 같은 점수와 이동시간, 전체 Must Visit 배치를 유지했습니다. 원시 결과는 [`benchmarks/v25-time-dependent-optimizer-benchmark.csv`](benchmarks/v25-time-dependent-optimizer-benchmark.csv)에 보존합니다.
+
+| 장소 | Beam | 중앙값(ms) | 평가 상태 수 |
+|---:|---:|---:|---:|
+| 4 | 128 / 256 / 512 | 1.671 / 0.805 / 0.655 | 116 / 116 / 116 |
+| 6 | 128 / 256 / 512 | 3.873 / 3.487 / 4.520 | 1,192 / 1,732 / 2,320 |
+| 8 | 128 / 256 / 512 | 3.717 / 4.996 / 9.112 | 2,904 / 5,215 / 8,857 |
+
+8개 장소에서 Beam 128은 Beam 512와 결과 품질이 같으면서 평가 상태를 약 67%, 중앙 실행시간을 약 59% 줄였습니다. 따라서 기본 Beam을 512에서 128로 조정했고, 여러 날짜와 환경 편차를 보호하는 `250000` 상태·`5s` 상한은 유지했습니다. 이 수치는 합성 Matrix의 회귀 기준이지 운영 서버의 처리량 보장은 아닙니다.
+
+브라우저 E2E에서는 두 사용자가 동일 좌표·출발 버킷을 동시에 최적화했을 때 시간 버킷별 Google Stub 요청 4회만 발생하고 중복 출발시각 요청은 없음을 확인했습니다. Redis miss 경쟁자는 분산 갱신 잠금의 선행 결과를 다시 읽으며, 이때 재사용된 경로도 cache hit 통계에 포함합니다. Redis 읽기 장애는 PostGIS 조회와 Redis 재가열로, PostGIS 장애는 Google 계산과 사용 가능한 Redis 저장으로 계속 처리되는지 Backend 테스트로 검증합니다.
+
+```bash
+./gradlew timeDependentBenchmark
+cd frontend
+npm run test:e2e:v25
+```
 
 ## 배포 전 확인
 

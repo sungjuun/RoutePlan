@@ -76,6 +76,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run isolated browser E2E
         run: npm run test:e2e:docker
+      - name: Run V25 traffic and tiered-cache E2E
+        run: npm run test:e2e:v25
       - name: Upload E2E failure artifacts
         if: failure()
         uses: actions/upload-artifact@v6

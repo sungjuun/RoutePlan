@@ -54,7 +54,7 @@ tasks.withType<Test> {
 
 tasks.named<Test>("test") {
 	useJUnitPlatform {
-		excludeTags("benchmark", "cache-benchmark")
+		excludeTags("benchmark", "cache-benchmark", "time-dependent-benchmark")
 	}
 }
 
@@ -80,6 +80,20 @@ tasks.register<Test>("routeCacheBenchmark") {
 	useJUnitPlatform {
 		includeTags("cache-benchmark")
 	}
+	testLogging {
+		showStandardStreams = true
+	}
+}
+
+tasks.register<Test>("timeDependentBenchmark") {
+	description = "Runs the reproducible V25 time-dependent beam-search benchmark."
+	group = "verification"
+	testClassesDirs = sourceSets["test"].output.classesDirs
+	classpath = sourceSets["test"].runtimeClasspath
+	useJUnitPlatform {
+		includeTags("time-dependent-benchmark")
+	}
+	maxHeapSize = "2g"
 	testLogging {
 		showStandardStreams = true
 	}

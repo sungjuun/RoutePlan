@@ -14,7 +14,7 @@ public class TimeDependentOptimizationProperties {
     private int maxDays = 3;
     private int maxMatrixBuilds = 36;
     private int maxMatrixElements = 2_500;
-    private int beamWidth = 512;
+    private int beamWidth = 128;
     private int maxEvaluatedStates = 250_000;
     private Duration maxSearchDuration = Duration.ofSeconds(5);
 
