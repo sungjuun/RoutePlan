@@ -1,0 +1,130 @@
+groups:
+  - name: routeplan-recording
+    interval: 15s
+    rules:
+      - record: routeplan:http_requests:rate5m
+        expr: sum(rate(http_server_requests_seconds_count{application="routeplan"}[5m]))
+      - record: routeplan:http_5xx_ratio:rate5m
+        expr: sum(rate(http_server_requests_seconds_count{application="routeplan",status=~"5.."}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{application="routeplan"}[5m])), 0.001)
+      - record: routeplan:http_request_duration:p95_5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{application="routeplan"}[5m])))
+
+  - name: routeplan-alerts
+    rules:
+      - alert: RoutePlanBackendDown
+        expr: up{job="routeplan-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan backend metrics target is down
+          description: Prometheus has been unable to scrape the production backend for more than two minutes.
+
+      - alert: RoutePlanHttp5xxRateHigh
+        expr: routeplan:http_requests:rate5m > 0.05 and routeplan:http_5xx_ratio:rate5m > 0.05
+        for: 10m
+        labels:
+          severity: critical
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan HTTP 5xx ratio is above 5 percent
+          description: More than 5 percent of backend requests have returned 5xx responses for ten minutes.
+
+      - alert: RoutePlanP95LatencyHigh
+        expr: routeplan:http_requests:rate5m > 0.05 and routeplan:http_request_duration:p95_5m > 2
+        for: 10m
+        labels:
+          severity: warning
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan p95 HTTP latency is above two seconds
+          description: The backend p95 request duration has remained above two seconds for ten minutes.
+
+      - alert: RoutePlanItineraryFailureSpike
+        expr: sum(increase(routeplan_itinerary_generation_total{application="routeplan",outcome="failure"}[10m])) >= 3
+        labels:
+          severity: warning
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan itinerary generation failures increased
+          description: At least three itinerary generation or reoptimization attempts failed in ten minutes.
+
+      - alert: RoutePlanExternalCircuitOpen
+        expr: max by (provider) (routeplan_external_circuit_state{application="routeplan"}) >= 2
+        for: 1m
+        labels:
+          severity: warning
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan external provider circuit is open
+          description: The {{ $labels.provider }} circuit breaker has remained open for one minute.
+
+      - alert: RoutePlanExternalApiFailureRateHigh
+        expr: sum by (provider) (rate(routeplan_external_api_attempts_total{application="routeplan",outcome="failure"}[10m])) / clamp_min(sum by (provider) (rate(routeplan_external_api_attempts_total{application="routeplan"}[10m])), 0.001) > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan external API failure ratio is above 25 percent
+          description: More than 25 percent of {{ $labels.provider }} attempts have failed for ten minutes.
+
+      - alert: RoutePlanJvmHeapHigh
+        expr: sum(jvm_memory_used_bytes{application="routeplan",area="heap"}) / clamp_min(sum(jvm_memory_max_bytes{application="routeplan",area="heap"}), 1) > 0.85
+        for: 15m
+        labels:
+          severity: warning
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan JVM heap usage is above 85 percent
+          description: JVM heap usage has remained above 85 percent for fifteen minutes.
+
+      - alert: RoutePlanDatabasePoolSaturated
+        expr: hikaricp_connections_active{application="routeplan"} / clamp_min(hikaricp_connections_max{application="routeplan"}, 1) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan database connection pool is saturated
+          description: More than 90 percent of database connections have been active for ten minutes.
+
+      - alert: RoutePlanPersistentRouteCacheFailures
+        expr: sum(increase(routeplan_route_cache_tier_reads_total{application="routeplan",tier="database",outcome="failure"}[10m])) + sum(increase(routeplan_route_cache_tier_writes_total{application="routeplan",tier="database",outcome="failure"}[10m])) >= 3
+        labels:
+          severity: warning
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan persistent route cache is failing
+          description: At least three PostGIS route cache reads or writes failed in ten minutes; paid provider fallback may increase.
+
+      - alert: RoutePlanTimeDependentOptimizationFallbacks
+        expr: sum(increase(routeplan_optimization_time_dependent_total{application="routeplan",outcome="fallback"}[15m])) >= 3
+        labels:
+          severity: warning
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan time-dependent optimization repeatedly fell back
+          description: The global traffic-aware optimizer fell back at least three times in fifteen minutes; inspect provider, cost, and search limits.
+
+      - alert: RoutePlanAlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan Alertmanager is down
+          description: Prometheus cannot deliver notifications because Alertmanager has been unreachable for two minutes.

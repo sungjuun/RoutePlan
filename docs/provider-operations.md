@@ -35,7 +35,9 @@ docker compose up -d --build backend frontend
 - `ROUTEPLAN_CIRCUIT_FAILURE_THRESHOLD`, `ROUTEPLAN_CIRCUIT_OPEN_DURATION`: 회로 차단 조건과 복구 대기
 - `ROUTEPLAN_PROVIDER_MAX_CONCURRENT_CALLS`: Google/OpenAI 각각의 동시 호출 제한
 - `GOOGLE_MONTHLY_BUDGET_USD`, `OPENAI_MONTHLY_BUDGET_USD`: 0보다 클 때 앱 추정비용 경고 기준
-- `ROUTEPLAN_ROUTE_CACHE_REFRESH_*`: Redis 분산 갱신 잠금·대기 설정
+- `ROUTEPLAN_ROUTE_CACHE_REFRESH_*`: Redis/PostgreSQL 분산 갱신 잠금·대기 설정
+- `ROUTEPLAN_ROUTE_DB_CACHE_ENABLED`, `ROUTEPLAN_ROUTE_CACHE_DEPARTURE_BUCKET`: PostGIS L2와 시각 버킷
+- `ROUTEPLAN_TIME_DEPENDENT_*`: 추가 시간 Matrix 비용·후보·날짜·탐색 상한
 
 OpenAI 토큰은 응답 뒤에 확정되므로 마지막 성공 응답이 토큰 한도를 조금 넘을 수 있습니다. 그 다음 시도부터 차단합니다. 요청 횟수 한도는 전송 전에 원자적으로 차단합니다.
 

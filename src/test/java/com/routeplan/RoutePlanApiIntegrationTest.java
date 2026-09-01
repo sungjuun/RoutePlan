@@ -11,8 +11,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.routeplan.auth.AuthenticatedMockMvc;
 import com.routeplan.common.observability.CorrelationIdFilter;
+import com.routeplan.optimization.domain.Location;
+import com.routeplan.optimization.domain.RouteResult;
+import com.routeplan.optimization.route.cache.PostgisRouteLegCache;
+import com.routeplan.optimization.route.cache.RouteCacheKey;
 import com.routeplan.user.application.UserService;
+import com.routeplan.trip.domain.TransportMode;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,20 +29,21 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest
+@SpringBootTest(properties = "routeplan.route.cache.persistent-enabled=true")
 @AutoConfigureMockMvc
 @Testcontainers
 class RoutePlanApiIntegrationTest {
 
     @Container
     @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
+    static final PostgreSQLContainer POSTGRES = com.routeplan.testsupport.PostgisTestContainer.create();
 
     @Autowired
     private MockMvc rawMockMvc;
@@ -46,9 +56,35 @@ class RoutePlanApiIntegrationTest {
     @Autowired
     private MeterRegistry meterRegistry;
 
+    @Autowired
+    private PostgisRouteLegCache persistentRouteCache;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @BeforeEach
     void setUpSecurity() {
         mockMvc = new AuthenticatedMockMvc(rawMockMvc);
+    }
+
+    @Test
+    void migratesPostgisAndPersistsTimeBucketedRouteLegs() {
+        assertThat(jdbcTemplate.queryForObject("SELECT PostGIS_Version()", String.class)).isNotBlank();
+        RouteCacheKey first = new RouteCacheKey(
+                Location.of(BigDecimal.valueOf(37.5665), BigDecimal.valueOf(126.9780)),
+                Location.of(BigDecimal.valueOf(37.5796), BigDecimal.valueOf(126.9770)),
+                TransportMode.DRIVING,
+                Instant.parse("2026-09-10T00:05:00Z"));
+        RouteCacheKey sameBucket = new RouteCacheKey(
+                first.origin(), first.destination(), first.transportMode(),
+                Instant.parse("2026-09-10T00:10:00Z"));
+
+        assertThat(persistentRouteCache.putAll(Map.of(first, new RouteResult(2_100, 17)))).isZero();
+        assertThat(persistentRouteCache.getAll(Set.of(sameBucket)).routes())
+                .containsEntry(sameBucket, new RouteResult(2_100, 17));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT ST_SRID(origin::geometry) FROM route_leg_cache WHERE transport_mode = 'DRIVING' LIMIT 1",
+                Integer.class)).isEqualTo(4326);
     }
 
     @Test

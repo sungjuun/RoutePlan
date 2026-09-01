@@ -17,6 +17,9 @@
 ```dotenv
 ROUTEPLAN_PLACE_PROVIDER=GOOGLE
 ROUTEPLAN_ROUTE_PROVIDER=GOOGLE
+ROUTEPLAN_ROUTE_DB_CACHE_ENABLED=true
+# 추가 Matrix 비용을 확인한 뒤에만 활성화
+ROUTEPLAN_TIME_DEPENDENT_GLOBAL_ENABLED=false
 GOOGLE_MAPS_API_KEY=서버용_키
 GOOGLE_MAPS_BROWSER_KEY=별도의_브라우저용_키
 ROUTEPLAN_MODERATOR_EMAILS=운영자계정이메일
@@ -43,8 +46,8 @@ docker compose up -d --build
 - Open-Meteo `/v1/forecast`: 숙소 좌표, `timezone=auto`, 최대 16일, 일별 WMO 날씨 코드와 최대 강수확률. 동일 좌표의 성공 응답은 메모리에서 15분, 최대 256건 재사용합니다. DB에는 여행 기간에 해당하는 요약 예보와 `MANUAL`/`OPEN_METEO` 출처를 기록합니다.
 - 수동 예보를 자동 값으로 바꾸려면 수동 날씨 설정에서 해당 예보를 삭제/초기화한 뒤 자동 조회하세요. V18부터 여행별로 3시간 주기 자동 갱신을 켤 수 있습니다. 기본은 꺼짐이며 서버가 실행 중일 때 동작합니다. 직접 입력한 예보·시간대와 저장된 일정은 보존합니다. [자동 갱신·정확도 상세](schedule-accuracy-profile.md).
 - 무료 Open-Meteo endpoint는 **비상업 용도만** 허용합니다. 상용 배포는 적절한 서비스 계약/자가 호스팅 및 호출 정책 검토가 필요합니다. 무료 서비스 공식 한도는 분당 600, 시간당 5,000, 일당 10,000 미만이며 현재 앱은 날씨 쿼터를 DB에서 집계하지 않습니다. [Open-Meteo 문서](https://open-meteo.com/en/docs), [이용 조건](https://open-meteo.com/en/terms).
-- Google Transit Matrix는 각 여행일의 **현지 하루 출발시각**을 UTC RFC3339로 바꿔 날짜별 요청합니다. 재최적화 첫날은 현재시각을 사용합니다. 날짜 없는 Redis 캐시는 사용하지 않습니다. DST에 존재하지 않거나 두 번 발생하는 현지 시각은 거부합니다.
-- Transit 일정은 날짜별 행렬로 방문 순서를 만든 후 각 방문 종료 시각의 대중교통으로 최종 검증합니다. 추가 1×1 Matrix 요소는 사용량에 포함됩니다. 순서·날짜 배치를 유지하는 보수적 검증이며 시간 의존 전역 최적화는 아닙니다. 지도 Geometry에도 각 구간의 계획 출발시각을 전달합니다.
+- Google Transit Matrix는 각 여행일의 **현지 하루 출발시각**을 UTC RFC3339로 바꿔 날짜별 요청합니다. 재최적화 첫날은 현재시각을 사용합니다. 자동차·대중교통 캐시는 기본 15분 출발 버킷을 포함하며 DST에 존재하지 않거나 두 번 발생하는 현지 시각은 거부합니다.
+- 선택적 시간 의존 전역 탐색은 시간 버킷별 Matrix를 미리 만든 뒤 날짜와 방문 순서를 함께 재탐색합니다. 후보·날짜·Matrix 요소·탐색 상태 상한을 넘으면 기존 순서를 각 방문 종료 시각의 대중교통으로 검증하는 보수적 fallback을 사용합니다. 지도 Geometry에도 각 구간의 계획 출발시각을 전달합니다. 설정·비용 계산은 [V25 안내](time-dependent-routing.md)를 확인하세요.
 - Google 대중교통은 현재 시점 기준 과거 7일~미래 100일 조회만 지원합니다. 전체 기간 날짜를 확인하세요. Google의 지역·교통수단 지원 여부에 따라 경로가 없을 수 있습니다. [대중교통 경로 문서](https://developers.google.com/maps/documentation/routes/transit-route).
 - Google Details는 `id,regularOpeningHours,currentOpeningHours,utcOffsetMinutes`를 요청합니다. 분할/야간 영업을 날짜별 구간으로 나누며, 현지 오늘~6일 뒤의 제공된 특별 영업시간·휴무를 우선합니다. 그 밖은 정규 시간과 휴일 확인 경고를 사용합니다. 정보가 없는 장소는 영업 제약 없이 계산하므로 실제 방문 가능을 보장하지 않습니다. 두 openingHours 필드는 동일한 [Details Enterprise SKU](https://developers.google.com/maps/documentation/places/web-service/place-details)에 속합니다.
 - 수동 영업시간은 기존 Place opening-hours API로 입력합니다. 프론트의 선호 방문시간은 영업시간 자체와 다른 제약입니다. Google 원본 정규 영업시간·Polyline은 저장/캐시하지 않습니다. 계산 결과에 영업시간 적용 경고만 남깁니다.

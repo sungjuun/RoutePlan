@@ -72,9 +72,8 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
         List<List<Location>> chunks = partition(uniqueLocations, chunkSize);
         Map<RouteMatrix.Leg, RouteResult> routes = new LinkedHashMap<>();
         addZeroDistanceRoutes(uniqueLocations, routes);
-        Set<RouteCacheKey> cacheKeys = cacheKeys(uniqueLocations, transportMode);
-        // A transit matrix depends on its actual departure date. Never reuse timeless cached legs.
-        boolean useCache = routeLegCache.enabled() && !(transportMode == TransportMode.PUBLIC_TRANSIT && departure != null);
+        Set<RouteCacheKey> cacheKeys = cacheKeys(uniqueLocations, transportMode, departure);
+        boolean useCache = routeLegCache.enabled();
         RouteCacheRead cacheRead = useCache ? readCache(cacheKeys) : RouteCacheRead.empty();
         cacheRead.routes().forEach((key, route) -> routes.put(
                 new RouteMatrix.Leg(key.origin(), key.destination()),
@@ -107,7 +106,7 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
                             requestBody(origins, destinations, transportMode, departure)
                     );
                     requestCount++;
-                    merge(response, origins, destinations, transportMode, routes, fetchedRoutes);
+                    merge(response, origins, destinations, transportMode, departure, routes, fetchedRoutes);
                 }
             }
             if (useCache) cacheFailures += routeLegCache.putAll(fetchedRoutes);
@@ -126,16 +125,45 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
         );
     }
 
-    /** One billable matrix element at an exact departure, never a timeless cache lookup. */
+    /** One time-dependent matrix element. The configured departure bucket makes repeated validation durable. */
     public RouteResult transitLeg(Location origin, Location destination, java.time.Instant departure) {
+        return timedLeg(origin, destination, TransportMode.PUBLIC_TRANSIT, departure);
+    }
+
+    public RouteResult timedLeg(
+            Location origin,
+            Location destination,
+            TransportMode transportMode,
+            java.time.Instant departure
+    ) {
         if (origin.equals(destination)) return new RouteResult(0, 0);
-        var response = httpClient.post(ExternalApiOperation.GOOGLE_ROUTES, endpoint, FIELD_MASK,
-                requestBody(List.of(origin), List.of(destination), TransportMode.PUBLIC_TRANSIT, departure));
-        Map<RouteMatrix.Leg, RouteResult> routes = new LinkedHashMap<>();
-        merge(response, List.of(origin), List.of(destination), TransportMode.PUBLIC_TRANSIT, routes, new LinkedHashMap<>());
-        RouteResult result = routes.get(new RouteMatrix.Leg(origin, destination));
-        if (result == null) throw invalidResponse("출발 시각별 경로가 응답에 없습니다.");
-        return result;
+        RouteCacheKey key = new RouteCacheKey(origin, destination, transportMode, departure);
+        Set<RouteCacheKey> keys = Set.of(key);
+        boolean useCache = routeLegCache.enabled();
+        RouteCacheRead read = useCache ? routeLegCache.getAll(keys) : RouteCacheRead.empty();
+        RouteResult hit = read.routes().get(key);
+        if (hit != null) return hit;
+        RouteCacheLease lease = useCache
+                ? routeLegCache.acquireRefreshLock(keys)
+                : RouteCacheLease.bypass();
+        try (lease) {
+            if (lease.contended()) {
+                RouteResult refreshed = routeLegCache.waitForRefresh(keys).routes().get(key);
+                if (refreshed != null) return refreshed;
+            }
+            JsonNode response = httpClient.post(
+                    ExternalApiOperation.GOOGLE_ROUTES,
+                    endpoint,
+                    FIELD_MASK,
+                    requestBody(List.of(origin), List.of(destination), transportMode, departure));
+            Map<RouteMatrix.Leg, RouteResult> routes = new LinkedHashMap<>();
+            Map<RouteCacheKey, RouteResult> fetched = new LinkedHashMap<>();
+            merge(response, List.of(origin), List.of(destination), transportMode, departure, routes, fetched);
+            RouteResult result = routes.get(new RouteMatrix.Leg(origin, destination));
+            if (result == null) throw invalidResponse("출발 시각별 경로가 응답에 없습니다.");
+            if (useCache) routeLegCache.putAll(fetched);
+            return result;
+        }
     }
 
     private void addZeroDistanceRoutes(
@@ -150,12 +178,13 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
 
     private Set<RouteCacheKey> cacheKeys(
             List<Location> locations,
-            TransportMode transportMode
+            TransportMode transportMode,
+            java.time.Instant departure
     ) {
         return locations.stream()
                 .flatMap(origin -> locations.stream()
                         .filter(destination -> !origin.equals(destination))
-                        .map(destination -> new RouteCacheKey(origin, destination, transportMode)))
+                        .map(destination -> new RouteCacheKey(origin, destination, transportMode, departure)))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
@@ -184,7 +213,16 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
                 "destinations", destinations.stream().map(this::destination).toList(),
                 "travelMode", googleTravelMode(transportMode)
         ));
-        if (transportMode == TransportMode.PUBLIC_TRANSIT && departure != null) {
+        if (transportMode == TransportMode.DRIVING) {
+            body.put("routingPreference", "TRAFFIC_AWARE");
+            if (departure != null) {
+                java.time.Instant now = java.time.Instant.now();
+                if (departure.isBefore(now.minus(java.time.Duration.ofMinutes(1)))) {
+                    throw new IllegalArgumentException("교통량 반영 자동차 경로의 출발 시각은 현재 이후여야 합니다.");
+                }
+                body.put("departureTime", departure.toString());
+            }
+        } else if (transportMode == TransportMode.PUBLIC_TRANSIT && departure != null) {
             java.time.Instant now = java.time.Instant.now();
             if (departure.isBefore(now.minus(java.time.Duration.ofDays(7)))
                     || departure.isAfter(now.plus(java.time.Duration.ofDays(100)))) {
@@ -223,6 +261,7 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
             List<Location> origins,
             List<Location> destinations,
             TransportMode transportMode,
+            java.time.Instant departure,
             Map<RouteMatrix.Leg, RouteResult> routes,
             Map<RouteCacheKey, RouteResult> fetchedRoutes
     ) {
@@ -246,7 +285,7 @@ public class GoogleRoutesMatrixProvider implements RouteMatrixProvider {
                     new RouteMatrix.Leg(origin, destination),
                     route
             );
-            fetchedRoutes.put(new RouteCacheKey(origin, destination, transportMode), route);
+            fetchedRoutes.put(new RouteCacheKey(origin, destination, transportMode, departure), route);
         }
     }
 

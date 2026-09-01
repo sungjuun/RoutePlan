@@ -181,6 +181,7 @@ public class RedisRouteLegCache implements RouteLegCache {
         return properties.getKeyPrefix()
                 + ":google-routes:"
                 + key.transportMode().name()
+                + ":" + key.departureBucket(properties.getDepartureBucket()).getEpochSecond()
                 + ":" + coordinate(key.origin())
                 + ":" + coordinate(key.destination());
     }

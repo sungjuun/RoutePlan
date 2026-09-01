@@ -2,7 +2,7 @@ name: routeplan-production
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgis/postgis:16-3.5
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
@@ -52,17 +52,19 @@ services:
       ROUTEPLAN_SESSION_COOKIE_SECURE: "true"
     expose:
       - "8080"
+      - "9090"
     networks:
       - app
       - data
       - outbound
+      - monitoring
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/actuator/health/readiness"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/actuator/health/readiness"]
       interval: 10s
       timeout: 3s
       retries: 12
@@ -70,6 +72,116 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --enable-feature=utf8-strict-mode
+    volumes:
+      - ${ROUTEPLAN_RUNTIME_DIR:-./.routeplan-runtime}/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ${ROUTEPLAN_RUNTIME_DIR:-./.routeplan-runtime}/smtp-password:/run/secrets/smtp_password:ro
+      - routeplan-production-alertmanager:/alertmanager
+    expose:
+      - "9093"
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "/bin/amtool", "--alertmanager.url=http://127.0.0.1:9093", "--no-version-check", "config", "show"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=5GB
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
+      - routeplan-production-prometheus:/prometheus
+    expose:
+      - "9090"
+    networks:
+      - monitoring
+    depends_on:
+      backend:
+        condition: service_healthy
+      alertmanager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/bin/promtool", "check", "ready", "--url=http://127.0.0.1:9090"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  grafana:
+    image: grafana/grafana:13.2.0
+    restart: unless-stopped
+    environment:
+      GF_SERVER_DOMAIN: ${ROUTEPLAN_DOMAIN:?ROUTEPLAN_DOMAIN is required}
+      GF_SERVER_ROOT_URL: https://${ROUTEPLAN_DOMAIN}/monitoring/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER is required}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
+      GF_LOG_MODE: console
+    volumes:
+      - ${ROUTEPLAN_RUNTIME_DIR:-./.routeplan-runtime}/grafana-admin-password:/run/secrets/grafana_admin_password:ro
+      - ./deploy/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./deploy/monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - routeplan-production-grafana:/var/lib/grafana
+    expose:
+      - "3000"
+    networks:
+      - edge
+      - monitoring
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,uid=472,gid=472,mode=1777
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -139,6 +251,9 @@ volumes:
   routeplan-production-redis:
   routeplan-production-caddy-data:
   routeplan-production-caddy-config:
+  routeplan-production-prometheus:
+  routeplan-production-alertmanager:
+  routeplan-production-grafana:
 
 networks:
   edge:
@@ -159,3 +274,8 @@ networks:
     ipam:
       config:
         - subnet: 172.30.243.0/24
+  monitoring:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.244.0/24

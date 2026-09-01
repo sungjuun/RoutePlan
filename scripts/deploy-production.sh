@@ -13,6 +13,7 @@ if [[ ! "$target_tag" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
 fi
 
 bash "$repo_dir/scripts/validate-production-env.sh" "$env_file"
+bash "$repo_dir/scripts/prepare-monitoring-config.sh" "$env_file"
 configured_prefix="$(awk -F= '/^ROUTEPLAN_IMAGE_PREFIX=/{value=substr($0,index($0,"=")+1)} END{print value}' "$env_file")"
 target_prefix="${target_prefix:-$configured_prefix}"
 [[ "$target_prefix" =~ ^ghcr\.io/[a-z0-9._-]+/[a-z0-9._/-]+$ ]] || { echo 'Invalid GHCR image prefix.' >&2; exit 1; }
@@ -67,6 +68,13 @@ public_health() {
     "https://$domain/api/v1/auth/me" >/dev/null
 }
 
+monitoring_health() {
+  local domain
+  domain="$(awk -F= '/^ROUTEPLAN_DOMAIN=/{value=$2} END{print value}' "$env_file")"
+  curl --fail --silent --show-error --max-time 15 --retry 6 --retry-delay 3 --retry-all-errors \
+    "https://$domain/monitoring/api/health" >/dev/null
+}
+
 rollback_images() {
   if [[ -z "$previous_tag" || -z "$previous_prefix" ]]; then
     echo 'No previous image release is available for automatic application rollback.' >&2
@@ -91,7 +99,7 @@ trap on_unexpected_error ERR
 
 write_release "$target_prefix" "$target_tag"
 compose_command config --quiet
-compose_command pull postgres redis caddy backend frontend
+compose_command pull postgres redis caddy prometheus alertmanager grafana backend frontend
 
 predeploy_backup='none (first deployment)'
 if compose_command ps --status running --services | grep -qx postgres; then
@@ -100,7 +108,8 @@ if compose_command ps --status running --services | grep -qx postgres; then
 fi
 
 compose_command up -d postgres redis
-compose_command up -d backend frontend caddy
+compose_command up -d backend frontend
+compose_command up -d caddy
 
 if ! wait_healthy backend || ! wait_healthy frontend || ! wait_healthy caddy || ! public_health; then
   compose_command logs --tail 120 backend frontend caddy >&2 || true
@@ -114,6 +123,17 @@ if ! wait_healthy backend || ! wait_healthy frontend || ! wait_healthy caddy || 
 fi
 
 deployment_finished='true'
+monitoring_start_failed='false'
+if ! compose_command up -d alertmanager prometheus grafana; then
+  monitoring_start_failed='true'
+fi
+if [[ "$monitoring_start_failed" == 'true' ]] || \
+    ! wait_healthy alertmanager || ! wait_healthy prometheus || ! wait_healthy grafana || ! monitoring_health; then
+  compose_command logs --tail 120 alertmanager prometheus grafana caddy >&2 || true
+  echo 'Application deployment is healthy, but the monitoring stack needs operator attention.' >&2
+  exit 1
+fi
+
 trap - ERR
 echo "Production deployment healthy: tag=$target_tag"
 echo "Pre-deploy backup: $predeploy_backup"

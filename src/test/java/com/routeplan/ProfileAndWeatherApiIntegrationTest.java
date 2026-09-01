@@ -34,7 +34,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @AutoConfigureMockMvc
 @Testcontainers
 class ProfileAndWeatherApiIntegrationTest {
-    @Container @ServiceConnection static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
+    @Container @ServiceConnection static final PostgreSQLContainer POSTGRES = com.routeplan.testsupport.PostgisTestContainer.create();
     @Autowired MockMvc raw;
     @Autowired UserService users;
     @Autowired WeatherRefreshSettings refresh;

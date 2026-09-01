@@ -116,6 +116,25 @@ public final class RouteMatrix implements RouteProvider {
         return combined;
     }
 
+    public RouteMatrix combineMeasurements(RouteMatrix other) {
+        Objects.requireNonNull(other, "결합할 Route Matrix는 필수입니다.");
+        if (transportMode != other.transportMode || dataType != other.dataType) {
+            throw new IllegalArgumentException("동일 이동수단·데이터 유형의 Route Matrix만 결합할 수 있습니다.");
+        }
+        var combined = new RouteMatrix(
+                transportMode,
+                dataType,
+                routes,
+                Math.addExact(providerCallCount, other.providerCallCount),
+                Math.addExact(buildMillis, other.buildMillis),
+                cacheEnabled || other.cacheEnabled,
+                Math.addExact(cacheHitCount, other.cacheHitCount),
+                Math.addExact(cacheMissCount, other.cacheMissCount),
+                Math.addExact(cacheFailureCount, other.cacheFailureCount));
+        combined.accountedElements = Math.addExact(accountedElements, other.accountedElements);
+        return combined;
+    }
+
     public boolean cacheEnabled() {
         return cacheEnabled;
     }

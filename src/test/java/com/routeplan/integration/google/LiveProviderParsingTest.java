@@ -81,7 +81,7 @@ class LiveProviderParsingTest {
         assertThat(always.days()).hasSize(7); assertThat(always.days().values()).allSatisfy(d->assertThat(d.closed()).isFalse());
     }
 
-    @Test void transitRefinementRequestsOneElementPerExactDepartureWithoutCache() throws Exception {
+    @Test void transitRefinementRequestsOneElementPerDepartureWhenCacheIsDisabled() throws Exception {
         try (var server = new GoogleMapsStubServer()) {
             server.respondWith(r -> new GoogleMapsStubServer.StubResponse(200,
                     "[{\"originIndex\":0,\"destinationIndex\":0,\"condition\":\"ROUTE_EXISTS\",\"distanceMeters\":500,\"duration\":\"601s\"}]"));
@@ -102,7 +102,8 @@ class LiveProviderParsingTest {
             assertThat(body.path("destinations")).hasSize(1);
             assertThat(body.path("departureTime").asText()).isEqualTo(departure.toString());
             verify(guard, times(2)).reserve(com.routeplan.integration.retry.ExternalApiOperation.GOOGLE_ROUTES, 1);
-            verifyNoInteractions(cache);
+            verify(cache, times(2)).enabled();
+            verifyNoMoreInteractions(cache);
         }
     }
 

@@ -38,6 +38,8 @@ if (( ${#restart_services[@]} > 0 )); then
 fi
 echo "Restoring PostgreSQL. Safety backup: $current_backup"
 set +e
+# Variables expand inside the PostgreSQL container.
+# shellcheck disable=SC2016
 "${compose[@]}" exec -T postgres sh -c \
   'PGPASSWORD="$POSTGRES_PASSWORD" exec pg_restore -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --no-privileges' \
   < "$backup_file"

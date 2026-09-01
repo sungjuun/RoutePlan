@@ -76,11 +76,13 @@ V22는 같은 대시보드에 공급자별 Circuit Breaker·동시 호출 격리
 
 V23은 [운영 배포 기반](docs/production-deployment.md)을 추가합니다. 운영 전용 Compose는 HTTPS 자동 인증서, 내부 전용 DB·Redis·Backend Network, Secure Cookie·SMTP 사전 검사, GHCR 커밋 SHA 이미지 배포, 배포 전 백업과 명시적 복구·이미지 롤백 절차를 제공합니다.
 
-V23 로컬 격리 검증에서는 운영 Backend·Frontend를 비루트·읽기 전용으로 기동하고 외부 Port 비공개, Backup/Restore 왕복, Caddy 런타임과 전체 Backend 137개·Frontend 49개 테스트를 확인했습니다. 실제 배포에는 도메인·Linux 서버·SMTP·GitHub `production` Environment Secret이 별도로 필요합니다.
+로컬 격리 검증에서는 운영 Backend·Frontend를 비루트·읽기 전용으로 기동하고 외부 Port 비공개, Backup/Restore 왕복, Caddy 런타임과 전체 Backend 142개·Frontend 49개 테스트를 확인했습니다. 실제 배포에는 도메인·Linux 서버·SMTP·GitHub `production` Environment Secret이 별도로 필요합니다.
+
+V24는 [운영 모니터링과 경고](docs/production-monitoring.md)를 추가합니다. Backend 관리 포트를 내부 `monitoring` Network로 분리하고 Prometheus 수집·기록/경고 규칙, 코드로 관리되는 Grafana 운영 대시보드, Alertmanager SMTP 알림을 운영 Compose와 배포 절차에 연결합니다.
 
 설정과 사용법은 [실제 데이터·개인화·장부 안내](docs/advanced-integrations.md), 외부 API 검증 결과는 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 참고하세요. **2026-08-31 로컬 환경에서 날씨·영업시간·도보 경로·현지 날짜를 반영한 대중교통 응답, Google 한국어 지도·실제 경로선과 V22 앱 집계를 다시 확인했습니다.** 대표 표본 검증이며 실제 청구액·무료 잔량·운영 환경 검증은 별도입니다. 다른 환경에서는 서버·브라우저 키와 해당 API 활성화가 필요합니다.
 
-## 구현 범위 (V1–V23)
+## 구현 범위 (V1–V24)
 
 ### 지원
 
@@ -100,6 +102,8 @@ V23 로컬 격리 검증에서는 운영 Backend·Frontend를 비루트·읽기 
 - 단일 사용·만료 토큰, 비동기 메일 큐·로컬 개발 메일함
 - PostgreSQL 기반 로그인/복구 요청 제한, 서버 재시작 후 유지되는 세션
 - Google/OpenAI 독립 Circuit Breaker·동시 호출 제한·운영 경고와 Redis 캐시 갱신 잠금
+- 내부 전용 Prometheus·Alertmanager와 로그인 보호 Grafana `/monitoring/` 운영 대시보드
+- Backend 장애·5xx·p95 지연·일정 실패·외부 회로·JVM/DB Pool 경고와 SMTP 통지
 - 비밀번호 변경 시 모든 기기 세션 해제·인증 버전 검증
 - 닉네임 변경, 현재 비밀번호 확인 이메일 변경·재인증, 확인 문구 기반 회원 탈퇴
 - 탈퇴 시 여행·일정·프로필·공개 루트·커뮤니티 작성물 cascade 삭제
@@ -131,7 +135,9 @@ V23 로컬 격리 검증에서는 운영 Backend·Frontend를 비루트·읽기 
 - 경로 엔진과 제약 일정 계산기가 공유하는 요청 단위 Matrix
 - 일정별 Route 데이터 출처·Provider 호출 수·Matrix 요소 수·생성시간 저장
 - Redis 방향별 Route Cache와 이동수단별 TTL
-- Cache MGET·pipelined SET과 Redis 장애 시 외부 Provider fallback
+- Redis L1·PostGIS L2 영속 Route Cache와 장애 시 외부 Provider fallback
+- 출발 시각 버킷별 자동차 예측 교통량·대중교통 경로 캐시
+- 비용·탐색 상한이 있는 날짜·방문 순서 전역 시간 의존 최적화
 - 일정별 Cache hit·miss·failure·hit ratio 저장
 - Cache 적용 전후 호출 수·Matrix 생성시간 Benchmark
 - 외부 요청과 DB Lock을 분리한 Snapshot 검증 트랜잭션
@@ -191,9 +197,9 @@ V23 로컬 격리 검증에서는 운영 Backend·Frontend를 비루트·읽기 
 
 ### 지원하지 않음
 
-- DB 영속 Route Matrix
-- 제공자 7일 범위 밖의 공휴일 예외 자동 확정, 시간 의존 전역 최적화
-- QueryDSL, PostGIS
+- TTL 없는 영구 Route Matrix 원본 보관·임의 과거 교통 재현
+- 제공자 7일 범위 밖의 공휴일 예외 자동 확정, 상한 없는 시간 의존 완전탐색
+- QueryDSL
 - OAuth·MFA, 다중 턴 AI 대화, AI의 장소 자동 추가
 
 기본 `SIMPLE` 모드의 `estimatedTravelMinutes`는 직선거리와 고정 평균속도로 계산한 추정치입니다. `GOOGLE` Route Provider를 활성화하면 Google Routes API가 반환한 실제 경로 거리와 이동시간을 사용합니다.
@@ -206,7 +212,7 @@ V23 로컬 격리 검증에서는 운영 Backend·Frontend를 비루트·읽기 
 - Spring Security
 - Spring Data JPA
 - Spring Data Redis
-- PostgreSQL 16
+- PostgreSQL 16 + PostGIS 3.5
 - Redis 7.4
 - Flyway
 - Gradle Wrapper
@@ -221,7 +227,7 @@ V23 로컬 격리 검증에서는 운영 Backend·Frontend를 비루트·읽기 
 - Nginx
 - OpenAI Responses API Structured Outputs (선택)
 
-QueryDSL은 동적 검색 쿼리가 없는 현재 단계에서는 사용하지 않습니다. Redis는 동일 Route Matrix를 반복 최적화할 때 외부 호출이 그대로 재발하는 문제를 측정한 뒤 V5에서 도입했습니다. PostGIS는 실제 공간 검색 요구가 생기기 전까지 사용하지 않습니다.
+QueryDSL은 동적 검색 쿼리가 없는 현재 단계에서는 사용하지 않습니다. Redis는 동일 Route Matrix를 반복 최적화할 때 외부 호출이 그대로 재발하는 문제를 측정한 뒤 V5에서 도입했습니다. V25에서는 재시작·Redis 축출 뒤에도 TTL 안의 경로를 복구하고 공간 진단·근접 재사용 확장 기반을 마련하기 위해 PostGIS를 추가했습니다.
 
 ## Architecture
 
@@ -249,13 +255,14 @@ flowchart LR
     WEB --> OSM[OpenStreetMap Tiles]
     API --> APP[Optimization / Reoptimization Service]
     API --> COMMUNITY[SharedRoute Service]
-    APP --> DB[(PostgreSQL)]
+    APP --> DB[(PostgreSQL + PostGIS)]
     COMMUNITY --> DB
     APP --> MATRIX[RouteMatrixProvider]
     MATRIX --> SIMPLE[Simple Distance]
     MATRIX --> GOOGLE[Google Routes API]
-    MATRIX --> CACHE[(Redis Route Leg Cache)]
-    CACHE --> MATRIX
+    MATRIX --> L1[(Redis L1 Cache)]
+    L1 --> L2[(PostGIS L2 Cache)]
+    L2 --> MATRIX
     APP --> REGISTRY[OptimizationEngineRegistry]
     REGISTRY --> ENGINE[OptimizationEngine]
     MATRIX --> ROUTE[Request RouteMatrix]
@@ -384,7 +391,7 @@ Nearest Neighbor는 전체 최적해를 보장하지 않습니다. 이 결과를
 
 Nearest Neighbor 경로에서 구간 `[i, k]`를 뒤집은 모든 후보를 비교하고, 가장 좋은 후보로 교체하는 과정을 더 이상 개선되지 않을 때까지 반복합니다. 대칭 거리를 가정한 delta 공식 대신 전체 경로를 재평가하므로 향후 방향별 이동시간이 다른 RouteProvider에서도 정확하게 비교할 수 있습니다.
 
-V4부터 숙소와 모든 후보 장소의 방향별 Route Matrix를 최적화 전에 한 번 생성합니다. 경로 엔진과 제약 일정 계산기가 같은 Matrix를 조회하므로 단계 사이의 중복 외부 호출이 없습니다. 요청 단위 Matrix 자체는 계산 후 폐기되지만, V5에서 Google Route leg를 Redis에 TTL 동안 재사용합니다. 2-opt는 국소 최적화이므로 Exact와 같은 결과를 보장하지 않습니다.
+V4부터 숙소와 모든 후보 장소의 방향별 Route Matrix를 최적화 전에 한 번 생성합니다. 경로 엔진과 제약 일정 계산기가 같은 Matrix를 조회하므로 단계 사이의 중복 외부 호출이 없습니다. 요청 단위 Matrix 자체는 계산 후 폐기되지만, Google Route leg는 Redis와 PostGIS에 TTL 동안 재사용합니다. 2-opt는 국소 최적화이므로 Exact와 같은 결과를 보장하지 않습니다. 선택 기능인 시간 의존 전역 탐색은 시간 Matrix를 먼저 모두 준비한 뒤 조합 탐색을 실행하므로 탐색 중 외부 API를 호출하지 않습니다.
 
 ## Constraint 처리
 
@@ -515,15 +522,15 @@ routeCacheHitRatio
 
 `SIMPLE`은 외부 호출 수가 0이고, `GOOGLE`은 실제 HTTP 요청 수와 전체 Matrix 생성시간을 기록합니다.
 
-## Redis Route Cache
+## Redis + PostGIS Route Cache
 
 V4에서는 요청 안의 중복 호출만 제거했습니다. 같은 Trip을 다시 최적화하면 전체 Matrix를 Google에 다시 요청하는 문제가 남아 있었기 때문에 V5에서 방향별 leg cache를 추가했습니다.
 
 ```text
-routeplan:route:v1:google-routes:{transportMode}:{origin}:{destination}
+routeplan:route:v1:google-routes:{transportMode}:{departureBucket}:{origin}:{destination}
 ```
 
-출발·도착 순서를 key에 각각 포함하므로 A→B와 B→A를 구분하고, 좌표는 DB 정밀도와 같은 소수점 6자리로 정규화합니다. 한 Matrix의 후보 key는 Redis `MGET` 한 번으로 읽고, Google에서 새로 받은 결과는 pipeline으로 TTL과 함께 저장합니다. 완전히 Cache로 채워진 Google Chunk만 생략하므로 부분 적중 때문에 Matrix 요청 수가 작은 요청 여러 개로 폭증하지 않습니다.
+출발·도착 순서를 key에 각각 포함하므로 A→B와 B→A를 구분하고, 좌표는 DB 정밀도와 같은 소수점 6자리로 정규화합니다. 자동차·대중교통은 기본 15분 출발 버킷을 포함하고 도보는 timeless 버킷을 사용합니다. 한 Matrix의 후보 key는 Redis `MGET`으로 읽고, L1 miss만 PostGIS 복합키 배치 조회로 넘깁니다. L2 hit는 Redis를 다시 채우며 Google에서 새로 받은 결과는 두 계층에 TTL과 함께 저장합니다. 완전히 Cache로 채워진 Google Chunk만 생략하므로 부분 적중 때문에 Matrix 요청 수가 작은 요청 여러 개로 폭증하지 않습니다.
 
 | 이동수단 | 기본 TTL | 이유 |
 |---|---:|---|
@@ -531,7 +538,7 @@ routeplan:route:v1:google-routes:{transportMode}:{origin}:{destination}
 | DRIVING | 15분 | 도로 교통 변화 |
 | PUBLIC_TRANSIT | 5분 | 요청시각 기준 대중교통 결과 변화 |
 
-Redis 읽기 실패는 전체 miss로 취급해 Google Provider로 fallback하고, Redis 저장 실패는 계산된 일정을 버리지 않습니다. 각 실패는 `routeCacheFailureCount`에 남습니다. V5 최초 구현에는 분산 Lock이 없었지만 V22부터 동일한 miss 집합은 토큰 소유권을 확인하는 Redis 갱신 잠금으로 조정합니다.
+Redis 읽기 실패 시 PostGIS를 조회하고, PostGIS까지 실패하면 Google Provider로 fallback합니다. 캐시 저장 실패는 계산된 일정을 버리지 않으며 각 실패는 `routeCacheFailureCount`에 남습니다. 동일 miss 집합은 Redis 잠금을 우선 사용하고 Redis가 없으면 만료 가능한 PostgreSQL 소유권 잠금으로 조정합니다. `route_leg_cache`는 만료 인덱스와 출발·도착 `GEOGRAPHY(POINT,4326)` GiST 인덱스를 가지며 만료 행은 제한된 배치로 정리합니다. 상세 설정과 비용 상한은 [시간대별 경로·PostGIS 안내](docs/time-dependent-routing.md)를 확인하세요.
 
 ## API
 
@@ -583,7 +590,7 @@ Swagger UI는 Docker Compose 실행 시 `http://localhost:8180/swagger-ui.html`,
 
 ### 운영 상태와 메트릭
 
-Docker Compose 기준 운영 endpoint는 다음과 같습니다.
+Docker Compose 기준 관리 endpoint는 다음과 같습니다. 개발 Compose는 Backend 포트에서 접근할 수 있지만 운영 프로필은 애플리케이션 `8080`과 관리 `9090`을 분리하고 `9090`을 내부 `monitoring` Network에서만 수집합니다.
 
 | Endpoint | 용도 |
 |---|---|
@@ -598,6 +605,8 @@ RoutePlan이 추가하는 Micrometer 지표는 다음과 같습니다. 태그에
 
 재시작·다중 인스턴스에서도 이어지는 월별 외부 API 지표는 PostgreSQL에 별도로 저장하고, **마이페이지 → 외부 API 품질·비용** 또는 일정 화면의 **실제 여행 데이터 → API 품질·비용 대시보드**에서 확인합니다. 단가와 한도 설정은 [V21 운영 안내](docs/provider-operations.md)를 참고하세요.
 
+운영 시계열과 활성 경고는 `https://<운영 도메인>/monitoring/`의 Grafana에서 확인합니다. Prometheus·Alertmanager 자체 UI와 Backend 관리 포트는 외부에 게시하지 않습니다. 임계값·SMTP 알림·점검 절차는 [V24 운영 모니터링 안내](docs/production-monitoring.md)를 참고하세요.
+
 | Metric | 의미 |
 |---|---|
 | `routeplan.itinerary.generation.duration` | 전체 최적화·재최적화 소요시간 |
@@ -606,6 +615,8 @@ RoutePlan이 추가하는 Micrometer 지표는 다음과 같습니다. 태그에
 | `routeplan.route.matrix.build.duration` | 데이터 유형·이동수단별 Matrix 생성시간 |
 | `routeplan.route.api.calls`, `routeplan.route.api.failures` | 외부 Route 호출·실패 수 |
 | `routeplan.route.cache.hits/misses/failures` | Route Cache 결과 수 |
+| `routeplan.route.cache.tier.reads/writes` | Redis·PostGIS 계층별 hit·miss·failure |
+| `routeplan.optimization.time_dependent.total/states/buckets/duration` | 시간 의존 전역 탐색 결과·상태 수·시간 버킷·시간 |
 | `routeplan.external.api.attempts` | Google Places·Routes와 OpenAI의 실제 HTTP 시도 결과 |
 | `routeplan.external.api.retries` | 일시적 오류 뒤 실행하기로 결정한 재시도 수 |
 | `routeplan.external.api.exhausted` | 최대 시도 횟수까지 복구되지 않은 요청 수 |
@@ -786,7 +797,7 @@ Backend 컨테이너 healthcheck는 Swagger 문서가 아니라 `/actuator/healt
 
 ### 애플리케이션 직접 실행
 
-PostgreSQL과 Redis를 실행합니다.
+PostGIS 확장이 포함된 PostgreSQL과 Redis를 실행합니다. 기본 Compose가 호환 이미지를 제공합니다.
 
 ```bash
 docker compose up -d postgres redis
@@ -863,7 +874,7 @@ npm run test:e2e:docker
 
 `test:e2e:docker`는 개발용 `localhost:3100`과 DB를 건드리지 않습니다. `routeplan-e2e` 프로젝트를 기본 포트 `3200`·`8280`·`55432`·`6479`에 띄우고, 테스트가 끝나면 전용 컨테이너와 DB 볼륨을 제거합니다. 이미 실행 중인 환경을 직접 검사할 때는 `E2E_BASE_URL`을 지정하고 `npm run test:e2e`를 사용합니다. 실패 시 `frontend/playwright-report`와 `frontend/test-results`에 Screenshot·Video·Trace·Compose 로그를 남깁니다.
 
-V19 검증은 기존 여행·지도·프로필 회귀 테스트에 이메일/비밀번호/요청 제한·DB 세션 테스트를 추가합니다. PostgreSQL Testcontainers로 Flyway V1–V15를 적용하며, 전용 E2E 메일함(8027)에서 실제 SMTP 수신과 테스트 백엔드 재시작 후 로그인 유지를 확인합니다. 자세한 실행 범위는 [회원·보안 안내](docs/account-security.md), 실제 Google 응답 검증은 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 확인하세요.
+Backend 통합 테스트는 PostGIS Testcontainers로 Flyway V1–V18을 적용하며, 전용 E2E 메일함(8027)에서 실제 SMTP 수신과 테스트 백엔드 재시작 후 로그인 유지를 확인합니다. 자세한 실행 범위는 [회원·보안 안내](docs/account-security.md), 실제 Google 응답 검증은 [실호출 점검 기록](docs/live-validation-2026-08-28.md)을 확인하세요.
 
 `.github/workflows/ci.yml`은 push와 pull request마다 Backend와 Frontend Job을 병렬 실행하고, 둘 다 통과하면 격리된 Docker 환경에서 Browser E2E Job을 실행합니다. Backend는 Java 21과 Testcontainers PostgreSQL로 전체 테스트를 수행하고, Frontend는 Node.js 22에서 고정된 lockfile로 설치한 뒤 단위 테스트, ESLint, 프로덕션 빌드를 모두 통과해야 합니다. Benchmark는 실행시간 변동과 비용 때문에 일반 CI에서 분리합니다.
 
@@ -1001,6 +1012,12 @@ V20 닉네임·이메일 변경·재인증·회원 탈퇴·개인 데이터 정�
  ↓
 V21 외부 API 성공률·지연시간·OpenAI 토큰·월 한도·비용 추정 대시보드 ✓
 V22 공급자 장애 격리·실패율/예산 경고·Redis 캐시 Stampede 방지 ✓
+ ↓
+V23 HTTPS·격리 Network·GHCR SHA 배포·백업/복구·이미지 롤백 ✓
+ ↓
+V24 Prometheus·Grafana·Alertmanager·운영 경고와 SMTP 통지 ✓
+ ↓
+V25 PostGIS 영속 경로 캐시·시간대별 교통량 전역 일정 최적화·비용/탐색 상한 ✓
 ```
 
 ## Performance Benchmark
@@ -1058,11 +1075,11 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 영업시간은 분할·야간 구간을 지원하지만 여행의 하루 계획 자체는 자정을 넘길 수 없습니다. 수동 영업시간 API는 요일별 한 구간입니다.
 - V2 Benchmark는 제약 없는 경로 기준이며 V3 제약 일정 성능 Benchmark는 아직 분리하지 않았습니다.
 - Google 휴일 예외는 제공된 현지 7일 범위만 적용합니다. 정보 누락·먼 미래의 공휴일은 별도 확인해야 합니다.
-- Transit Matrix로 순서를 만든 뒤 각 방문 종료 시각으로 재검증합니다. 시간 제약을 넘는 선택 장소는 제외하며 필수 장소가 불가능하면 저장하지 않습니다. 고정 순서의 보수적 검증으로 시간 의존 전역 최적해를 보장하지 않습니다.
+- 시간 의존 전역 최적화가 꺼져 있거나 후보·날짜·Matrix 비용 상한을 넘으면 Transit Matrix로 만든 순서를 각 방문 종료 시각에 다시 검증합니다. 이 fallback은 시간 제약을 넘는 선택 장소를 제외하고 필수 장소가 불가능하면 저장하지 않지만 방문 순서를 다시 탐색하지는 않습니다.
 - 로컬 대표 표본으로 날씨·영업시간·도보·대중교통 응답과 Google 지도 표시를 확인했습니다. 모든 국가·이동수단·날짜 조합의 검증은 아니며, 실제 청구액/무료 잔량과 운영 호출 한도는 Cloud Billing·Console에서 별도 확인해야 합니다.
 - Circuit Breaker 상태는 각 Backend 인스턴스 메모리에 유지되어 인스턴스마다 독립적으로 열리고 복구됩니다. 월 사용량과 Redis 갱신 잠금은 인스턴스 간 공유됩니다.
-- Redis Cache는 TTL 기반이며 재시작 후 보존을 요구하지 않는 파생 데이터입니다.
-- Redis 갱신 잠금은 동일한 miss 집합을 조정하지만 설정된 대기시간을 넘거나 Redis가 실패하면 가용성을 위해 외부 호출로 fallback하므로 매우 느린 Provider 장애 중에는 중복 호출이 생길 수 있습니다.
+- Redis L1은 휘발성 파생 데이터이고 PostGIS L2는 TTL까지 재시작 후에도 유지됩니다. 둘 다 원본 경로의 영구 보관소가 아니며 만료 후 다시 조회합니다.
+- Redis/PostgreSQL 갱신 잠금은 동일한 miss 집합을 조정하지만 설정된 대기시간을 넘거나 두 계층이 실패하면 가용성을 위해 외부 호출로 fallback하므로 매우 느린 Provider 장애 중에는 중복 호출이 생길 수 있습니다.
 - 51개 위치의 Cold 전체 방향 Matrix는 이동수단에 따라 Google 요청이 최대 35회 필요합니다.
 - 외부 장소 가져오기는 클라이언트가 선택한 검색 결과 필드를 전달하므로 Place Details 재검증은 아직 없습니다.
 - 재최적화의 현재 위치·시각과 완료 항목은 클라이언트가 전달하며 GPS나 서버 이벤트로 검증하지 않습니다.
@@ -1088,7 +1105,7 @@ Warm Cache는 반복 외부 호출을 15회에서 0회로 줄였고 로컬 Stub 
 - 자연어 장소 조건은 현재 Trip에 이미 담긴 장소만 매칭하며 장소 검색·자동 추가는 하지 않습니다.
 - `walkingPreference`는 Structured Output에 포함되지만 세부 도보량 목적함수가 없어 현재 최적화에는 직접 반영되지 않습니다.
 - 자연어 미리보기는 서버에 저장하지 않으므로 새로고침하면 다시 해석해야 합니다.
-- 현재 운영 지표는 단일 인스턴스 Micrometer 값이며 Prometheus 서버·Grafana Dashboard·Alert Rule은 아직 배포하지 않았습니다.
+- V24 모니터링은 단일 서버의 30일/5GB Prometheus 보존과 단일 Alertmanager 기준입니다. 서버 자체 장애·디스크 고갈을 감지할 외부 Uptime/Node 감시와 장기 원격 보존은 별도로 연결해야 합니다.
 - 분산 Trace export와 OpenTelemetry Collector, 운영 로그 중앙 수집, AWS 배포는 대상 계정과 환경이 정해진 뒤 적용해야 합니다.
 
 ## Troubleshooting

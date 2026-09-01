@@ -48,7 +48,7 @@ class RedisRouteLegCacheIntegrationTest {
             assertThat(differentMode.routes()).isEmpty();
             assertThat(ttlSeconds).isPositive().isLessThanOrEqualTo(30);
             assertThat(cache.redisKey(walking))
-                    .isEqualTo("routeplan:test:v1:google-routes:WALKING:"
+                    .isEqualTo("routeplan:test:v1:google-routes:WALKING:0:"
                             + "34.123457,135.765432:34.223457,135.865432");
         }
     }

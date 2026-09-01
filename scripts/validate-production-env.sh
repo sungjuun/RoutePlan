@@ -70,13 +70,30 @@ smtp_from="$(require_value SMTP_FROM)"
 reject_placeholder SMTP_HOST "$smtp_host"
 reject_placeholder SMTP_FROM "$smtp_from"
 smtp_port="$(require_value SMTP_PORT)"
-[[ "$smtp_port" =~ ^[0-9]+$ ]] && (( smtp_port >= 1 && smtp_port <= 65535 )) || { echo 'SMTP_PORT must be between 1 and 65535.' >&2; exit 1; }
+if [[ ! "$smtp_port" =~ ^[0-9]+$ ]] || (( smtp_port < 1 || smtp_port > 65535 )); then
+  echo 'SMTP_PORT must be between 1 and 65535.' >&2
+  exit 1
+fi
+smtp_starttls="$(require_value SMTP_STARTTLS)"
+smtp_ssl="$(require_value SMTP_SSL)"
+[[ "${smtp_starttls,,}" =~ ^(true|false)$ ]] || { echo 'SMTP_STARTTLS must be true or false.' >&2; exit 1; }
+[[ "${smtp_ssl,,}" =~ ^(true|false)$ ]] || { echo 'SMTP_SSL must be true or false.' >&2; exit 1; }
+[[ "${smtp_starttls,,}" == 'true' || "${smtp_ssl,,}" == 'true' ]] || { echo 'Production SMTP must enable STARTTLS or SSL.' >&2; exit 1; }
 if [[ "$(require_value SMTP_AUTH)" == 'true' ]]; then
   smtp_username="$(require_value SMTP_USERNAME)"
   smtp_password="$(require_value SMTP_PASSWORD)"
   reject_placeholder SMTP_USERNAME "$smtp_username"
   reject_placeholder SMTP_PASSWORD "$smtp_password"
 fi
+
+grafana_user="$(require_value GRAFANA_ADMIN_USER)"
+[[ "$grafana_user" =~ ^[A-Za-z0-9._-]{3,64}$ ]] || { echo 'GRAFANA_ADMIN_USER must contain 3-64 safe username characters.' >&2; exit 1; }
+grafana_password="$(require_value GRAFANA_ADMIN_PASSWORD)"
+(( ${#grafana_password} >= 20 )) || { echo 'GRAFANA_ADMIN_PASSWORD must contain at least 20 characters.' >&2; exit 1; }
+reject_placeholder GRAFANA_ADMIN_PASSWORD "$grafana_password"
+alert_email="$(require_value ROUTEPLAN_ALERT_EMAIL_TO)"
+[[ "$alert_email" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || { echo 'ROUTEPLAN_ALERT_EMAIL_TO must be one valid email address.' >&2; exit 1; }
+reject_placeholder ROUTEPLAN_ALERT_EMAIL_TO "$alert_email"
 
 place_provider="$(require_value ROUTEPLAN_PLACE_PROVIDER)"
 route_provider="$(require_value ROUTEPLAN_ROUTE_PROVIDER)"

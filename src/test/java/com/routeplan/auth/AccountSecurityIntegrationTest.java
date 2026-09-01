@@ -54,7 +54,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @Testcontainers
 class AccountSecurityIntegrationTest {
     @Container @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
+    static final PostgreSQLContainer POSTGRES = com.routeplan.testsupport.PostgisTestContainer.create();
     private static final String PASSWORD = "Account-test-2026!";
     private static final String NEW_PASSWORD = "New-account-2026!";
     @Autowired MockMvc mvc;

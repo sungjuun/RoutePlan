@@ -77,12 +77,30 @@ $smtpPort = 0
 if (-not [int]::TryParse((Require-Value 'SMTP_PORT'), [ref]$smtpPort) -or $smtpPort -lt 1 -or $smtpPort -gt 65535) {
     throw 'SMTP_PORT must be between 1 and 65535.'
 }
+$smtpStartTls = (Require-Value 'SMTP_STARTTLS').ToLowerInvariant()
+$smtpSsl = (Require-Value 'SMTP_SSL').ToLowerInvariant()
+if ($smtpStartTls -notin @('true', 'false')) { throw 'SMTP_STARTTLS must be true or false.' }
+if ($smtpSsl -notin @('true', 'false')) { throw 'SMTP_SSL must be true or false.' }
+if ($smtpStartTls -ne 'true' -and $smtpSsl -ne 'true') { throw 'Production SMTP must enable STARTTLS or SSL.' }
 if ((Require-Value 'SMTP_AUTH').ToLowerInvariant() -eq 'true') {
     foreach ($name in @('SMTP_USERNAME', 'SMTP_PASSWORD')) {
         $smtpSecret = Require-Value $name
         Reject-Placeholder $name $smtpSecret
     }
 }
+
+$grafanaUser = Require-Value 'GRAFANA_ADMIN_USER'
+if ($grafanaUser -notmatch '^[A-Za-z0-9._-]{3,64}$') {
+    throw 'GRAFANA_ADMIN_USER must contain 3-64 safe username characters.'
+}
+$grafanaPassword = Require-Value 'GRAFANA_ADMIN_PASSWORD'
+if ($grafanaPassword.Length -lt 20) { throw 'GRAFANA_ADMIN_PASSWORD must contain at least 20 characters.' }
+Reject-Placeholder 'GRAFANA_ADMIN_PASSWORD' $grafanaPassword
+$alertEmail = Require-Value 'ROUTEPLAN_ALERT_EMAIL_TO'
+if ($alertEmail -notmatch '^[^\s@]+@[^\s@]+\.[^\s@]+$') {
+    throw 'ROUTEPLAN_ALERT_EMAIL_TO must be one valid email address.'
+}
+Reject-Placeholder 'ROUTEPLAN_ALERT_EMAIL_TO' $alertEmail
 
 $placeProvider = (Require-Value 'ROUTEPLAN_PLACE_PROVIDER').ToUpperInvariant()
 $routeProvider = (Require-Value 'ROUTEPLAN_ROUTE_PROVIDER').ToUpperInvariant()

@@ -135,6 +135,7 @@ routeplan:
     provider: ${ROUTEPLAN_ROUTE_PROVIDER:SIMPLE}
     cache:
       enabled: ${ROUTEPLAN_ROUTE_CACHE_ENABLED:false}
+      persistent-enabled: ${ROUTEPLAN_ROUTE_DB_CACHE_ENABLED:${ROUTEPLAN_ROUTE_CACHE_ENABLED:false}}
       key-prefix: ${ROUTEPLAN_ROUTE_CACHE_KEY_PREFIX:routeplan:route:v1}
       walking-ttl: ${ROUTEPLAN_ROUTE_CACHE_WALKING_TTL:7d}
       driving-ttl: ${ROUTEPLAN_ROUTE_CACHE_DRIVING_TTL:15m}
@@ -142,6 +143,21 @@ routeplan:
       refresh-lock-ttl: ${ROUTEPLAN_ROUTE_CACHE_REFRESH_LOCK_TTL:15s}
       refresh-wait: ${ROUTEPLAN_ROUTE_CACHE_REFRESH_WAIT:2s}
       refresh-poll-interval: ${ROUTEPLAN_ROUTE_CACHE_REFRESH_POLL_INTERVAL:100ms}
+      departure-bucket: ${ROUTEPLAN_ROUTE_CACHE_DEPARTURE_BUCKET:15m}
+      database-batch-size: ${ROUTEPLAN_ROUTE_CACHE_DATABASE_BATCH_SIZE:500}
+      cleanup-interval: ${ROUTEPLAN_ROUTE_CACHE_CLEANUP_INTERVAL:10m}
+      cleanup-batch-size: ${ROUTEPLAN_ROUTE_CACHE_CLEANUP_BATCH_SIZE:5000}
+  optimization:
+    time-dependent:
+      enabled: ${ROUTEPLAN_TIME_DEPENDENT_GLOBAL_ENABLED:false}
+      bucket: ${ROUTEPLAN_TIME_DEPENDENT_BUCKET:1h}
+      max-candidates: ${ROUTEPLAN_TIME_DEPENDENT_MAX_CANDIDATES:8}
+      max-days: ${ROUTEPLAN_TIME_DEPENDENT_MAX_DAYS:3}
+      max-matrix-builds: ${ROUTEPLAN_TIME_DEPENDENT_MAX_MATRIX_BUILDS:36}
+      max-matrix-elements: ${ROUTEPLAN_TIME_DEPENDENT_MAX_MATRIX_ELEMENTS:2500}
+      beam-width: ${ROUTEPLAN_TIME_DEPENDENT_BEAM_WIDTH:512}
+      max-evaluated-states: ${ROUTEPLAN_TIME_DEPENDENT_MAX_STATES:250000}
+      max-search-duration: ${ROUTEPLAN_TIME_DEPENDENT_MAX_SEARCH_DURATION:5s}
   google:
     browser-key: ${GOOGLE_MAPS_BROWSER_KEY:}
     monthly-search-limit: ${GOOGLE_MONTHLY_SEARCH_LIMIT:4000}

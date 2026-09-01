@@ -146,7 +146,7 @@ class GoogleRoutesMatrixProviderTest {
     }
 
     @Test
-    void transitUsesEachTravelDateAndLocalDepartureWithoutReusingTimelessCache() throws Exception {
+    void transitUsesEachTravelDateAndLocalDepartureWithTimeBucketedCache() throws Exception {
         try (GoogleMapsStubServer server = new GoogleMapsStubServer()) {
             server.respondWith(request -> new GoogleMapsStubServer.StubResponse(200, matrixResponse(request.body())));
             var provider = provider(server, new InMemoryRouteLegCache());
@@ -158,7 +158,31 @@ class GoogleRoutesMatrixProviderTest {
             assertThat(objectMapper.readTree(server.requests().get(0).body()).path("departureTime").asText()).isEqualTo(date + "T01:00:00Z");
             assertThat(objectMapper.readTree(server.requests().get(1).body()).path("departureTime").asText()).isEqualTo(date.plusDays(1) + "T00:00:00Z");
             assertThat(RouteMatrix.summarize(matrices.values()).elementCount()).isEqualTo(8);
-            assertThat(matrices.values()).allSatisfy(m -> assertThat(m.cacheEnabled()).isFalse());
+            assertThat(matrices.values()).allSatisfy(m -> {
+                assertThat(m.cacheEnabled()).isTrue();
+                assertThat(m.cacheMissCount()).isEqualTo(2);
+            });
+        }
+    }
+
+    @Test
+    void drivingUsesTrafficAwareRoutingAndDepartureTime() throws Exception {
+        try (GoogleMapsStubServer server = new GoogleMapsStubServer()) {
+            server.respondWith(request -> new GoogleMapsStubServer.StubResponse(200, matrixResponse(request.body())));
+            var provider = provider(server, new InMemoryRouteLegCache());
+            var departure = java.time.Instant.now().plus(java.time.Duration.ofDays(2))
+                    .truncatedTo(java.time.temporal.ChronoUnit.HOURS)
+                    .plus(java.time.Duration.ofMinutes(5));
+            var locations = List.of(location(34.1, 135.1), location(34.2, 135.2));
+
+            provider.build(locations, TransportMode.DRIVING, departure);
+            provider.build(locations, TransportMode.DRIVING, departure.plusSeconds(5 * 60));
+
+            assertThat(server.requests()).hasSize(1);
+            JsonNode body = objectMapper.readTree(server.requests().getFirst().body());
+            assertThat(body.path("travelMode").asText()).isEqualTo("DRIVE");
+            assertThat(body.path("routingPreference").asText()).isEqualTo("TRAFFIC_AWARE");
+            assertThat(body.path("departureTime").asText()).isEqualTo(departure.toString());
         }
     }
 
@@ -223,7 +247,11 @@ class GoogleRoutesMatrixProviderTest {
         public RouteCacheRead getAll(Set<RouteCacheKey> keys) {
             Map<RouteCacheKey, RouteResult> hits = new LinkedHashMap<>();
             keys.forEach(key -> {
-                RouteResult route = routes.get(key);
+                RouteResult route = routes.entrySet().stream()
+                        .filter(entry -> sameBucket(entry.getKey(), key))
+                        .map(Map.Entry::getValue)
+                        .findFirst()
+                        .orElse(null);
                 if (route != null) {
                     hits.put(key, route);
                 }
@@ -235,6 +263,14 @@ class GoogleRoutesMatrixProviderTest {
         public int putAll(Map<RouteCacheKey, RouteResult> fetchedRoutes) {
             routes.putAll(fetchedRoutes);
             return 0;
+        }
+
+        private boolean sameBucket(RouteCacheKey left, RouteCacheKey right) {
+            return left.origin().equals(right.origin())
+                    && left.destination().equals(right.destination())
+                    && left.transportMode() == right.transportMode()
+                    && left.departureBucket(java.time.Duration.ofMinutes(15))
+                    .equals(right.departureBucket(java.time.Duration.ofMinutes(15)));
         }
     }
 

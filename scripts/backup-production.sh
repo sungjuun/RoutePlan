@@ -26,6 +26,8 @@ temporary="$backup_dir/.routeplan-$timestamp.dump.tmp"
 final="$backup_dir/routeplan-$timestamp.dump"
 trap 'rm -f -- "$temporary"' EXIT
 
+# Variables expand inside the PostgreSQL container.
+# shellcheck disable=SC2016
 "${compose[@]}" exec -T postgres sh -c \
   'PGPASSWORD="$POSTGRES_PASSWORD" exec pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-privileges' \
   > "$temporary"

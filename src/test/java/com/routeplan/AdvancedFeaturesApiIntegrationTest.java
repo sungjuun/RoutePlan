@@ -43,7 +43,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @Testcontainers
 class AdvancedFeaturesApiIntegrationTest {
     @Container @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
+    static final PostgreSQLContainer POSTGRES = com.routeplan.testsupport.PostgisTestContainer.create();
     @Autowired MockMvc raw;
     @Autowired UserService users;
     @Autowired JdbcTemplate jdbc;

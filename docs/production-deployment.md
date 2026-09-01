@@ -11,13 +11,17 @@ Internet
 Caddy ── edge ── Frontend Nginx:8080 ── app ── Backend
                                            ├─ data ── PostgreSQL
                                            ├─ data ── Redis
-                                           └─ outbound ── Google/OpenAI/Open-Meteo
+                                           ├─ outbound ── Google/OpenAI/Open-Meteo
+                                           └─ monitoring ── Prometheus ── Alertmanager ── SMTP
+                                                        └─ Grafana ── Caddy /monitoring/
 ```
 
 - DB·Redis·Backend 포트는 호스트에 게시하지 않습니다.
 - Caddy가 직접 연결된 클라이언트 주소를 덮어쓴 뒤 Frontend가 Backend로 전달합니다. Backend는 외부에서 접근할 수 없는 `app` 네트워크만 신뢰하므로 임의 `X-Real-IP` 헤더를 신뢰하지 않습니다.
 - 운영 프로필은 Swagger와 API 문서를 끄고 오류 상세를 응답에 포함하지 않습니다.
 - Backend와 Frontend는 비루트 사용자로 실행하며, 컨테이너 파일 시스템은 읽기 전용이고 필요한 임시 디렉터리만 `tmpfs`로 제공합니다.
+- Prometheus·Alertmanager·Backend 관리 포트는 내부 `monitoring` Network에만 두고, 로그인 보호된 Grafana만 `/monitoring/`으로 제공합니다.
+- PostgreSQL은 PostGIS 3.5가 포함된 PostgreSQL 16 이미지를 사용하며 DB·Redis는 외부에 게시하지 않습니다.
 - 유료 Provider는 키·Quota를 확인하기 전까지 `DISABLED`, `SIMPLE`, `RULE_BASED`가 기본입니다.
 
 ## 1. 서버 준비
@@ -44,6 +48,8 @@ Copy-Item .env.production.example .env.production
 
 검사기는 키와 비밀번호를 출력하지 않습니다. `ROUTEPLAN_PUBLIC_URL`은 도메인과 정확히 같은 HTTPS Origin이어야 하고, SMTP·Secure Cookie·프록시 신뢰 범위와 Provider별 필수 키를 확인합니다.
 
+Grafana 관리자와 운영 경고 수신 주소도 설정합니다. 실제 배포 스크립트는 런타임 비밀 파일을 자동 생성하지만 Compose를 직접 실행할 때는 먼저 `bash ./scripts/prepare-monitoring-config.sh .env.production`을 실행해야 합니다. 자세한 경고 기준과 보안 경계는 [V24 운영 모니터링 안내](production-monitoring.md)를 참고하세요.
+
 ## 2. SMTP·DNS·외부 Provider
 
 - `ROUTEPLAN_AUTH_MAIL_MODE=SMTP`와 실제 SMTP 접속 정보를 입력합니다.
@@ -67,7 +73,9 @@ GitHub의 `production` Environment를 만들고 보호 규칙과 다음 Secret�
 
 `RoutePlan Production Deploy` workflow를 `main`에서 수동 실행하고 확인 값으로 `DEPLOY`를 입력합니다. Workflow는 테스트·Lint·Build·운영 구성 검사를 다시 수행하고 Backend/Frontend 이미지를 `ghcr.io/<owner>/<repository>-{backend,frontend}:<commit-sha>`로 게시합니다. 서버는 해당 SHA의 저장소와 이미지만 사용합니다.
 
-배포 스크립트는 기존 DB가 있으면 먼저 Custom Format 백업을 만들고, 서비스 health와 공개 HTTPS `/api/v1/auth/me`를 검사합니다. 실패하면 이전 애플리케이션 이미지로 복구를 시도하지만 DB를 자동으로 되돌리지는 않습니다. 새 Flyway Migration은 이전 애플리케이션과 함께 실행 가능한 확장형 변경으로 작성해야 합니다.
+배포 스크립트는 기존 DB가 있으면 먼저 Custom Format 백업을 만들고, 서비스 health와 공개 HTTPS `/api/v1/auth/me`, `/monitoring/api/health`를 검사합니다. 애플리케이션 검증이 실패하면 이전 이미지로 복구를 시도하지만 DB를 자동으로 되돌리지는 않습니다. 애플리케이션은 정상이고 모니터링만 실패한 경우에는 정상 이미지를 되돌리지 않고 운영자 확인이 필요한 실패로 종료합니다. 새 Flyway Migration은 이전 애플리케이션과 함께 실행 가능한 확장형 변경으로 작성해야 합니다.
+
+V25부터 Flyway V18이 `CREATE EXTENSION postgis`를 실행합니다. Compose의 기존 PostgreSQL 16 볼륨은 같은 major version의 PostGIS 이미지에 연결되지만, 운영 전 백업을 만든 뒤 `SELECT PostGIS_Version()`과 공간 인덱스 생성, readiness를 확인해야 합니다. 외부 관리형 PostgreSQL을 사용한다면 애플리케이션 배포 전에 PostGIS 확장 사용 권한과 제공 버전을 확인하세요.
 
 ## 4. 백업과 복구
 
@@ -93,9 +101,10 @@ bash ./scripts/restore-production.sh backups/postgres/routeplan-YYYYMMDDTHHMMSSZ
 docker compose --env-file .env.production --env-file .routeplan-release.env \
   -f compose.production.yaml ps
 curl --fail https://your-domain.example/api/v1/auth/me
+curl --fail https://your-domain.example/monitoring/api/health
 ```
 
-추가로 회원가입→메일 인증→로그인→여행 생성→일정 생성→로그아웃 흐름을 운영 계정으로 확인하고, Prometheus 지표·Caddy JSON 로그·Provider 대시보드·Cloud Billing 경고가 연결됐는지 점검합니다. 서버와 별개인 외부 상태 점검 서비스도 `/api/v1/auth/me`를 주기적으로 확인하도록 설정하세요.
+추가로 회원가입→메일 인증→로그인→여행 생성→일정 생성→로그아웃 흐름을 운영 계정으로 확인하고, Grafana `/monitoring/` 로그인·Prometheus target·Alertmanager 시험 메일·Caddy JSON 로그·Provider 대시보드·Cloud Billing 경고가 연결됐는지 점검합니다. 서버와 별개인 외부 상태 점검 서비스도 `/api/v1/auth/me`를 주기적으로 확인하도록 설정하세요.
 
 ## 운영 제한
 
@@ -106,6 +115,6 @@ curl --fail https://your-domain.example/api/v1/auth/me
 
 ## 구현 검증 기록
 
-2026-08-31에 합성 운영 환경으로 PowerShell/Bash 환경 검사, Docker Compose 렌더링, Caddy 설정·읽기 전용 런타임, Backend/Frontend 운영 이미지 빌드를 확인했습니다. 격리 프로젝트에서 PostgreSQL·Redis·Backend·Frontend를 실제 기동했고 Backend는 `routeplan`, Frontend는 `nginx` 사용자로 실행되며 두 애플리케이션 컨테이너 모두 읽기 전용 Root Filesystem과 `healthy` 상태였습니다. DB·Redis·Backend·Frontend의 호스트 Port Binding은 비어 있었습니다.
+2026-08-31에 합성 운영 환경으로 PowerShell/Bash 환경 검사, Docker Compose 렌더링, Caddy·Prometheus·Alertmanager·Grafana 설정, Backend/Frontend 운영 이미지 빌드를 확인했습니다. 격리 프로젝트에서 전체 애플리케이션·데이터·모니터링 서비스를 실제 기동했고 Backend는 `routeplan`, Frontend는 `nginx`, Prometheus·Alertmanager는 `nobody`, Grafana는 `472` 사용자로 실행됐습니다. 다섯 서비스 모두 읽기 전용 Root Filesystem과 `healthy` 상태였으며 모든 서비스의 호스트 Port Binding은 비어 있었습니다.
 
-백업 후 검증 테이블 값을 변경하고 Restore를 실행해 백업 시점 값으로 복구되는 것을 확인했으며, 복구 전 안전 백업과 애플리케이션 정지·재기동도 함께 검증했습니다. Backend 137개, Frontend 49개 테스트와 Frontend Lint·프로덕션 빌드, GitHub Actions `actionlint`, Shell 문법 검사가 통과했습니다. Windows 호스트의 Gradle loopback 오류 때문에 Backend 테스트는 동일 소스를 Linux JDK 21 컨테이너에서 실행했습니다.
+백업 후 검증 테이블 값을 변경하고 Restore를 실행해 백업 시점 값으로 복구되는 것을 확인했으며, 복구 전 안전 백업과 애플리케이션 정지·재기동도 함께 검증했습니다. Backend 142개, Frontend 49개 테스트와 Frontend Lint·프로덕션 빌드, GitHub Actions `actionlint`, Shell 문법 검사가 통과했습니다. Windows 호스트의 Gradle loopback 오류 때문에 Backend 테스트는 동일 소스를 Linux JDK 21 컨테이너에서 실행했습니다.

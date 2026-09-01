@@ -30,7 +30,7 @@ class SharedRouteApiIntegrationTest {
 
     @Container
     @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
+    static final PostgreSQLContainer POSTGRES = com.routeplan.testsupport.PostgisTestContainer.create();
 
     @Autowired
     private MockMvc rawMockMvc;
