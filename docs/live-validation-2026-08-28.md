@@ -4,6 +4,25 @@
 
 로컬 개발 환경에서 날씨·영업시간·도보 경로·날짜 지정 대중교통 응답과 Google 한국어 지도·실제 경로선 표시를 확인했습니다. 초기 `403 SERVICE_DISABLED`는 Routes API 활성화 후 해소됐습니다. 대표 공개 장소의 단일 표본이며 성능·운행 정확도·모든 지역의 경로 제공을 보장하지 않습니다.
 
+### 2026-09-01 V25 교통량·계층 캐시 검증
+
+RoutePlan 백엔드를 통해 미래 날짜의 `TRAFFIC_AWARE` 자동차 Matrix와 시간 의존 전역 최적화를 실제 Google Routes API로 검증했습니다. 검증 여행은 2026-09-08 오사카 1일, 난바 숙소·오사카성·쿠로몬 시장, `Asia/Tokyo`, 09:00~13:00으로 제한했습니다. 임시 계정과 여행은 검증 직후 API로 삭제했고 기존 사용자·여행은 변경하지 않았습니다.
+
+| 실행 | 앱 소요 | Google 호출 | Matrix 요소 | Cache hit/miss | 결과 |
+|---|---:|---:|---:|---:|---|
+| 최초 계산 | 1,839ms | 5회 | 54 | 6 / 30 | Google Routes, 전역 탐색 적용 |
+| 동일 조건 재계산 | 50ms | 0회 | 54 | 36 / 0 | Redis L1 100% 재사용 |
+| Redis Route key 삭제 후 재계산 | 95ms | 0회 | 54 | 36 / 0 | PostGIS L2 30건 적중, Redis 30건 재가열 |
+
+최초 계산은 기본 Matrix와 5개 시간 Matrix를 사용했습니다. 첫 시간 버킷은 기본 계산 결과를 재사용해 실제 Google 요청은 5회, 공급자 과금 단위는 `3 origins × 3 destinations × 5 requests = 45 elements`였습니다. 앱 집계는 성공 5회·실패 0회·성공 요소 45개, 공급자 총 지연 1,082ms·최대 447ms였습니다. PostGIS에는 09:00~13:00 JST의 출발 버킷 5개와 방향별 경로 30건이 저장됐습니다.
+
+시간대별 반환값도 동일한 정적 결과가 아니었습니다. 오사카성→쿠로몬 시장은 09시 16분, 10~12시 18분, 13시 17분이었고, 전체 방향 평균은 시간대에 따라 13.17~13.83분으로 달라졌습니다. 일정 응답은 매 실행마다 `예측 교통량을 반영한 5개 시간 Matrix`와 전역 탐색 적용을 표시했으며 Provider·Cache 실패는 0건이었습니다.
+
+Google 공식 분류상 `TRAFFIC_AWARE` Compute Route Matrix는 Pro SKU이고 2026-09-01 공개 단가는 월 5,000요소 무료 사용량 이후 1,000요소당 USD 10입니다. 따라서 이번 45요소의 무료 사용량 적용 전 정가 환산은 **USD 0.45**이며, 해당 결제 계정의 월 무료 사용량이 남아 있다면 증분 청구액은 USD 0일 수 있습니다. 실제 청구액과 무료 잔량은 Google Cloud Billing이 최종 기준입니다. 현재 RoutePlan은 이동수단별 SKU를 하나의 `GOOGLE_ROUTES` 집계로 합치므로 로컬 `GOOGLE_ROUTES_USD_PER_THOUSAND`는 0으로 유지하고 이번 검증의 Pro 비용을 별도로 계산했습니다.
+
+- [Routes API 사용량·과금](https://developers.google.com/maps/documentation/routes/usage-and-billing)
+- [Google Maps Platform 가격표](https://developers.google.com/maps/billing-and-pricing/pricing)
+
 ### 2026-08-31 V22 재점검
 
 공급자 장애 격리 적용 후 Open-Meteo 1회와 Google 공개 표본 5회를 다시 실행했고 모두 HTTP 200이었습니다. 장소 검색 398ms, 장소 상세 190ms, 도보 Matrix 282ms, 도로 Geometry 228ms, 날짜 지정 서울 대중교통 292ms였습니다. 도보는 `ROUTE_EXISTS`·1,237m·1,036초, 대중교통은 `ROUTE_EXISTS`·1,169초, Geometry는 encoded polyline을 반환했습니다.
