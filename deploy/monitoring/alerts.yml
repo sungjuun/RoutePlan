@@ -8,6 +8,18 @@ groups:
         expr: sum(rate(http_server_requests_seconds_count{application="routeplan",status=~"5.."}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{application="routeplan"}[5m])), 0.001)
       - record: routeplan:http_request_duration:p95_5m
         expr: histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{application="routeplan"}[5m])))
+      - record: routeplan:backend_instances:healthy
+        expr: count(up{job="routeplan-backend"} == 1) or vector(0)
+      - record: routeplan:time_dependent_duration:p95_1h
+        expr: histogram_quantile(0.95, sum by (le) (rate(routeplan_optimization_time_dependent_duration_seconds_bucket{application="routeplan",outcome="applied"}[1h])))
+      - record: routeplan:time_dependent_states:p95_1h
+        expr: histogram_quantile(0.95, sum by (le) (rate(routeplan_optimization_time_dependent_states_bucket{application="routeplan",outcome="applied"}[1h])))
+      - record: routeplan:time_dependent_fallback_ratio:rate1h
+        expr: sum(rate(routeplan_optimization_time_dependent_total{application="routeplan",outcome="fallback"}[1h])) / clamp_min(sum(rate(routeplan_optimization_time_dependent_total{application="routeplan"}[1h])), 0.00001)
+      - record: routeplan:google_routes_units:month
+        expr: max(routeplan_external_usage_units{application="routeplan",provider="google",operation="GOOGLE_ROUTES"}) or vector(0)
+      - record: routeplan:google_cost_usd:month
+        expr: sum(max by (operation) (routeplan_external_usage_cost_usd{application="routeplan",provider="google",configured="true"})) or vector(0)
 
   - name: routeplan-alerts
     rules:
@@ -21,6 +33,17 @@ groups:
         annotations:
           summary: RoutePlan backend metrics target is down
           description: Prometheus has been unable to scrape the production backend for more than two minutes.
+
+      - alert: RoutePlanBackendReplicaCountLow
+        expr: routeplan:backend_instances:healthy < 2
+        for: 2m
+        labels:
+          severity: critical
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan has fewer than two healthy backend replicas
+          description: Multi-instance redundancy is lost; restore at least two healthy backend containers.
 
       - alert: RoutePlanHttp5xxRateHigh
         expr: routeplan:http_requests:rate5m > 0.05 and routeplan:http_5xx_ratio:rate5m > 0.05
@@ -117,6 +140,41 @@ groups:
         annotations:
           summary: RoutePlan time-dependent optimization repeatedly fell back
           description: The global traffic-aware optimizer fell back at least three times in fifteen minutes; inspect provider, cost, and search limits.
+
+      - alert: RoutePlanTimeDependentSearchNearLimit
+        expr: routeplan:time_dependent_states:p95_1h / clamp_min(max(routeplan_optimization_time_dependent_config_max_states{application="routeplan"}), 1) > 0.8 or routeplan:time_dependent_duration:p95_1h / clamp_min(max(routeplan_optimization_time_dependent_config_max_duration_seconds{application="routeplan"}), 0.001) > 0.8
+        for: 30m
+        labels:
+          severity: warning
+          service: routeplan
+          environment: production
+        annotations:
+          summary: RoutePlan time-dependent search is approaching a safety limit
+          description: The one-hour p95 state count or duration is above 80 percent of its configured limit; review Beam and limit telemetry before changing settings.
+
+      - alert: RoutePlanGoogleMonthlyUsageHigh
+        expr: max(routeplan_external_usage_ratio{application="routeplan",provider="google"}) >= 0.8
+        for: 15m
+        labels:
+          severity: warning
+          service: routeplan
+          environment: production
+          provider: google
+        annotations:
+          summary: RoutePlan Google app safety-limit usage is high
+          description: At least one Google operation has consumed 80 percent of its monthly app-side safety limit.
+
+      - alert: RoutePlanGoogleMonthlyCostHigh
+        expr: max(routeplan_external_budget_usd{application="routeplan",provider="google"}) > 0 and routeplan:google_cost_usd:month / max(routeplan_external_budget_usd{application="routeplan",provider="google"}) >= 0.8
+        for: 15m
+        labels:
+          severity: warning
+          service: routeplan
+          environment: production
+          provider: google
+        annotations:
+          summary: RoutePlan estimated Google cost is near its monthly budget
+          description: The configured-price estimate has reached 80 percent of the RoutePlan Google monthly budget; verify the authoritative Google Cloud billing report.
 
       - alert: RoutePlanAlertmanagerDown
         expr: up{job="alertmanager"} == 0

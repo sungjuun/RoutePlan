@@ -21,6 +21,7 @@ Caddy ── edge ── Frontend Nginx:8080 ── app ── Backend
 - 운영 프로필은 Swagger와 API 문서를 끄고 오류 상세를 응답에 포함하지 않습니다.
 - Backend와 Frontend는 비루트 사용자로 실행하며, 컨테이너 파일 시스템은 읽기 전용이고 필요한 임시 디렉터리만 `tmpfs`로 제공합니다.
 - Prometheus·Alertmanager·Backend 관리 포트는 내부 `monitoring` Network에만 두고, 로그인 보호된 Grafana만 `/monitoring/`으로 제공합니다.
+- 기본 2개 Backend replica를 동적 Nginx upstream으로 분산하고 Prometheus DNS service discovery로 각각 수집합니다.
 - PostgreSQL은 PostGIS 3.5가 포함된 PostgreSQL 16 이미지를 사용하며 DB·Redis는 외부에 게시하지 않습니다.
 - 유료 Provider는 키·Quota를 확인하기 전까지 `DISABLED`, `SIMPLE`, `RULE_BASED`가 기본입니다.
 
@@ -49,6 +50,8 @@ Copy-Item .env.production.example .env.production
 검사기는 키와 비밀번호를 출력하지 않습니다. `ROUTEPLAN_PUBLIC_URL`은 도메인과 정확히 같은 HTTPS Origin이어야 하고, SMTP·Secure Cookie·프록시 신뢰 범위와 Provider별 필수 키를 확인합니다.
 
 Grafana 관리자와 운영 경고 수신 주소도 설정합니다. 실제 배포 스크립트는 런타임 비밀 파일을 자동 생성하지만 Compose를 직접 실행할 때는 먼저 `bash ./scripts/prepare-monitoring-config.sh .env.production`을 실행해야 합니다. 자세한 경고 기준과 보안 경계는 [V24 운영 모니터링 안내](production-monitoring.md)를 참고하세요.
+
+`ROUTEPLAN_BACKEND_REPLICAS`는 2~20 범위로 설정합니다. 배포 스크립트는 지정된 개수 전체가 healthy가 아니면 배포를 성공으로 처리하지 않습니다. 실제 동시 요청과 cache 장애 복구 검증은 [V25 운영 검증 안내](operational-validation.md)를 참고하세요.
 
 ## 2. SMTP·DNS·외부 Provider
 
@@ -117,4 +120,4 @@ curl --fail https://your-domain.example/monitoring/api/health
 
 2026-08-31에 합성 운영 환경으로 PowerShell/Bash 환경 검사, Docker Compose 렌더링, Caddy·Prometheus·Alertmanager·Grafana 설정, Backend/Frontend 운영 이미지 빌드를 확인했습니다. 격리 프로젝트에서 전체 애플리케이션·데이터·모니터링 서비스를 실제 기동했고 Backend는 `routeplan`, Frontend는 `nginx`, Prometheus·Alertmanager는 `nobody`, Grafana는 `472` 사용자로 실행됐습니다. 다섯 서비스 모두 읽기 전용 Root Filesystem과 `healthy` 상태였으며 모든 서비스의 호스트 Port Binding은 비어 있었습니다.
 
-백업 후 검증 테이블 값을 변경하고 Restore를 실행해 백업 시점 값으로 복구되는 것을 확인했으며, 복구 전 안전 백업과 애플리케이션 정지·재기동도 함께 검증했습니다. Backend 142개, Frontend 49개 테스트와 Frontend Lint·프로덕션 빌드, GitHub Actions `actionlint`, Shell 문법 검사가 통과했습니다. Windows 호스트의 Gradle loopback 오류 때문에 Backend 테스트는 동일 소스를 Linux JDK 21 컨테이너에서 실행했습니다.
+백업 후 검증 테이블 값을 변경하고 Restore를 실행해 백업 시점 값으로 복구되는 것을 확인했으며, 복구 전 안전 백업과 애플리케이션 정지·재기동도 함께 검증했습니다. Backend 147개, Frontend 49개 테스트와 Frontend Lint·프로덕션 빌드, GitHub Actions `actionlint`, Shell 문법 검사가 통과했습니다. V25 E2E에서는 Backend 두 개를 동시에 기동해 서로 다른 인스턴스의 처리와 Google Matrix 중복 호출 방지를 확인했습니다. Windows 호스트의 Gradle loopback 오류 때문에 Backend 테스트는 동일 소스를 Linux JDK 21 컨테이너에서 실행했습니다.

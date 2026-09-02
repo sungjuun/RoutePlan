@@ -116,6 +116,7 @@ routeplan:
       failure-rate-minimum-calls: ${ROUTEPLAN_FAILURE_RATE_MINIMUM_CALLS:5}
       failure-rate-warning-percent: ${ROUTEPLAN_FAILURE_RATE_WARNING_PERCENT:50}
     usage:
+      metrics-refresh-interval: ${ROUTEPLAN_USAGE_METRICS_REFRESH_INTERVAL:1m}
       warning-percent: ${ROUTEPLAN_USAGE_WARNING_PERCENT:80}
       open-ai-monthly-request-limit: ${OPENAI_MONTHLY_REQUEST_LIMIT:500}
       open-ai-monthly-token-limit: ${OPENAI_MONTHLY_TOKEN_LIMIT:1000000}

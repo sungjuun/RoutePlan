@@ -1,0 +1,54 @@
+services:
+  operations-runner:
+    image: node:22-alpine
+    profiles: ["operations"]
+    user: node
+    working_dir: /operations
+    command: ["node", "/operations/v25-load.mjs"]
+    environment:
+      ROUTEPLAN_TARGET_URL: ${ROUTEPLAN_TARGET_URL:-http://frontend:8080}
+      ROUTEPLAN_LOAD_CONFIRM: ${ROUTEPLAN_LOAD_CONFIRM:-}
+      ROUTEPLAN_LOAD_ALLOW_INSECURE_INTERNAL: ${ROUTEPLAN_LOAD_ALLOW_INSECURE_INTERNAL:-true}
+      ROUTEPLAN_LOAD_CONCURRENCY: ${ROUTEPLAN_LOAD_CONCURRENCY:-2}
+      ROUTEPLAN_LOAD_ITERATIONS_PER_USER: ${ROUTEPLAN_LOAD_ITERATIONS_PER_USER:-3}
+      ROUTEPLAN_LOAD_MAX_P95_MS: ${ROUTEPLAN_LOAD_MAX_P95_MS:-5000}
+      ROUTEPLAN_LOAD_MAX_FAILURE_PERCENT: ${ROUTEPLAN_LOAD_MAX_FAILURE_PERCENT:-0}
+      ROUTEPLAN_EXPECTED_MIN_INSTANCES: ${ROUTEPLAN_EXPECTED_MIN_INSTANCES:-2}
+      ROUTEPLAN_MAX_GOOGLE_UNITS_DELTA: ${ROUTEPLAN_MAX_GOOGLE_UNITS_DELTA:-}
+      ROUTEPLAN_MAX_GOOGLE_CALLS_DELTA: ${ROUTEPLAN_MAX_GOOGLE_CALLS_DELTA:-}
+      ROUTEPLAN_REQUIRE_GOOGLE_COST_CONFIGURED: ${ROUTEPLAN_REQUIRE_GOOGLE_COST_CONFIGURED:-true}
+      ROUTEPLAN_LOAD_LABEL: ${ROUTEPLAN_LOAD_LABEL:-manual}
+      ROUTEPLAN_OPERATION_SCENARIOS: /run/secrets/routeplan-operation-scenarios.json
+    volumes:
+      - ./tests/operations:/operations:ro
+      - ${ROUTEPLAN_OPERATION_SCENARIOS_FILE:-./tests/operations/scenarios.example.json}:/run/secrets/routeplan-operation-scenarios.json:ro
+    networks:
+      - edge
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,uid=1000,gid=1000,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  operations-report:
+    image: node:22-alpine
+    profiles: ["operations"]
+    user: node
+    working_dir: /operations
+    command: ["node", "/operations/v25-report.mjs"]
+    environment:
+      ROUTEPLAN_PROMETHEUS_URL: http://prometheus:9090
+      ROUTEPLAN_REPORT_LOOKBACK: ${ROUTEPLAN_REPORT_LOOKBACK:-7d}
+    volumes:
+      - ./tests/operations:/operations:ro
+    networks:
+      - monitoring
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,uid=1000,gid=1000,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

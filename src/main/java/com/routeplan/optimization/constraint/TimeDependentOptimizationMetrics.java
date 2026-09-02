@@ -25,15 +25,20 @@ public class TimeDependentOptimizationMetrics {
                 .increment();
         DistributionSummary.builder("routeplan.optimization.time_dependent.states")
                 .description("States evaluated by the bounded global optimizer")
+                .tag("outcome", outcome)
+                .tag("reason", reason)
                 .register(registry)
                 .record(states);
         DistributionSummary.builder("routeplan.optimization.time_dependent.buckets")
                 .description("Departure-time matrices used by the global optimizer")
+                .tag("outcome", outcome)
+                .tag("reason", reason)
                 .register(registry)
                 .record(buckets);
         Timer.builder("routeplan.optimization.time_dependent.duration")
                 .description("Time-dependent global optimization duration")
                 .tag("outcome", outcome)
+                .tag("reason", reason)
                 .register(registry)
                 .record(Duration.ofMillis(Math.max(0, millis)));
     }

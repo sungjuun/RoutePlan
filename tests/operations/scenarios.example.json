@@ -1,0 +1,12 @@
+[
+  {
+    "email": "replace-with-dedicated-load-user-1@example.invalid",
+    "password": "replace-with-a-secret",
+    "tripId": 1001
+  },
+  {
+    "email": "replace-with-dedicated-load-user-2@example.invalid",
+    "password": "replace-with-a-secret",
+    "tripId": 1002
+  }
+]

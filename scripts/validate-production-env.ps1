@@ -42,6 +42,11 @@ if ($domain -notmatch '^(?=.{4,253}$)([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9
 }
 Reject-Placeholder 'ROUTEPLAN_DOMAIN' $domain
 
+$deploymentEnvironment = Require-Value 'ROUTEPLAN_DEPLOYMENT_ENVIRONMENT'
+if ($deploymentEnvironment -notin @('staging', 'production')) {
+    throw 'ROUTEPLAN_DEPLOYMENT_ENVIRONMENT must be staging or production.'
+}
+
 $publicUrl = Require-Value 'ROUTEPLAN_PUBLIC_URL'
 if ($publicUrl -ne "https://$domain") { throw 'ROUTEPLAN_PUBLIC_URL must exactly match https://ROUTEPLAN_DOMAIN.' }
 
@@ -54,6 +59,12 @@ if ($imagePrefix -notmatch '^ghcr\.io/[a-z0-9._-]+/[a-z0-9._/-]+$') {
     throw 'ROUTEPLAN_IMAGE_PREFIX must be a lowercase ghcr.io image prefix.'
 }
 Reject-Placeholder 'ROUTEPLAN_IMAGE_PREFIX' $imagePrefix
+
+$backendReplicas = 0
+if (-not [int]::TryParse((Require-Value 'ROUTEPLAN_BACKEND_REPLICAS'), [ref]$backendReplicas) -or
+        $backendReplicas -lt 2 -or $backendReplicas -gt 20) {
+    throw 'ROUTEPLAN_BACKEND_REPLICAS must be between 2 and 20.'
+}
 
 $databasePassword = Require-Value 'POSTGRES_PASSWORD'
 if ($databasePassword.Length -lt 24) { throw 'POSTGRES_PASSWORD must contain at least 24 characters.' }
@@ -110,6 +121,18 @@ if ($placeProvider -eq 'GOOGLE' -or $routeProvider -eq 'GOOGLE') {
 }
 if ($routeProvider -eq 'GOOGLE') {
     Reject-Placeholder 'GOOGLE_MAPS_BROWSER_KEY' (Require-Value 'GOOGLE_MAPS_BROWSER_KEY')
+    [decimal]$googleRoutesPrice = 0
+    [decimal]$googleBudget = 0
+    $numberStyle = [System.Globalization.NumberStyles]::Number
+    $culture = [System.Globalization.CultureInfo]::InvariantCulture
+    if (-not [decimal]::TryParse((Require-Value 'GOOGLE_ROUTES_USD_PER_THOUSAND'), $numberStyle,
+            $culture, [ref]$googleRoutesPrice) -or $googleRoutesPrice -le 0) {
+        throw 'GOOGLE_ROUTES_USD_PER_THOUSAND must be positive when Google routing is enabled.'
+    }
+    if (-not [decimal]::TryParse((Require-Value 'GOOGLE_MONTHLY_BUDGET_USD'), $numberStyle,
+            $culture, [ref]$googleBudget) -or $googleBudget -le 0) {
+        throw 'GOOGLE_MONTHLY_BUDGET_USD must be positive when Google routing is enabled.'
+    }
 }
 if ($aiProvider -eq 'OPENAI') {
     Reject-Placeholder 'OPENAI_API_KEY' (Require-Value 'OPENAI_API_KEY')

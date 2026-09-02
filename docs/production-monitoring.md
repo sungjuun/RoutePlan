@@ -14,7 +14,7 @@ Backend:9090 ─ monitoring ─ Prometheus ─ Alertmanager ─ SMTP
 구성 파일은 저장소에서 버전 관리합니다.
 
 - `deploy/monitoring/prometheus.yml`: 수집 대상, 15초 수집·평가 주기, Alertmanager 연결
-- `deploy/monitoring/alerts.yml`: 기록 규칙 3개와 운영 경고 11개
+- `deploy/monitoring/alerts.yml`: HTTP·다중 Backend·V25 탐색·Google 사용량 기록 규칙과 운영 경고
 - `deploy/monitoring/grafana/provisioning`: Prometheus datasource와 Dashboard Provider
 - `deploy/monitoring/grafana/dashboards/routeplan-overview.json`: RoutePlan 운영 현황 대시보드
 - `scripts/prepare-monitoring-config.sh`: SMTP와 Grafana 비밀 파일 및 Alertmanager 런타임 설정 생성
@@ -60,6 +60,8 @@ https://<ROUTEPLAN_DOMAIN>/monitoring/
 - Google·OpenAI 실제 시도 결과와 Provider Circuit 상태
 - Route Cache 전체 및 Redis/PostGIS 계층별 hit/miss/failure
 - 시간대별 전역 최적화 적용·skip·fallback 결과
+- 정상 Backend replica 수와 시간 의존 탐색 p95 상태 수·p95 시간·fallback 비율
+- Google Routes 월 요소·HTTP 호출과 설정 단가 기반 월 추정 비용·예산
 - JVM Heap과 HikariCP 연결 Pool 사용률
 
 익명 접근, 회원가입, 사용 통계 전송, 플러그인 설치·자동 갱신은 비활성화됩니다. Dashboard와 datasource는 파일 Provisioning으로 관리되므로 운영 UI에서 직접 바꾼 내용은 재배포 가능한 원본이 아닙니다. 변경은 저장소 JSON/YAML에 반영해야 합니다.
@@ -69,6 +71,7 @@ https://<ROUTEPLAN_DOMAIN>/monitoring/
 | 경고 | 기준 | 대기 | 등급 |
 |---|---|---:|---|
 | Backend Down | Prometheus scrape 실패 | 2분 | Critical |
+| Backend replica 부족 | 정상 Backend 2개 미만 | 2분 | Critical |
 | HTTP 5xx 증가 | 요청이 있는 동안 5xx 비율 5% 초과 | 10분 | Critical |
 | p95 지연 | 요청이 있는 동안 p95 2초 초과 | 10분 | Warning |
 | 일정 생성 실패 | 10분 동안 3회 이상 | 즉시 | Warning |
@@ -78,11 +81,14 @@ https://<ROUTEPLAN_DOMAIN>/monitoring/
 | DB Pool 포화 | HikariCP 연결의 90% 초과 | 10분 | Warning |
 | PostGIS Route Cache 실패 | 10분 동안 read/write 실패 합계 3회 이상 | 즉시 | Warning |
 | 시간 의존 최적화 fallback | 15분 동안 fallback 3회 이상 | 즉시 | Warning |
+| 시간 의존 탐색 상한 접근 | p95 상태 수 또는 시간이 상한의 80% 초과 | 30분 | Warning |
+| Google 월 사용량 | 앱 안전 한도 80% 이상 | 15분 | Warning |
+| Google 월 추정 비용 | 설정 예산 80% 이상 | 15분 | Warning |
 | Alertmanager Down | Alertmanager scrape 실패 | 2분 | Critical |
 
 Alertmanager는 `alertname`, `severity`, `provider`로 경고를 묶습니다. Critical은 30분, Warning은 4시간 간격으로 반복하며 복구 메일도 보냅니다. Backend Down이 발생한 동안에는 같은 서비스의 Warning을 억제해 중복 알림을 줄입니다.
 
-임계값은 초기 운영 기준입니다. 실제 트래픽의 정상 범위를 최소 1~2주 관찰한 뒤 `deploy/monitoring/alerts.yml`에서 조정하고 `promtool check rules`와 CI를 통과시켜 배포해야 합니다.
+임계값은 초기 운영 기준입니다. 실제 트래픽의 정상 범위를 최소 1~2주 관찰한 뒤 `deploy/monitoring/alerts.yml`에서 조정하고 `promtool check rules`와 CI를 통과시켜 배포해야 합니다. 다중 인스턴스 부하·cache 장애 훈련과 Beam 판정 절차는 [V25 운영 검증 안내](operational-validation.md)를 따릅니다.
 
 ## 4. 상태 점검과 문제 해결
 
@@ -102,7 +108,7 @@ curl --fail https://<ROUTEPLAN_DOMAIN>/monitoring/api/health
 bash ./scripts/check-production-config.sh
 ```
 
-검사기는 Prometheus 설정·규칙, Alertmanager UTF-8 Strict 설정, Grafana Provisioning/Dashboard 문법, Compose와 Caddy 설정을 확인합니다. 배포 스크립트는 애플리케이션 공개 상태를 먼저 검증한 다음 Alertmanager·Prometheus·Grafana와 공개 Grafana health를 검증합니다. 모니터링만 실패한 경우 정상 애플리케이션 이미지를 되돌리지 않고 운영자 조치가 필요하다고 종료합니다.
+검사기는 Prometheus 설정·규칙, Alertmanager UTF-8 Strict 설정, Grafana Provisioning/Dashboard 문법, 운영·검증 Compose, Caddy·Nginx 설정과 운영 Node 실행기 문법을 확인합니다. 배포 스크립트는 애플리케이션 공개 상태를 먼저 검증한 다음 Alertmanager·Prometheus·Grafana와 공개 Grafana health를 검증합니다. 모니터링만 실패한 경우 정상 애플리케이션 이미지를 되돌리지 않고 운영자 조치가 필요하다고 종료합니다.
 
 ## 5. 보존·복구·보안 경계
 
@@ -120,4 +126,4 @@ bash ./scripts/check-production-config.sh
 
 ## 구현 검증 기록
 
-2026-09-01 현재 Prometheus `3.14.0`, Alertmanager `0.34.0`, Grafana `13.2.0` 구성과 기록 규칙 3개·경고 규칙 11개를 `promtool`로 재검증했습니다. Backend 관리 포트 `9090` 수집, Backend·Prometheus·Alertmanager 세 target의 `up`, Grafana datasource·대시보드 Provisioning과 내부 API health를 확인했습니다. 모든 모니터링·애플리케이션·데이터 서비스의 호스트 Port Binding은 비어 있었습니다. SMTP 실제 발송은 운영 SMTP가 없어 설정 문법과 비밀번호 비포함만 검증했습니다.
+2026-09-02 현재 Prometheus `3.14.0`, Alertmanager `0.34.0`, Grafana `13.2.0` 구성, DNS 기반 다중 Backend 수집, V25 탐색·Google 월 사용량 기록/경고 규칙을 `promtool`로 재검증했습니다. Grafana datasource·19개 패널 Dashboard, 동적 Nginx upstream, 운영/검증 Compose와 Node 실행기 문법도 함께 확인했습니다. Backend 두 개를 띄운 V25 E2E는 서로 다른 인스턴스 처리, Redis 실제 중지와 PostGIS cache table 실제 격리 후 fallback·복구를 검증했습니다. SMTP 실제 발송과 외부 운영 서버 장애 주입은 실제 인프라 승인·계정이 필요한 별도 실행 단계입니다.

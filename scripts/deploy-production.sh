@@ -14,6 +14,7 @@ fi
 
 bash "$repo_dir/scripts/validate-production-env.sh" "$env_file"
 bash "$repo_dir/scripts/prepare-monitoring-config.sh" "$env_file"
+backend_replicas="$(awk -F= '/^ROUTEPLAN_BACKEND_REPLICAS=/{value=$2} END{print value}' "$env_file")"
 configured_prefix="$(awk -F= '/^ROUTEPLAN_IMAGE_PREFIX=/{value=substr($0,index($0,"=")+1)} END{print value}' "$env_file")"
 target_prefix="${target_prefix:-$configured_prefix}"
 [[ "$target_prefix" =~ ^ghcr\.io/[a-z0-9._-]+/[a-z0-9._/-]+$ ]] || { echo 'Invalid GHCR image prefix.' >&2; exit 1; }
@@ -48,13 +49,18 @@ compose_command() {
 }
 
 wait_healthy() {
-  local service="$1" deadline=$((SECONDS + 180)) container_id status
+  local service="$1" expected="${2:-1}" deadline=$((SECONDS + 180)) container_id status all_healthy
+  local -a container_ids
   while (( SECONDS < deadline )); do
-    container_id="$(compose_command ps -q "$service")"
-    if [[ -n "$container_id" ]]; then
-      status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || true)"
-      [[ "$status" == 'healthy' ]] && return 0
-      [[ "$status" == 'exited' || "$status" == 'dead' ]] && return 1
+    mapfile -t container_ids < <(compose_command ps -q "$service")
+    if (( ${#container_ids[@]} == expected )); then
+      all_healthy='true'
+      for container_id in "${container_ids[@]}"; do
+        status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || true)"
+        [[ "$status" == 'exited' || "$status" == 'dead' ]] && return 1
+        [[ "$status" == 'healthy' ]] || all_healthy='false'
+      done
+      [[ "$all_healthy" == 'true' ]] && return 0
     fi
     sleep 3
   done
@@ -83,8 +89,8 @@ rollback_images() {
   echo "Health check failed; restoring application images tagged $previous_tag." >&2
   write_release "$previous_prefix" "$previous_tag"
   compose_command pull backend frontend
-  compose_command up -d backend frontend caddy
-  wait_healthy backend && wait_healthy frontend && wait_healthy caddy && public_health
+  compose_command up -d --scale backend="$backend_replicas" backend frontend caddy
+  wait_healthy backend "$backend_replicas" && wait_healthy frontend && wait_healthy caddy && public_health
 }
 
 deployment_finished='false'
@@ -108,10 +114,10 @@ if compose_command ps --status running --services | grep -qx postgres; then
 fi
 
 compose_command up -d postgres redis
-compose_command up -d backend frontend
+compose_command up -d --scale backend="$backend_replicas" backend frontend
 compose_command up -d caddy
 
-if ! wait_healthy backend || ! wait_healthy frontend || ! wait_healthy caddy || ! public_health; then
+if ! wait_healthy backend "$backend_replicas" || ! wait_healthy frontend || ! wait_healthy caddy || ! public_health; then
   compose_command logs --tail 120 backend frontend caddy >&2 || true
   if rollback_images; then
     echo "Application images rolled back. Database was not restored automatically. Pre-deploy backup: $predeploy_backup" >&2

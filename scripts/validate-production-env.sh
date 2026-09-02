@@ -44,6 +44,12 @@ if [[ ! "$domain" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2
 fi
 reject_placeholder ROUTEPLAN_DOMAIN "$domain"
 
+deployment_environment="$(require_value ROUTEPLAN_DEPLOYMENT_ENVIRONMENT)"
+[[ "$deployment_environment" =~ ^(staging|production)$ ]] || {
+  echo 'ROUTEPLAN_DEPLOYMENT_ENVIRONMENT must be staging or production.' >&2
+  exit 1
+}
+
 public_url="$(require_value ROUTEPLAN_PUBLIC_URL)"
 [[ "$public_url" == "https://$domain" ]] || { echo 'ROUTEPLAN_PUBLIC_URL must exactly match https://ROUTEPLAN_DOMAIN.' >&2; exit 1; }
 
@@ -54,6 +60,12 @@ reject_placeholder TLS_EMAIL "$tls_email"
 image_prefix="$(require_value ROUTEPLAN_IMAGE_PREFIX)"
 [[ "$image_prefix" =~ ^ghcr\.io/[a-z0-9._-]+/[a-z0-9._/-]+$ ]] || { echo 'ROUTEPLAN_IMAGE_PREFIX must be a lowercase ghcr.io image prefix.' >&2; exit 1; }
 reject_placeholder ROUTEPLAN_IMAGE_PREFIX "$image_prefix"
+
+backend_replicas="$(require_value ROUTEPLAN_BACKEND_REPLICAS)"
+if [[ ! "$backend_replicas" =~ ^[0-9]+$ ]] || (( backend_replicas < 2 || backend_replicas > 20 )); then
+  echo 'ROUTEPLAN_BACKEND_REPLICAS must be between 2 and 20.' >&2
+  exit 1
+fi
 
 database_password="$(require_value POSTGRES_PASSWORD)"
 (( ${#database_password} >= 24 )) || { echo 'POSTGRES_PASSWORD must contain at least 24 characters.' >&2; exit 1; }
@@ -105,6 +117,18 @@ fi
 if [[ "${route_provider^^}" == 'GOOGLE' ]]; then
   google_browser_key="$(require_value GOOGLE_MAPS_BROWSER_KEY)"
   reject_placeholder GOOGLE_MAPS_BROWSER_KEY "$google_browser_key"
+  google_routes_price="$(require_value GOOGLE_ROUTES_USD_PER_THOUSAND)"
+  google_budget="$(require_value GOOGLE_MONTHLY_BUDGET_USD)"
+  if [[ ! "$google_routes_price" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+      ! awk -v value="$google_routes_price" 'BEGIN { exit !(value > 0) }'; then
+    echo 'GOOGLE_ROUTES_USD_PER_THOUSAND must be positive when Google routing is enabled.' >&2
+    exit 1
+  fi
+  if [[ ! "$google_budget" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+      ! awk -v value="$google_budget" 'BEGIN { exit !(value > 0) }'; then
+    echo 'GOOGLE_MONTHLY_BUDGET_USD must be positive when Google routing is enabled.' >&2
+    exit 1
+  fi
 fi
 if [[ "${ai_provider^^}" == 'OPENAI' ]]; then
   openai_key="$(require_value OPENAI_API_KEY)"

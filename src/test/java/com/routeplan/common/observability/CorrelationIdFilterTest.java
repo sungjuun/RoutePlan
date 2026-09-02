@@ -22,6 +22,7 @@ class CorrelationIdFilterTest {
 
         assertThat(response.getHeader(CorrelationIdFilter.HEADER_NAME))
                 .isEqualTo("mobile-client_2026.08-01");
+        assertThat(response.getHeader(CorrelationIdFilter.INSTANCE_HEADER_NAME)).isEqualTo("local");
         assertThat(CorrelationIdFilter.from(request)).isEqualTo("mobile-client_2026.08-01");
     }
 

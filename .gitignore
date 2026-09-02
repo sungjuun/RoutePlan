@@ -47,3 +47,5 @@ out/
 .routeplan-release.env
 .routeplan-runtime/
 backups/
+tests/operations/scenarios.json
+tests/operations/results/

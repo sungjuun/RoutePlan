@@ -68,6 +68,8 @@ ROUTEPLAN_TIME_DEPENDENT_MAX_SEARCH_DURATION=5s
 
 브라우저 E2E에서는 두 사용자가 동일 좌표·출발 버킷을 동시에 최적화했을 때 시간 버킷별 Google Stub 요청 4회만 발생하고 중복 출발시각 요청은 없음을 확인했습니다. Redis miss 경쟁자는 분산 갱신 잠금의 선행 결과를 다시 읽으며, 이때 재사용된 경로도 cache hit 통계에 포함합니다. Redis 읽기 장애는 PostGIS 조회와 Redis 재가열로, PostGIS 장애는 Google 계산과 사용 가능한 Redis 저장으로 계속 처리되는지 Backend 테스트로 검증합니다.
 
+실제 운영급 다중 Backend 부하, Redis 중지와 PostGIS Route Cache relation 장애, 장기 Beam·Google 비용 판정은 [V25 운영 검증 안내](operational-validation.md)에 분리했습니다. 장애 주입은 전용 Trip과 호출 상한, maintenance window 없이 실행하지 않습니다.
+
 ```bash
 ./gradlew timeDependentBenchmark
 cd frontend

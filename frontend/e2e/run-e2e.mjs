@@ -33,6 +33,9 @@ const composeArguments = ['compose', '-p', projectName, '-f', composeFile]
 if (v25Mode) composeArguments.push('-f', v25ComposeFile)
 const commandEnvironment = {
   ...process.env,
+  POSTGRES_DB: 'routeplan',
+  POSTGRES_USER: 'routeplan',
+  POSTGRES_PASSWORD: 'routeplan-e2e-local',
   POSTGRES_PORT: postgresPort,
   REDIS_PORT: redisPort,
   BACKEND_PORT: backendPort,
@@ -45,6 +48,7 @@ const commandEnvironment = {
   E2E_GOOGLE_STUB_URL: `http://127.0.0.1:${googleStubPort}`,
   E2E_GOOGLE_STUB_PORT: googleStubPort,
   E2E_V25: v25Mode ? 'true' : 'false',
+  E2E_BACKEND_REPLICAS: v25Mode ? '2' : '1',
   ROUTEPLAN_PUBLIC_URL: baseURL,
   ROUTEPLAN_AUTH_MAIL_MODE: 'LOCAL',
   ROUTEPLAN_AUTH_TRUSTED_PROXIES: '',
@@ -109,7 +113,9 @@ function saveComposeLogs() {
 
 let exitCode = 1
 try {
-  const startup = run(dockerCommand, [...composeArguments, 'up', '-d', '--build', '--wait', '--wait-timeout', '180'])
+  const startupArguments = [...composeArguments, 'up', '-d', '--build', '--wait', '--wait-timeout', '180']
+  if (v25Mode) startupArguments.push('--scale', 'backend=2')
+  const startup = run(dockerCommand, startupArguments)
   if (startup.status !== 0) throw new Error('Could not start the dedicated E2E Docker stack.')
   await waitForFrontend()
 

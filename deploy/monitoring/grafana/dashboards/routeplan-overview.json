@@ -163,6 +163,72 @@
       ],
       "title": "시간대별 전역 최적화 결과",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "routeplan-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 2 } ] }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 33 },
+      "id": 14,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "horizontal", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [ { "editorMode": "code", "expr": "routeplan:backend_instances:healthy", "instant": true, "legendFormat": "healthy", "range": false, "refId": "A" } ],
+      "title": "정상 Backend 인스턴스",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "routeplan-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 100000 }, { "color": "red", "value": 200000 } ] }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 33 },
+      "id": 15,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "horizontal", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [ { "editorMode": "code", "expr": "routeplan:time_dependent_states:p95_1h", "instant": false, "legendFormat": "p95 states", "range": true, "refId": "A" } ],
+      "title": "전역 탐색 p95 상태 수 (1시간)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "routeplan-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 2 }, { "color": "red", "value": 4 } ] }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 33 },
+      "id": 16,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "horizontal", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [ { "editorMode": "code", "expr": "routeplan:time_dependent_duration:p95_1h", "instant": false, "legendFormat": "p95 duration", "range": true, "refId": "A" } ],
+      "title": "전역 탐색 p95 시간 (1시간)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "routeplan-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "max": 1, "min": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.05 }, { "color": "red", "value": 0.15 } ] }, "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 33 },
+      "id": 17,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "horizontal", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [ { "editorMode": "code", "expr": "routeplan:time_dependent_fallback_ratio:rate1h", "instant": false, "legendFormat": "fallback", "range": true, "refId": "A" } ],
+      "title": "전역 탐색 fallback 비율 (1시간)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "routeplan-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 14, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 },
+      "id": 18,
+      "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "routeplan:google_routes_units:month", "legendFormat": "월 Google Routes 요소", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "max(routeplan_external_usage_calls{application=\"routeplan\",provider=\"google\",operation=\"GOOGLE_ROUTES\",outcome=\"attempt\"})", "legendFormat": "월 Google Routes HTTP 호출", "range": true, "refId": "B" }
+      ],
+      "title": "Google Routes 월 사용량",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "routeplan-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 14, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "currencyUSD" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 },
+      "id": 19,
+      "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "routeplan:google_cost_usd:month", "legendFormat": "추정 비용", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "max(routeplan_external_budget_usd{application=\"routeplan\",provider=\"google\"})", "legendFormat": "월 예산", "range": true, "refId": "B" }
+      ],
+      "title": "Google 월 추정 비용과 예산",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",

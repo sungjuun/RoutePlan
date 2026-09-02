@@ -7,6 +7,7 @@ import { signUp, testAccount } from './helpers'
 const stubURL = process.env.E2E_GOOGLE_STUB_URL
 const backendURL = process.env.E2E_BACKEND_URL
 const composeProject = process.env.E2E_RESTART_PROJECT
+const backendReplicas = Number(process.env.E2E_BACKEND_REPLICAS ?? '1')
 const execFileAsync = promisify(execFile)
 
 interface StubState {
@@ -37,7 +38,13 @@ function futureDate(days: number): string {
   return value.toISOString().slice(0, 10)
 }
 
-async function mutate<T>(request: APIRequestContext, method: 'POST' | 'PUT', path: string, data: unknown): Promise<T> {
+interface MutationResponse<T> {
+  body: T
+  instance: string | null
+}
+
+async function mutateResponse<T>(request: APIRequestContext, method: 'POST' | 'PUT', path: string,
+  data: unknown): Promise<MutationResponse<T>> {
   const csrfResponse = await request.get('/api/v1/auth/csrf')
   expect(csrfResponse.ok()).toBe(true)
   const csrf = await csrfResponse.json() as { headerName: string; token: string }
@@ -48,7 +55,14 @@ async function mutate<T>(request: APIRequestContext, method: 'POST' | 'PUT', pat
   })
   const text = await response.text()
   expect(response.ok(), `${method} ${path}: ${response.status()} ${text}`).toBe(true)
-  return text ? JSON.parse(text) as T : undefined as T
+  return {
+    body: text ? JSON.parse(text) as T : undefined as T,
+    instance: response.headers()['x-routeplan-instance'] ?? null,
+  }
+}
+
+async function mutate<T>(request: APIRequestContext, method: 'POST' | 'PUT', path: string, data: unknown): Promise<T> {
+  return (await mutateResponse<T>(request, method, path, data)).body
 }
 
 async function resetStub(request: APIRequestContext, delayMs = 120): Promise<void> {
@@ -108,24 +122,70 @@ async function openItineraryPlanner(page: Page, tripId: number): Promise<void> {
 }
 
 async function clearIsolatedRedisRouteCache(): Promise<number> {
+  const { stdout } = await runCompose([
+    'exec', '-T', 'redis', 'redis-cli', 'EVAL',
+    "local keys=redis.call('keys',ARGV[1]); if #keys==0 then return 0 end; return redis.call('del',unpack(keys))",
+    '0', 'routeplan:e2e:v25:google-routes:*',
+  ])
+  return Number(stdout.trim())
+}
+
+async function runCompose(arguments_: string[]): Promise<{ stdout: string; stderr: string }> {
   if (!composeProject || !/^routeplan-e2e-v25(?:-[a-z0-9-]+)?$/.test(composeProject)) {
-    throw new Error('Unsafe Redis cleanup target')
+    throw new Error('Unsafe V25 Compose target')
   }
   const docker = process.platform === 'win32' ? 'docker.exe' : 'docker'
   const baseCompose = fileURLToPath(new URL('../../compose.yaml', import.meta.url))
   const v25Compose = fileURLToPath(new URL('../../compose.e2e-v25.yaml', import.meta.url))
-  const script = "local keys=redis.call('keys',ARGV[1]); if #keys==0 then return 0 end; return redis.call('del',unpack(keys))"
-  const { stdout } = await execFileAsync(docker, [
+  return execFileAsync(docker, [
     'compose', '-p', composeProject, '-f', baseCompose, '-f', v25Compose,
-    'exec', '-T', 'redis', 'redis-cli', 'EVAL', script, '0', 'routeplan:e2e:v25:google-routes:*',
+    ...arguments_,
   ], { timeout: 30_000, windowsHide: true })
-  return Number(stdout.trim())
+}
+
+async function waitForRedis(): Promise<void> {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      const { stdout } = await runCompose(['exec', '-T', 'redis', 'redis-cli', 'ping'])
+      if (stdout.trim() === 'PONG') return
+    } catch {
+      // The real Redis process may still be restoring its in-memory state.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  throw new Error('Redis did not recover after the V25 fault injection')
+}
+
+async function interruptPostgisRouteCache(): Promise<void> {
+  const { stdout } = await runCompose([
+    'exec', '-T', 'postgres', 'psql', '-At', '-v', 'ON_ERROR_STOP=1',
+    '-U', 'routeplan', '-d', 'routeplan', '-c',
+    "SELECT (to_regclass('public.route_leg_cache') IS NOT NULL)::int || ':' || (to_regclass('public.route_leg_cache_fault_e2e') IS NOT NULL)::int;",
+  ])
+  expect(stdout.trim()).toBe('1:0')
+  await runCompose([
+    'exec', '-T', 'postgres', 'psql', '-v', 'ON_ERROR_STOP=1',
+    '-U', 'routeplan', '-d', 'routeplan', '-c',
+    'ALTER TABLE route_leg_cache RENAME TO route_leg_cache_fault_e2e;',
+  ])
+}
+
+async function restorePostgisRouteCache(): Promise<void> {
+  await runCompose([
+    'exec', '-T', 'postgres', 'psql', '-v', 'ON_ERROR_STOP=1',
+    '-U', 'routeplan', '-d', 'routeplan', '-c',
+    'ALTER TABLE IF EXISTS route_leg_cache_fault_e2e RENAME TO route_leg_cache;',
+  ])
 }
 
 async function metrics(request: APIRequestContext): Promise<string> {
-  const response = await request.get(`${backendURL}/actuator/prometheus`)
-  expect(response.ok()).toBe(true)
-  return response.text()
+  const snapshots: string[] = []
+  for (let index = 0; index < Math.max(1, backendReplicas * 2); index += 1) {
+    const response = await request.get(`${backendURL}/actuator/prometheus`)
+    expect(response.ok()).toBe(true)
+    snapshots.push(await response.text())
+  }
+  return snapshots.join('\n')
 }
 
 test.describe.serial('V25 교통량 전역 최적화와 계층 캐시', () => {
@@ -188,6 +248,48 @@ test.describe.serial('V25 교통량 전역 최적화와 계층 캐시', () => {
     expect(state.requests[0].routingPreference).toBe('TRAFFIC_AWARE')
   })
 
+  test('Redis 중지와 PostGIS Route Cache 격리에도 실제 fallback 후 복구한다', async ({ page, request }) => {
+    test.setTimeout(120_000)
+    await resetStub(request)
+    const seed = `fault-${Date.now()}`
+    await signUp(page, testAccount(seed, 'owner'))
+    const tripId = await createTrafficTrip(page, seed, 2, 9)
+    const warm = await mutate<ItineraryResult>(page.request, 'POST',
+      `/trips/${tripId}/optimize?algorithm=EXACT_SEARCH`, null)
+    expect(warm.routeProviderCallCount).toBeGreaterThan(0)
+    const warmRequests = (await stubState(request)).requestCount
+    let redisStopped = false
+    let postgisInterrupted = false
+    try {
+      redisStopped = true
+      await runCompose(['stop', 'redis'])
+      const redisDown = await mutate<ItineraryResult>(page.request, 'POST',
+        `/trips/${tripId}/optimize?algorithm=EXACT_SEARCH`, null)
+      expect(redisDown.routeProviderCallCount).toBe(0)
+      expect(redisDown.routeCacheHitCount).toBeGreaterThan(0)
+      expect(redisDown.routeCacheFailureCount).toBeGreaterThan(0)
+      expect((await stubState(request)).requestCount).toBe(warmRequests)
+
+      await runCompose(['start', 'redis'])
+      await waitForRedis()
+      redisStopped = false
+      await clearIsolatedRedisRouteCache()
+      await interruptPostgisRouteCache()
+      postgisInterrupted = true
+      const postgisDown = await mutate<ItineraryResult>(page.request, 'POST',
+        `/trips/${tripId}/optimize?algorithm=EXACT_SEARCH`, null)
+      expect(postgisDown.routeProviderCallCount).toBeGreaterThan(0)
+      expect(postgisDown.routeCacheFailureCount).toBeGreaterThan(0)
+      expect((await stubState(request)).requestCount).toBeGreaterThan(warmRequests)
+    } finally {
+      if (postgisInterrupted) await restorePostgisRouteCache()
+      if (redisStopped) {
+        await runCompose(['start', 'redis'])
+        await waitForRedis()
+      }
+    }
+  })
+
   test('서로 다른 두 사용자의 동일 최적화가 Google 요청을 중복 생성하지 않는다', async ({ browser, request, baseURL }) => {
     test.setTimeout(120_000)
     await resetStub(request, 220)
@@ -205,10 +307,12 @@ test.describe.serial('V25 교통량 전역 최적화와 계층 캐시', () => {
       const secondTrip = await createTrafficTrip(secondPage, `${seed}-b`, 2, 10)
 
       const started = Date.now()
-      const [first, second] = await Promise.all([
-        mutate<ItineraryResult>(firstPage.request, 'POST', `/trips/${firstTrip}/optimize?algorithm=EXACT_SEARCH`, null),
-        mutate<ItineraryResult>(secondPage.request, 'POST', `/trips/${secondTrip}/optimize?algorithm=EXACT_SEARCH`, null),
+      const [firstResponse, secondResponse] = await Promise.all([
+        mutateResponse<ItineraryResult>(firstPage.request, 'POST', `/trips/${firstTrip}/optimize?algorithm=EXACT_SEARCH`, null),
+        mutateResponse<ItineraryResult>(secondPage.request, 'POST', `/trips/${secondTrip}/optimize?algorithm=EXACT_SEARCH`, null),
       ])
+      const first = firstResponse.body
+      const second = secondResponse.body
       const elapsedMs = Date.now() - started
       expect(first.routeDataType).toBe('GOOGLE_ROUTES')
       expect(second.routeDataType).toBe('GOOGLE_ROUTES')
@@ -221,7 +325,10 @@ test.describe.serial('V25 교통량 전역 최적화와 계층 캐시', () => {
       expect(new Set(departures).size).toBe(state.requestCount)
       expect(first.routeProviderCallCount + second.routeProviderCallCount).toBe(state.requestCount)
       expect(first.routeCacheMissCount + second.routeCacheMissCount).toBeGreaterThan(0)
-      console.log(`V25_CONCURRENCY_RESULT,users=2,google_requests=${state.requestCount},elements=${state.elementCount},elapsed_ms=${elapsedMs}`)
+      expect(new Set([firstResponse.instance, secondResponse.instance]).size).toBe(backendReplicas)
+      expect(firstResponse.instance).not.toBeNull()
+      expect(secondResponse.instance).not.toBeNull()
+      console.log(`V25_CONCURRENCY_RESULT,users=2,instances=${firstResponse.instance}|${secondResponse.instance},google_requests=${state.requestCount},elements=${state.elementCount},elapsed_ms=${elapsedMs}`)
     } finally {
       await Promise.all(contexts.map((context) => context.close()))
     }

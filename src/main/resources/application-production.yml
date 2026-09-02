@@ -21,5 +21,9 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+        routeplan.optimization.time_dependent.duration: true
+        routeplan.optimization.time_dependent.states: true
       slo:
         http.server.requests: 100ms,250ms,500ms,1s,2s,5s
+        routeplan.optimization.time_dependent.duration: 100ms,250ms,500ms,1s,2s,5s
+        routeplan.optimization.time_dependent.states: 1000,5000,10000,25000,50000,100000,250000
