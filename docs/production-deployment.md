@@ -1,4 +1,4 @@
-# V23 운영 배포 기반
+# V23 스테이징·운영 배포 기반
 
 V23은 개발용 `compose.yaml`과 운영 환경을 분리합니다. 운영 구성은 Caddy만 호스트의 80/443 포트를 열고 PostgreSQL, Redis, Backend, Frontend는 격리된 Docker Network에서만 통신합니다. Caddy가 인증서를 자동 발급·갱신하며, 애플리케이션 이미지는 GitHub Container Registry(GHCR)에 커밋 SHA 태그로 보존합니다.
 
@@ -61,9 +61,11 @@ Grafana 관리자와 운영 경고 수신 주소도 설정합니다. 실제 배�
 - OpenAI는 결제 프로젝트와 앱 월별 요청·토큰 한도를 확인한 후에만 `ROUTEPLAN_AI_PROVIDER=OPENAI`로 전환합니다.
 - `.env.production`은 Git에 포함되지 않으며 Docker Build Context에서도 제외됩니다.
 
+스테이징 최초 구성은 [스테이징 배포 준비](staging-deployment.md)를 먼저 따릅니다.
+
 ## 3. GitHub Actions 배포
 
-GitHub의 `production` Environment를 만들고 보호 규칙과 다음 Secret을 등록합니다.
+GitHub의 `staging`과 `production` Environment를 만들고 각각 보호 규칙과 다음 Secret을 등록합니다. 같은 이름을 사용하되 서버·SSH key·경로는 환경별 값으로 완전히 분리합니다.
 
 | Secret | 설명 |
 |---|---|
@@ -74,7 +76,7 @@ GitHub의 `production` Environment를 만들고 보호 규칙과 다음 Secret�
 | `DEPLOY_SSH_PRIVATE_KEY` | 배포 전용 SSH 개인키 |
 | `DEPLOY_KNOWN_HOSTS` | 사전에 검증한 서버 Host Key 한 줄 |
 
-`RoutePlan Production Deploy` workflow를 `main`에서 수동 실행하고 확인 값으로 `DEPLOY`를 입력합니다. Workflow는 테스트·Lint·Build·운영 구성 검사를 다시 수행하고 Backend/Frontend 이미지를 `ghcr.io/<owner>/<repository>-{backend,frontend}:<commit-sha>`로 게시합니다. 서버는 해당 SHA의 저장소와 이미지만 사용합니다.
+`RoutePlan Deploy` workflow를 `main`에서 수동 실행합니다. 스테이징은 `target_environment=staging`, `confirmation=DEPLOY_STAGING`, 운영은 `target_environment=production`, `confirmation=DEPLOY_PRODUCTION`을 사용합니다. Workflow는 테스트·Lint·Build·운영 구성 검사를 다시 수행하고 Backend/Frontend 이미지를 `ghcr.io/<owner>/<repository>-{backend,frontend}:<commit-sha>`로 게시합니다. 서버는 해당 SHA의 저장소와 이미지만 사용하며, 선택한 GitHub Environment와 서버 환경값이 다르면 배포 전에 중단됩니다.
 
 배포 스크립트는 기존 DB가 있으면 먼저 Custom Format 백업을 만들고, 서비스 health와 공개 HTTPS `/api/v1/auth/me`, `/monitoring/api/health`를 검사합니다. 애플리케이션 검증이 실패하면 이전 이미지로 복구를 시도하지만 DB를 자동으로 되돌리지는 않습니다. 애플리케이션은 정상이고 모니터링만 실패한 경우에는 정상 이미지를 되돌리지 않고 운영자 확인이 필요한 실패로 종료합니다. 새 Flyway Migration은 이전 애플리케이션과 함께 실행 가능한 확장형 변경으로 작성해야 합니다.
 
@@ -101,7 +103,7 @@ bash ./scripts/restore-production.sh backups/postgres/routeplan-YYYYMMDDTHHMMSSZ
 ## 5. 배포 후 점검
 
 ```bash
-docker compose --env-file .env.production --env-file .routeplan-release.env \
+docker compose -p routeplan-production --env-file .env.production --env-file .routeplan-release.env \
   -f compose.production.yaml ps
 curl --fail https://your-domain.example/api/v1/auth/me
 curl --fail https://your-domain.example/monitoring/api/health

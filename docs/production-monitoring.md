@@ -13,7 +13,7 @@ Backend:9090 ─ monitoring ─ Prometheus ─ Alertmanager ─ SMTP
 
 구성 파일은 저장소에서 버전 관리합니다.
 
-- `deploy/monitoring/prometheus.yml`: 수집 대상, 15초 수집·평가 주기, Alertmanager 연결
+- `deploy/monitoring/prometheus.yml`: 수집 대상, 15초 수집·평가 주기, Alertmanager 연결을 정의하는 환경별 생성 원본
 - `deploy/monitoring/alerts.yml`: HTTP·다중 Backend·V25 탐색·Google 사용량 기록 규칙과 운영 경고
 - `deploy/monitoring/grafana/provisioning`: Prometheus datasource와 Dashboard Provider
 - `deploy/monitoring/grafana/dashboards/routeplan-overview.json`: RoutePlan 운영 현황 대시보드
@@ -38,11 +38,11 @@ Alertmanager는 기존 `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD
 ```bash
 bash ./scripts/validate-production-env.sh .env.production
 bash ./scripts/prepare-monitoring-config.sh .env.production
-docker compose --env-file .env.production --env-file .routeplan-release.env \
+docker compose -p routeplan-production --env-file .env.production --env-file .routeplan-release.env \
   -f compose.production.yaml up -d
 ```
 
-생성물은 Git에서 제외된 `.routeplan-runtime`에 저장됩니다. 디렉터리는 소유자만 접근할 수 있고 Alertmanager 설정은 SMTP 비밀번호의 파일 경로만 포함합니다. 실제 SMTP 비밀번호와 Grafana 관리자 비밀번호는 각각 별도 파일로 마운트됩니다. 이 디렉터리와 `.env.production`을 백업·전송할 때는 애플리케이션 비밀로 취급해야 합니다.
+생성물은 Git에서 제외된 `.routeplan-runtime`에 저장됩니다. Prometheus 설정에는 `ROUTEPLAN_DEPLOYMENT_ENVIRONMENT`가 `staging` 또는 `production`으로 고정되고, Alertmanager가 받는 경고에도 같은 외부 라벨이 추가됩니다. 디렉터리는 소유자만 접근할 수 있고 Alertmanager 설정은 SMTP 비밀번호의 파일 경로만 포함합니다. 실제 SMTP 비밀번호와 Grafana 관리자 비밀번호는 각각 별도 파일로 마운트됩니다. 이 디렉터리와 `.env.production`을 백업·전송할 때는 애플리케이션 비밀로 취급해야 합니다.
 
 ## 2. 대시보드
 
@@ -93,10 +93,10 @@ Alertmanager는 `alertname`, `severity`, `provider`로 경고를 묶습니다. C
 ## 4. 상태 점검과 문제 해결
 
 ```bash
-docker compose --env-file .env.production --env-file .routeplan-release.env \
+docker compose -p routeplan-production --env-file .env.production --env-file .routeplan-release.env \
   -f compose.production.yaml ps
 
-docker compose --env-file .env.production --env-file .routeplan-release.env \
+docker compose -p routeplan-production --env-file .env.production --env-file .routeplan-release.env \
   -f compose.production.yaml logs --tail 120 prometheus alertmanager grafana
 
 curl --fail https://<ROUTEPLAN_DOMAIN>/monitoring/api/health

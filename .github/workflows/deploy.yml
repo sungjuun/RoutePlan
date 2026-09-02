@@ -1,10 +1,19 @@
-name: RoutePlan Production Deploy
+name: RoutePlan Deploy
+run-name: Deploy ${{ inputs.target_environment }} · ${{ github.sha }}
 
 on:
   workflow_dispatch:
     inputs:
+      target_environment:
+        description: GitHub Environment and remote deployment target
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
       confirmation:
-        description: Type DEPLOY to publish the selected main commit
+        description: Type DEPLOY_STAGING or DEPLOY_PRODUCTION for the selected target
         required: true
         type: string
 
@@ -13,7 +22,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: routeplan-production
+  group: routeplan-${{ inputs.target_environment }}
   cancel-in-progress: false
 
 jobs:
@@ -25,9 +34,14 @@ jobs:
       - name: Require explicit main deployment
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
+          TARGET_ENVIRONMENT: ${{ inputs.target_environment }}
         run: |
           test "$GITHUB_REF" = 'refs/heads/main'
-          test "$CONFIRMATION" = 'DEPLOY'
+          case "$TARGET_ENVIRONMENT" in
+            staging) test "$CONFIRMATION" = 'DEPLOY_STAGING' ;;
+            production) test "$CONFIRMATION" = 'DEPLOY_PRODUCTION' ;;
+            *) exit 1 ;;
+          esac
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
         with:
@@ -94,11 +108,12 @@ jobs:
           sbom: true
 
   deploy:
-    name: Deploy production
+    name: Deploy ${{ inputs.target_environment }}
     needs: publish
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: production
+    environment:
+      name: ${{ inputs.target_environment }}
     steps:
       - uses: actions/checkout@v7
       - name: Configure pinned SSH host
@@ -120,6 +135,7 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           IMAGE_PREFIX: ${{ needs.publish.outputs.image_prefix }}
+          TARGET_ENVIRONMENT: ${{ inputs.target_environment }}
         run: |
           test -n "$DEPLOY_HOST"
           test -n "$DEPLOY_USER"
@@ -128,7 +144,8 @@ jobs:
           # Expansion of git status is intentionally deferred to the remote shell.
           # shellcheck disable=SC2016
           printf -v remote_command \
-            'cd %q && test -z "$(git status --porcelain --untracked-files=no)" && git fetch --no-tags origin %q && git checkout --detach %q && bash ./scripts/deploy-production.sh %q %q' \
-            "$DEPLOY_PATH" "$GITHUB_SHA" "$GITHUB_SHA" "$GITHUB_SHA" "$IMAGE_PREFIX"
+            'cd %q && test -z "$(git status --porcelain --untracked-files=no)" && git fetch --no-tags origin %q && git checkout --detach %q && ROUTEPLAN_EXPECTED_DEPLOYMENT_ENV=%q bash ./scripts/preflight-deployment-host.sh && ROUTEPLAN_EXPECTED_DEPLOYMENT_ENV=%q bash ./scripts/deploy-production.sh %q %q' \
+            "$DEPLOY_PATH" "$GITHUB_SHA" "$GITHUB_SHA" "$TARGET_ENVIRONMENT" \
+            "$TARGET_ENVIRONMENT" "$GITHUB_SHA" "$IMAGE_PREFIX"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$port" \
             "$DEPLOY_USER@$DEPLOY_HOST" "$remote_command"

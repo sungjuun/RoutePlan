@@ -31,6 +31,7 @@ env_value() {
 bash "$repo_dir/scripts/validate-production-env.sh" "$env_file"
 
 deployment_environment="$(env_value ROUTEPLAN_DEPLOYMENT_ENVIRONMENT)"
+compose_project="${ROUTEPLAN_COMPOSE_PROJECT_NAME:-routeplan-$deployment_environment}"
 backend_replicas="$(env_value ROUTEPLAN_BACKEND_REPLICAS)"
 route_provider="$(env_value ROUTEPLAN_ROUTE_PROVIDER)"
 time_dependent="$(env_value ROUTEPLAN_TIME_DEPENDENT_GLOBAL_ENABLED)"
@@ -69,7 +70,8 @@ fi
 compose_command() {
   ROUTEPLAN_OPERATION_SCENARIOS_FILE="$scenario_file" \
     docker compose --env-file "$env_file" --env-file "$release_file" \
-      -f "$repo_dir/compose.production.yaml" -f "$repo_dir/compose.operations.yaml" "$@"
+      -p "$compose_project" -f "$repo_dir/compose.production.yaml" \
+      -f "$repo_dir/compose.operations.yaml" "$@"
 }
 
 if [[ "$execute" != 'true' ]]; then
@@ -150,6 +152,8 @@ run_load redis-down
 restore_redis
 wait_service redis 1
 
+# The positional parameter expands inside the Redis container shell.
+# shellcheck disable=SC2016
 compose_command exec -T redis sh -eu -c \
   'redis-cli --scan --pattern "$1" | xargs -r redis-cli del >/dev/null' sh "$cache_prefix:google-routes:*"
 cache_relations="$(compose_command exec -T postgres psql -At -v ON_ERROR_STOP=1 \

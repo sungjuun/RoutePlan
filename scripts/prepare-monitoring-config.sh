@@ -6,7 +6,7 @@ env_file="${1:-$repo_dir/.env.production}"
 runtime_dir="${2:-$repo_dir/.routeplan-runtime}"
 
 if [[ ! -f "$env_file" ]]; then
-  echo "Production environment file not found: $env_file" >&2
+  echo "Deployment environment file not found: $env_file" >&2
   exit 1
 fi
 
@@ -48,16 +48,26 @@ smtp_starttls="$(require_value SMTP_STARTTLS)"
 smtp_ssl="$(require_value SMTP_SSL)"
 alert_email="$(require_value ROUTEPLAN_ALERT_EMAIL_TO)"
 grafana_password="$(require_value GRAFANA_ADMIN_PASSWORD)"
+deployment_environment="$(require_value ROUTEPLAN_DEPLOYMENT_ENVIRONMENT)"
+[[ "$deployment_environment" =~ ^(staging|production)$ ]] || {
+  echo 'ROUTEPLAN_DEPLOYMENT_ENVIRONMENT must be staging or production.' >&2
+  exit 1
+}
 
 mkdir -p -- "$runtime_dir"
 chmod 0700 -- "$runtime_dir"
 config_file="$runtime_dir/alertmanager.yml"
 smtp_password_file="$runtime_dir/smtp-password"
 grafana_password_file="$runtime_dir/grafana-admin-password"
+prometheus_config="$runtime_dir/prometheus.yml"
 temporary_config="$config_file.tmp"
 temporary_smtp_password="$smtp_password_file.tmp"
 temporary_grafana_password="$grafana_password_file.tmp"
+temporary_prometheus="$prometheus_config.tmp"
 umask 077
+
+sed "s/__ROUTEPLAN_DEPLOYMENT_ENVIRONMENT__/$deployment_environment/g" \
+  "$repo_dir/deploy/monitoring/prometheus.yml" > "$temporary_prometheus"
 
 {
   printf '{\n  "global": {\n'
@@ -99,9 +109,11 @@ else
 fi
 printf '%s' "$grafana_password" > "$temporary_grafana_password"
 
-chmod 0644 -- "$temporary_config" "$temporary_smtp_password" "$temporary_grafana_password"
+chmod 0644 -- "$temporary_config" "$temporary_smtp_password" "$temporary_grafana_password" \
+  "$temporary_prometheus"
 mv -- "$temporary_config" "$config_file"
 mv -- "$temporary_smtp_password" "$smtp_password_file"
 mv -- "$temporary_grafana_password" "$grafana_password_file"
+mv -- "$temporary_prometheus" "$prometheus_config"
 
 printf 'Monitoring runtime configuration prepared at %s\n' "$runtime_dir"

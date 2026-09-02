@@ -6,7 +6,6 @@ backup_file="${1:-}"
 confirmation="${2:-}"
 env_file="${ROUTEPLAN_PRODUCTION_ENV_FILE:-$repo_dir/.env.production}"
 release_file="${ROUTEPLAN_RELEASE_FILE:-$repo_dir/.routeplan-release.env}"
-compose_project="${ROUTEPLAN_COMPOSE_PROJECT_NAME:-routeplan-production}"
 
 if [[ -z "$backup_file" || "$confirmation" != 'REPLACE_ROUTEPLAN_DATABASE' ]]; then
   echo 'Usage: ./scripts/restore-production.sh <backup.dump> REPLACE_ROUTEPLAN_DATABASE' >&2
@@ -17,6 +16,9 @@ backup_file="$(cd "$(dirname "$backup_file")" && pwd -P)/$(basename "$backup_fil
 
 bash "$repo_dir/scripts/validate-production-env.sh" "$env_file" >/dev/null
 [[ -f "$release_file" ]] || { echo 'Release state is missing.' >&2; exit 1; }
+deployment_environment="$(awk -F= '/^ROUTEPLAN_DEPLOYMENT_ENVIRONMENT=/{value=$2} END{print value}' "$env_file")"
+compose_project="${ROUTEPLAN_COMPOSE_PROJECT_NAME:-routeplan-$deployment_environment}"
+backend_replicas="$(awk -F= '/^ROUTEPLAN_BACKEND_REPLICAS=/{value=$2} END{print value}' "$env_file")"
 
 if [[ -f "$backup_file.sha256" ]]; then
   (cd "$(dirname "$backup_file")" && sha256sum -c "$(basename "$backup_file").sha256")
@@ -52,18 +54,36 @@ if (( restore_status != 0 )); then
   exit "$restore_status"
 fi
 
+wait_service() {
+  local service="$1" expected="${2:-1}" deadline=$((SECONDS + 180)) state all_healthy id
+  local -a ids
+  while (( SECONDS < deadline )); do
+    mapfile -t ids < <("${compose[@]}" ps -q "$service")
+    if (( ${#ids[@]} == expected )); then
+      all_healthy='true'
+      for id in "${ids[@]}"; do
+        state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id" 2>/dev/null || true)"
+        [[ "$state" == 'healthy' ]] || all_healthy='false'
+      done
+      [[ "$all_healthy" == 'true' ]] && return 0
+    fi
+    sleep 3
+  done
+  return 1
+}
+
 if (( ${#restart_services[@]} > 0 )); then
-  "${compose[@]}" up -d "${restart_services[@]}"
   for service in "${restart_services[@]}"; do
-    deadline=$((SECONDS + 180))
-    while (( SECONDS < deadline )); do
-      container_id="$("${compose[@]}" ps -q "$service")"
-      status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || true)"
-      [[ "$status" == 'healthy' ]] && break
-      [[ "$status" == 'exited' || "$status" == 'dead' ]] && break
-      sleep 3
-    done
-    if [[ "$status" != 'healthy' ]]; then
+    if [[ "$service" == 'backend' ]]; then
+      "${compose[@]}" up -d --scale backend="$backend_replicas" backend
+    else
+      "${compose[@]}" up -d "$service"
+    fi
+  done
+  for service in "${restart_services[@]}"; do
+    expected=1
+    [[ "$service" == 'backend' ]] && expected="$backend_replicas"
+    if ! wait_service "$service" "$expected"; then
       "${compose[@]}" stop "${restart_services[@]}" || true
       echo "Restore data completed, but $service did not become healthy. Application services were stopped." >&2
       echo "Pre-restore safety backup: $current_backup" >&2

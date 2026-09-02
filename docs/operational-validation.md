@@ -99,8 +99,10 @@ export ROUTEPLAN_LOAD_MAX_FAILURE_PERCENT=0
 export ROUTEPLAN_EXPECTED_MIN_INSTANCES=2
 export ROUTEPLAN_MAX_GOOGLE_UNITS_DELTA=500
 export ROUTEPLAN_MAX_GOOGLE_CALLS_DELTA=20
+export ROUTEPLAN_COMPOSE_PROJECT_NAME=routeplan-staging
 
-docker compose --env-file .env.production --env-file .routeplan-release.env \
+docker compose -p "$ROUTEPLAN_COMPOSE_PROJECT_NAME" \
+  --env-file .env.production --env-file .routeplan-release.env \
   -f compose.production.yaml -f compose.operations.yaml --profile operations \
   run --rm operations-runner
 ```
@@ -113,7 +115,9 @@ docker compose --env-file .env.production --env-file .routeplan-release.env \
 
 ```bash
 export ROUTEPLAN_REPORT_LOOKBACK=7d
-docker compose --env-file .env.production --env-file .routeplan-release.env \
+export ROUTEPLAN_COMPOSE_PROJECT_NAME=routeplan-staging
+docker compose -p "$ROUTEPLAN_COMPOSE_PROJECT_NAME" \
+  --env-file .env.production --env-file .routeplan-release.env \
   -f compose.production.yaml -f compose.operations.yaml --profile operations \
   run --rm operations-report
 ```
@@ -150,13 +154,15 @@ RoutePlan의 비용은 설정 단가 기반 추정치입니다. 할인·무료 �
 스크립트가 강제 종료된 뒤 상태가 남았다면 다음 순서로 복구합니다.
 
 ```bash
-docker compose --env-file .env.production --env-file .routeplan-release.env \
+export ROUTEPLAN_COMPOSE_PROJECT_NAME=routeplan-staging
+docker compose -p "$ROUTEPLAN_COMPOSE_PROJECT_NAME" \
+  --env-file .env.production --env-file .routeplan-release.env \
   -f compose.production.yaml start redis
 
-docker compose --env-file .env.production --env-file .routeplan-release.env \
-  -f compose.production.yaml exec -T postgres \
-  psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-  -c 'ALTER TABLE IF EXISTS route_leg_cache_fault_drill RENAME TO route_leg_cache;'
+docker compose -p "$ROUTEPLAN_COMPOSE_PROJECT_NAME" \
+  --env-file .env.production --env-file .routeplan-release.env \
+  -f compose.production.yaml exec -T postgres sh -c \
+  'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ALTER TABLE IF EXISTS route_leg_cache_fault_drill RENAME TO route_leg_cache;"'
 ```
 
 이후 모든 Backend·Redis·PostgreSQL health, `routeplan:backend_instances:healthy`, PostGIS cache failure 경고 복구, 신규 일정 생성을 차례대로 확인합니다.

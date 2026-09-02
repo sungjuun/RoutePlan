@@ -4,8 +4,8 @@ set -Eeuo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 target_tag="${1:-}"
 target_prefix="${2:-}"
-env_file="$repo_dir/.env.production"
-release_file="$repo_dir/.routeplan-release.env"
+env_file="${ROUTEPLAN_DEPLOY_ENV_FILE:-$repo_dir/.env.production}"
+release_file="${ROUTEPLAN_RELEASE_FILE:-$repo_dir/.routeplan-release.env}"
 
 if [[ ! "$target_tag" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
   echo 'Usage: ./scripts/deploy-production.sh <image-tag> [ghcr-image-prefix]' >&2
@@ -13,7 +13,14 @@ if [[ ! "$target_tag" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
 fi
 
 bash "$repo_dir/scripts/validate-production-env.sh" "$env_file"
+deployment_environment="$(awk -F= '/^ROUTEPLAN_DEPLOYMENT_ENVIRONMENT=/{value=$2} END{print value}' "$env_file")"
+expected_environment="${ROUTEPLAN_EXPECTED_DEPLOYMENT_ENV:-}"
+if [[ -n "$expected_environment" && "$deployment_environment" != "$expected_environment" ]]; then
+  echo "Deployment target mismatch: workflow=$expected_environment host=$deployment_environment." >&2
+  exit 1
+fi
 bash "$repo_dir/scripts/prepare-monitoring-config.sh" "$env_file"
+compose_project="${ROUTEPLAN_COMPOSE_PROJECT_NAME:-routeplan-$deployment_environment}"
 backend_replicas="$(awk -F= '/^ROUTEPLAN_BACKEND_REPLICAS=/{value=$2} END{print value}' "$env_file")"
 configured_prefix="$(awk -F= '/^ROUTEPLAN_IMAGE_PREFIX=/{value=substr($0,index($0,"=")+1)} END{print value}' "$env_file")"
 target_prefix="${target_prefix:-$configured_prefix}"
@@ -45,7 +52,8 @@ restore_release_state() {
 }
 
 compose_command() {
-  docker compose --env-file "$env_file" --env-file "$release_file" -f "$repo_dir/compose.production.yaml" "$@"
+  docker compose -p "$compose_project" --env-file "$env_file" --env-file "$release_file" \
+    -f "$repo_dir/compose.production.yaml" "$@"
 }
 
 wait_healthy() {
@@ -109,7 +117,8 @@ compose_command pull postgres redis caddy prometheus alertmanager grafana backen
 
 predeploy_backup='none (first deployment)'
 if compose_command ps --status running --services | grep -qx postgres; then
-  backup_output="$(bash "$repo_dir/scripts/backup-production.sh")"
+  backup_output="$(ROUTEPLAN_PRODUCTION_ENV_FILE="$env_file" ROUTEPLAN_RELEASE_FILE="$release_file" \
+    ROUTEPLAN_COMPOSE_PROJECT_NAME="$compose_project" bash "$repo_dir/scripts/backup-production.sh")"
   predeploy_backup="${backup_output#BACKUP_PATH=}"
 fi
 
@@ -141,6 +150,6 @@ if [[ "$monitoring_start_failed" == 'true' ]] || \
 fi
 
 trap - ERR
-echo "Production deployment healthy: tag=$target_tag"
+echo "RoutePlan deployment healthy: environment=$deployment_environment tag=$target_tag"
 echo "Pre-deploy backup: $predeploy_backup"
 compose_command ps

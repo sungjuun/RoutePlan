@@ -114,7 +114,7 @@ services:
       - --storage.tsdb.retention.time=30d
       - --storage.tsdb.retention.size=5GB
     volumes:
-      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${ROUTEPLAN_RUNTIME_DIR:-./.routeplan-runtime}/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/monitoring/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
       - routeplan-production-prometheus:/prometheus
     expose:

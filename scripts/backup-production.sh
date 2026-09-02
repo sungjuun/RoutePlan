@@ -4,18 +4,19 @@ set -Eeuo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 env_file="${ROUTEPLAN_PRODUCTION_ENV_FILE:-$repo_dir/.env.production}"
 release_file="${ROUTEPLAN_RELEASE_FILE:-$repo_dir/.routeplan-release.env}"
-compose_project="${ROUTEPLAN_COMPOSE_PROJECT_NAME:-routeplan-production}"
 backup_dir="$repo_dir/backups/postgres"
 
 bash "$repo_dir/scripts/validate-production-env.sh" "$env_file" >/dev/null
 [[ -f "$release_file" ]] || { echo 'Release state is missing; deploy once before backing up.' >&2; exit 1; }
+deployment_environment="$(awk -F= '/^ROUTEPLAN_DEPLOYMENT_ENVIRONMENT=/{value=$2} END{print value}' "$env_file")"
+compose_project="${ROUTEPLAN_COMPOSE_PROJECT_NAME:-routeplan-$deployment_environment}"
 
 retention_days="$(awk -F= '/^ROUTEPLAN_BACKUP_RETENTION_DAYS=/{value=$2} END{print value}' "$env_file")"
 retention_days="${retention_days:-14}"
 [[ "$retention_days" =~ ^[0-9]+$ ]] || { echo 'ROUTEPLAN_BACKUP_RETENTION_DAYS must be a non-negative integer.' >&2; exit 1; }
 
 compose=(docker compose -p "$compose_project" --env-file "$env_file" --env-file "$release_file" -f "$repo_dir/compose.production.yaml")
-"${compose[@]}" ps --status running --services | grep -qx postgres || { echo 'Production PostgreSQL is not running.' >&2; exit 1; }
+"${compose[@]}" ps --status running --services | grep -qx postgres || { echo 'RoutePlan PostgreSQL is not running.' >&2; exit 1; }
 
 mkdir -p "$backup_dir"
 backup_dir="$(cd "$backup_dir" && pwd -P)"

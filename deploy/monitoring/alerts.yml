@@ -29,7 +29,6 @@ groups:
         labels:
           severity: critical
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan backend metrics target is down
           description: Prometheus has been unable to scrape the production backend for more than two minutes.
@@ -40,7 +39,6 @@ groups:
         labels:
           severity: critical
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan has fewer than two healthy backend replicas
           description: Multi-instance redundancy is lost; restore at least two healthy backend containers.
@@ -51,7 +49,6 @@ groups:
         labels:
           severity: critical
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan HTTP 5xx ratio is above 5 percent
           description: More than 5 percent of backend requests have returned 5xx responses for ten minutes.
@@ -62,7 +59,6 @@ groups:
         labels:
           severity: warning
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan p95 HTTP latency is above two seconds
           description: The backend p95 request duration has remained above two seconds for ten minutes.
@@ -72,7 +68,6 @@ groups:
         labels:
           severity: warning
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan itinerary generation failures increased
           description: At least three itinerary generation or reoptimization attempts failed in ten minutes.
@@ -83,7 +78,6 @@ groups:
         labels:
           severity: warning
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan external provider circuit is open
           description: The {{ $labels.provider }} circuit breaker has remained open for one minute.
@@ -94,7 +88,6 @@ groups:
         labels:
           severity: warning
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan external API failure ratio is above 25 percent
           description: More than 25 percent of {{ $labels.provider }} attempts have failed for ten minutes.
@@ -105,7 +98,6 @@ groups:
         labels:
           severity: warning
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan JVM heap usage is above 85 percent
           description: JVM heap usage has remained above 85 percent for fifteen minutes.
@@ -116,7 +108,6 @@ groups:
         labels:
           severity: warning
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan database connection pool is saturated
           description: More than 90 percent of database connections have been active for ten minutes.
@@ -126,7 +117,6 @@ groups:
         labels:
           severity: warning
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan persistent route cache is failing
           description: At least three PostGIS route cache reads or writes failed in ten minutes; paid provider fallback may increase.
@@ -136,7 +126,6 @@ groups:
         labels:
           severity: warning
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan time-dependent optimization repeatedly fell back
           description: The global traffic-aware optimizer fell back at least three times in fifteen minutes; inspect provider, cost, and search limits.
@@ -147,7 +136,6 @@ groups:
         labels:
           severity: warning
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan time-dependent search is approaching a safety limit
           description: The one-hour p95 state count or duration is above 80 percent of its configured limit; review Beam and limit telemetry before changing settings.
@@ -158,7 +146,6 @@ groups:
         labels:
           severity: warning
           service: routeplan
-          environment: production
           provider: google
         annotations:
           summary: RoutePlan Google app safety-limit usage is high
@@ -170,7 +157,6 @@ groups:
         labels:
           severity: warning
           service: routeplan
-          environment: production
           provider: google
         annotations:
           summary: RoutePlan estimated Google cost is near its monthly budget
@@ -182,7 +168,6 @@ groups:
         labels:
           severity: critical
           service: routeplan
-          environment: production
         annotations:
           summary: RoutePlan Alertmanager is down
           description: Prometheus cannot deliver notifications because Alertmanager has been unreachable for two minutes.
