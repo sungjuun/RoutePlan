@@ -17,11 +17,12 @@ const destinations = [
 interface Props {
   user: User | null
   onExplore: (region?: string) => void
+  onDiscover: (url?: string) => void
   onCreateTrip: () => void
   onError: (error: unknown) => void
 }
 
-export function LandingPage({ user, onExplore, onCreateTrip, onError }: Props) {
+export function LandingPage({ user, onExplore, onDiscover, onCreateTrip, onError }: Props) {
   const [query, setQuery] = useState('')
   const [routes, setRoutes] = useState<SharedRouteSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,7 +50,9 @@ export function LandingPage({ user, onExplore, onCreateTrip, onError }: Props) {
 
   const search = (event: FormEvent) => {
     event.preventDefault()
-    onExplore(query.trim() || undefined)
+    const value = query.trim()
+    if (/^https?:\/\//i.test(value)) onDiscover(value)
+    else onExplore(value || undefined)
   }
 
   return (
@@ -57,17 +60,18 @@ export function LandingPage({ user, onExplore, onCreateTrip, onError }: Props) {
       <section className="landing-hero">
         <div className="landing-hero-copy">
           <span className="eyebrow eyebrow-light">ROUTES MADE PERSONAL</span>
-          <h1>좋은 여행 동선을 발견하고<br /><em>내 여행으로 다시 계산하세요</em></h1>
-          <p>검증된 공개 루트를 찾아보고, 내 숙소와 날짜·이동수단에 맞춰 실행 가능한 일정으로 바꿔보세요.</p>
+          <h1>마음에 든 여행을 저장하고<br /><em>실행 가능한 일정으로 바꾸세요</em></h1>
+          <p>SNS 게시물 URL이나 도시를 입력하세요. 장소 후보를 확인하고, 내 숙소와 날짜·이동수단에 맞춰 동선을 계산합니다.</p>
           <form className="destination-search" onSubmit={search}>
             <Search size={20} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="어디로 떠나시나요?  예: 오사카" maxLength={100} />
-            <button className="button button-primary">루트 찾기 <ArrowRight size={17} /></button>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SNS URL 또는 도시  예: https://… / 오사카" maxLength={2048} />
+            <button className="button button-primary">여행 발견하기 <ArrowRight size={17} /></button>
           </form>
           <div className="landing-hero-actions">
             <button className="button button-light" onClick={onCreateTrip}>
               <Sparkles size={17} /> {user ? '새 여행 만들기' : '로그인하고 여행 만들기'}
             </button>
+            <button className="landing-text-button" onClick={() => onDiscover()}>가고 싶은 곳 모으기</button>
             <button className="landing-text-button" onClick={() => onExplore()}>커뮤니티 둘러보기</button>
           </div>
         </div>

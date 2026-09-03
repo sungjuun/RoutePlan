@@ -21,6 +21,9 @@ export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER'
 export type PlaceEnvironment = 'INDOOR' | 'OUTDOOR' | 'MIXED'
 export type WeatherCondition = 'UNKNOWN' | 'CLEAR' | 'CLOUDY' | 'RAIN' | 'SNOW' | 'EXTREME'
 export type BudgetCurrency = 'KRW' | 'JPY' | 'USD' | 'EUR' | 'GBP' | 'CNY'
+export type WishlistPriority = 'MUST' | 'HIGH' | 'NORMAL' | 'LOW'
+export type ContentSourceType = 'MANUAL' | 'INSTAGRAM' | 'YOUTUBE' | 'TIKTOK' | 'BLOG' | 'COMMUNITY' | 'GENERIC_WEB'
+export type ContentImportStatus = 'RECEIVED' | 'PROCESSING' | 'PLACE_MATCHING' | 'COMPLETED' | 'AWAITING_INPUT' | 'FAILED'
 
 export interface TripBudgetInput {
   currency: BudgetCurrency
@@ -46,6 +49,15 @@ export interface CostSummary {
   estimatedTotalMinor: number
   unpricedPlaceCount: number
   remainingMinor: number | null
+}
+
+export interface ExchangeRateQuote {
+  base: BudgetCurrency
+  quote: BudgetCurrency
+  rate: number
+  rateDate: string
+  fetchedAt: string
+  provider: string
 }
 
 export interface User {
@@ -139,6 +151,68 @@ export interface PlaceSearchResult {
   longitude: number
   primaryType: string | null
   provider: string
+}
+
+export interface WishlistPlace {
+  id: number
+  placeId: number
+  externalPlaceId: string | null
+  name: string
+  latitude: number
+  longitude: number
+  category: string | null
+  priority: WishlistPriority
+  sourceType: ContentSourceType
+  sourceUrl: string | null
+  memo: string | null
+  estimatedCostMinor: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WishlistSummary {
+  id: number
+  name: string
+  country: string | null
+  city: string | null
+  placeCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Wishlist extends Omit<WishlistSummary, 'placeCount'> {
+  places: WishlistPlace[]
+}
+
+export interface ContentImportCandidate {
+  id: number
+  mentionOrder: number
+  matchRank: number
+  extractedName: string
+  matched: boolean
+  externalPlaceId: string | null
+  matchedName: string | null
+  formattedAddress: string | null
+  latitude: number | null
+  longitude: number | null
+  primaryType: string | null
+  provider: string | null
+}
+
+export interface ContentImport {
+  id: number
+  wishlistId: number | null
+  sourceType: ContentSourceType
+  status: ContentImportStatus
+  sourceUrl: string
+  detectedTitle: string | null
+  warning: string | null
+  errorMessage: string | null
+  createdAt: string
+  updatedAt: string
+  startedAt: string | null
+  completedAt: string | null
+  candidates: ContentImportCandidate[]
 }
 
 export interface ItineraryItem {
@@ -236,6 +310,32 @@ export interface Itinerary {
   days: ItineraryDay[]
   items: ItineraryItem[]
   exclusions: ItineraryExclusion[]
+}
+
+export interface ItineraryDayAssignment {
+  visitDate: string
+  itineraryItemIds: number[]
+}
+
+export interface ManualItineraryEditInput {
+  sourceItineraryId: number
+  assignments: ItineraryDayAssignment[]
+}
+
+export interface ManualItineraryEditPreview {
+  sourceItineraryId: number
+  sourceVersion: number
+  affectedDates: string[]
+  travelMinutesDelta: number
+  distanceMetersDelta: number
+  totalTravelMinutes: number
+  totalDistanceMeters: number
+  recommendation: null | {
+    assignments: ItineraryDayAssignment[]
+    savingMinutes: number
+    savingDistanceMeters: number
+    message: string
+  }
 }
 
 export interface ApiViolation {

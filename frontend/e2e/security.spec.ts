@@ -13,7 +13,7 @@ async function logIn(page: Page, account: TestAccount) {
   await page.getByLabel('이메일', { exact: true }).fill(account.email)
   await page.getByLabel('비밀번호', { exact: true }).fill(account.password)
   await page.locator('form').getByRole('button', { name: '로그인', exact: true }).click()
-  await expect(page.getByRole('heading', { name: /좋은 여행 동선을 발견하고/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /마음에 든 여행을 저장하고/ })).toBeVisible()
 }
 
 async function emailLink(request: APIRequestContext, email: string, fragment: string): Promise<string> {
@@ -88,7 +88,7 @@ test('비밀번호 변경·다른 기기 로그아웃·메일 재설정 후 재�
     await page.getByLabel('이메일', { exact: true }).fill(account.email)
     await page.getByLabel('비밀번호', { exact: true }).fill('Recovered-e2e-password-2026!')
     await page.locator('form').getByRole('button', { name: '로그인', exact: true }).click()
-    await expect(page.getByRole('heading', { name: /좋은 여행 동선을 발견하고/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /마음에 든 여행을 저장하고/ })).toBeVisible()
   } finally { await otherContext.close() }
 })
 
@@ -138,7 +138,7 @@ test('마이페이지에서 닉네임·이메일을 변경하고 계정 데이�
   await page.getByLabel('이메일', { exact: true }).fill(nextEmail)
   await page.getByLabel('비밀번호', { exact: true }).fill(account.password)
   await page.locator('form').getByRole('button', { name: '로그인', exact: true }).click()
-  await expect(page.getByRole('heading', { name: /좋은 여행 동선을 발견하고/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /마음에 든 여행을 저장하고/ })).toBeVisible()
   await page.getByRole('button', { name: new RegExp(nickname) }).click()
 
   const refreshedManagement = page.getByRole('region', { name: '계정 관리' })
@@ -146,7 +146,7 @@ test('마이페이지에서 닉네임·이메일을 변경하고 계정 데이�
   await refreshedManagement.getByLabel('현재 비밀번호').last().fill(account.password)
   await refreshedManagement.getByLabel('확인 문구').fill('회원 탈퇴')
   await refreshedManagement.getByRole('button', { name: '계정과 모든 데이터 삭제' }).click()
-  await expect(page.getByRole('heading', { name: /좋은 여행 동선을 발견하고/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /마음에 든 여행을 저장하고/ })).toBeVisible()
   await expect(page.getByRole('button', { name: '로그인', exact: true })).toBeVisible()
 
   const csrf = await (await page.request.get('/api/v1/auth/csrf')).json() as { headerName: string; token: string }

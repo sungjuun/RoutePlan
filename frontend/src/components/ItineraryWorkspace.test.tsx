@@ -8,6 +8,7 @@ vi.mock('./LiveDataPanel', () => ({ LiveDataPanel: () => null }))
 vi.mock('./WeatherPlanner', () => ({ WeatherPlanner: () => null }))
 vi.mock('./BudgetPlanner', () => ({ BudgetPlanner: () => null }))
 vi.mock('./SpendingPanel', () => ({ SpendingPanel: () => null }))
+vi.mock('./ManualScheduleEditor', () => ({ ManualScheduleEditor: () => null }))
 
 const trip: Trip = {
   id: 7,

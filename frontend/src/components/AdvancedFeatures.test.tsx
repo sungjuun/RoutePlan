@@ -9,7 +9,7 @@ import { DiscussionPanel } from './DiscussionPanel'
 import { GoogleRoadMap } from './GoogleRoadMap'
 
 const trip = { id: 7, startDate: '2026-09-10', endDate: '2026-09-11', places: [] } as unknown as Trip
-const spending: Spending = { currency: 'USD', totalLimitMinor: 10000, spentMinor: 0, scopes: [], expenses: [] }
+const spending: Spending = { currency: 'USD', totalLimitMinor: 10000, expectedMinor: 0, spentMinor: 0, remainingExpectedMinor: 0, days: [], scopes: [], expenses: [] }
 const discussion: Discussion = { comments: [], reviews: [], averageRating: 0, reviewCount: 0, commentCount: 0, page: 0 }
 const user = { id: 7, nickname: '여행자', email: 'test@example.com', createdAt: '2026-01-01T00:00:00Z' }
 

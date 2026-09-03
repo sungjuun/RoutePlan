@@ -38,11 +38,12 @@ public class TripSpendingController {
     public Spending delete(@PathVariable long tripId, @PathVariable long expenseId, @AuthenticationPrincipal RoutePlanPrincipal user) {
         access.requireTripOwner(tripId, user.userId()); return service.delete(tripId, expenseId);
     }
-    private Spending save(long tripId, Long id, ExpenseRequest b) { return service.save(tripId,id,b.requestId(),b.date(),b.category(),b.description(),b.amountMinor().longValueExact(), b.currency()); }
+    private Spending save(long tripId, Long id, ExpenseRequest b) { return service.save(tripId,id,b.requestId(),b.date(),b.category(),b.description(),b.amountMinor().longValueExact(), b.placeId(), b.currency()); }
     public record Limits(@NotNull com.routeplan.budget.domain.BudgetCurrency currency, @NotNull @Size(max=100) List<@NotNull @Valid LimitRequest> allocations) {}
     public record LimitRequest(LocalDate date, Category category,
             @NotNull @DecimalMin("0") @DecimalMax("1000000000000") @Digits(integer=13,fraction=0) BigDecimal limitMinor) {}
     public record ExpenseRequest(@NotNull com.routeplan.budget.domain.BudgetCurrency currency, @NotNull UUID requestId, @NotNull LocalDate date, @NotNull Category category,
             @NotBlank @Size(max=200) String description,
-            @NotNull @DecimalMin("0") @DecimalMax("1000000000000") @Digits(integer=13,fraction=0) BigDecimal amountMinor) {}
+            @NotNull @DecimalMin("0") @DecimalMax("1000000000000") @Digits(integer=13,fraction=0) BigDecimal amountMinor,
+            @Positive Long placeId) {}
 }

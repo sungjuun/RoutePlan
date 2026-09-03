@@ -82,6 +82,36 @@ class AdvancedFeaturesApiIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.spentMinor").value(0));
     }
 
+    @Test void comparesLatestExpectedCostWithAPlaceLinkedExpense() throws Exception {
+        long trip = trip();
+        long place = addPlace(trip, "FOOD");
+        putJson("/api/v1/trips/" + trip + "/budget", """
+                {"currency":"KRW","limitMinor":5000,"fixedCostMinor":0,
+                 "placeCosts":[{"placeId":%d,"estimatedCostMinor":1500}]}
+                """.formatted(place)).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/trips/{id}/optimize", trip)).andExpect(status().isCreated());
+
+        postJson("/api/v1/trips/" + trip + "/spending/expenses", """
+                {"currency":"KRW","requestId":"%s","date":"2026-09-10","category":"FOOD",
+                 "description":"명소 식사","amountMinor":1780,"placeId":%d}
+                """.formatted(UUID.randomUUID(), place))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.expectedMinor").value(1500))
+                .andExpect(jsonPath("$.spentMinor").value(1780))
+                .andExpect(jsonPath("$.remainingExpectedMinor").value(-280))
+                .andExpect(jsonPath("$.expenses[0].placeId").value(place))
+                .andExpect(jsonPath("$.expenses[0].placeName").value("명소"))
+                .andExpect(jsonPath("$.days[0].expectedMinor").value(1500))
+                .andExpect(jsonPath("$.days[0].spentMinor").value(1780));
+
+        postJson("/api/v1/trips/" + trip + "/spending/expenses", """
+                {"currency":"KRW","requestId":"%s","date":"2026-09-10","category":"FOOD",
+                 "description":"잘못된 장소","amountMinor":100,"placeId":999999}
+                """.formatted(UUID.randomUUID()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRIP_PLACE_NOT_FOUND"));
+    }
+
     @Test void validatesMoneyCurrencyDatesOwnershipAndCsrf() throws Exception {
         long trip=trip();
         String path="/api/v1/trips/"+trip+"/spending/expenses";
@@ -100,6 +130,16 @@ class AdvancedFeaturesApiIntegrationTest {
         mvc.perform(get("/api/v1/trips/{id}/time-zone",trip)).andExpect(status().isForbidden());
         raw.perform(get("/api/v1/me/preferences")).andExpect(status().isUnauthorized());
         verifyNoInteractions(weather);
+    }
+
+    @Test void returnsIdentityExchangeRateWithoutAnExternalCallForTheBudgetCurrency() throws Exception {
+        long trip = trip();
+        mvc.perform(get("/api/v1/trips/{id}/exchange-rate", trip))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.base").value("KRW"))
+                .andExpect(jsonPath("$.quote").value("KRW"))
+                .andExpect(jsonPath("$.rate").value(1))
+                .andExpect(jsonPath("$.provider").value("IDENTITY"));
     }
 
     @Test void automaticWeatherPreservesManualForecastAndPersistsLocalZone() throws Exception {
@@ -252,10 +292,11 @@ class AdvancedFeaturesApiIntegrationTest {
             {"name":"실제 데이터 테스트","startDate":"2026-09-10","endDate":"2026-09-11",
              "accommodationName":"숙소","accommodationLatitude":37.57,"accommodationLongitude":126.98,"transportMode":"WALKING"}
             """).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(),"$.id"); }
-    private void addPlace(long trip,String category) throws Exception {
+    private long addPlace(long trip,String category) throws Exception {
         long place=number(postJson("/api/v1/places","{\"name\":\"명소\",\"latitude\":37.571,\"longitude\":126.981,\"averageStayMinutes\":60,\"category\":\""+category+"\"}")
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(),"$.id");
         postJson("/api/v1/trips/"+trip+"/places","{\"placeId\":"+place+",\"priority\":70,\"mustVisit\":false}").andExpect(status().isCreated());
+        return place;
     }
     private long route(String region,String category,String visibility) throws Exception {
         long trip=trip(); addPlace(trip,category);

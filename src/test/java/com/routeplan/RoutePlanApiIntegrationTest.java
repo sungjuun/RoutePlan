@@ -105,6 +105,58 @@ class RoutePlanApiIntegrationTest {
     }
 
     @Test
+    void previewsAndPersistsManualOrderAsANewPartialRecalculationVersion() throws Exception {
+        long userId = postAndReadId("/api/v1/users", "{\"nickname\":\"manual-order-tester\"}");
+        long firstPlaceId = postAndReadId("/api/v1/places", """
+                {"name":"첫 장소","latitude":37.570000,"longitude":126.980000,"averageStayMinutes":45}
+                """);
+        long secondPlaceId = postAndReadId("/api/v1/places", """
+                {"name":"둘째 장소","latitude":37.575000,"longitude":126.985000,"averageStayMinutes":45}
+                """);
+        long tripId = postAndReadId("/api/v1/trips", """
+                {
+                  "userId":%d,"name":"직접 순서 편집","startDate":"2026-09-10","endDate":"2026-09-10",
+                  "dailyStartTime":"09:00","dailyEndTime":"18:00","accommodationName":"서울 숙소",
+                  "accommodationLatitude":37.566500,"accommodationLongitude":126.978000,"transportMode":"WALKING"
+                }
+                """.formatted(userId));
+        addPlace(tripId, firstPlaceId);
+        addPlace(tripId, secondPlaceId);
+        MvcResult optimized = mockMvc.perform(post("/api/v1/trips/{tripId}/optimize", tripId))
+                .andExpect(status().isCreated()).andReturn();
+        String optimizedJson = optimized.getResponse().getContentAsString();
+        long itineraryId = ((Number) JsonPath.read(optimizedJson, "$.itineraryId")).longValue();
+        long firstItemId = ((Number) JsonPath.read(optimizedJson, "$.items[0].itineraryItemId")).longValue();
+        long secondItemId = ((Number) JsonPath.read(optimizedJson, "$.items[1].itineraryItemId")).longValue();
+        String edit = """
+                {"sourceItineraryId":%d,"assignments":[{"visitDate":"2026-09-10","itineraryItemIds":[%d,%d]}]}
+                """.formatted(itineraryId, secondItemId, firstItemId);
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/itineraries/manual-edit/preview", tripId)
+                        .contentType(MediaType.APPLICATION_JSON).content(edit))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sourceVersion").value(1))
+                .andExpect(jsonPath("$.affectedDates[0]").value("2026-09-10"))
+                .andExpect(jsonPath("$.travelMinutesDelta").isNumber())
+                .andExpect(jsonPath("$.distanceMetersDelta").isNumber());
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/itineraries/manual-edit", tripId)
+                        .contentType(MediaType.APPLICATION_JSON).content(edit))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.generationType").value("REOPTIMIZATION"))
+                .andExpect(jsonPath("$.changeReason").value("USER_REQUEST"))
+                .andExpect(jsonPath("$.items[0].itineraryItemId").isNumber())
+                .andExpect(jsonPath("$.items[0].placeId").value(secondPlaceId))
+                .andExpect(jsonPath("$.items[1].placeId").value(firstPlaceId));
+
+        mockMvc.perform(post("/api/v1/trips/{tripId}/itineraries/manual-edit", tripId)
+                        .contentType(MediaType.APPLICATION_JSON).content(edit))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("REOPTIMIZATION_SOURCE_NOT_LATEST"));
+    }
+
+    @Test
     void createsTripOptimizesTwiceAndReturnsLatestVersion() throws Exception {
         long userId = postAndReadId("/api/v1/users", """
                 {"nickname":"route-tester"}

@@ -9,6 +9,7 @@ export function SpendingPanel({ trip, onError }: { trip: Trip; onError: (e: unkn
   const [category, setCategory] = useState<ExpenseCategory>('FOOD')
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
+  const [placeId, setPlaceId] = useState<number | null>(null)
   const [requestId, setRequestId] = useState<string>(() => crypto.randomUUID())
   const [editing, setEditing] = useState<number>()
   const [limitDate, setLimitDate] = useState('')
@@ -19,22 +20,24 @@ export function SpendingPanel({ trip, onError }: { trip: Trip; onError: (e: unkn
   useEffect(() => { let active = true; advanced.spending(trip.id).then(v => { if (active) setValue(v) }).catch(onError); return () => { active = false } }, [trip.id, onError, reload])
   const run = async (action: () => Promise<Spending>) => { setBusy(true); try { setValue(await action()) } catch (e) { onError(e) } finally { setBusy(false) } }
   if (!value) return <section className="advanced-panel"><h3>예산·지출 장부</h3><button onClick={() => setReload(r => r + 1)}>지출 장부 불러오기</button></section>
-  const edit = (entry: Expense) => { setEditing(entry.id); setRequestId(entry.requestId); setDate(entry.date); setCategory(entry.category); setDescription(entry.description); setAmount(amountInput(entry.amountMinor, value.currency)) }
+  const edit = (entry: Expense) => { setEditing(entry.id); setRequestId(entry.requestId); setDate(entry.date); setCategory(entry.category); setDescription(entry.description); setAmount(amountInput(entry.amountMinor, value.currency)); setPlaceId(entry.placeId) }
   return <section className="advanced-panel spending-panel" aria-label="예산과 실제 지출">
-    <h3>예산·실제 지출 장부</h3><p>실제 지출 <strong>{moneyLabel(value.spentMinor, value.currency)}</strong>{value.totalLimitMinor != null && ` · 전체 예산 대비 잔액 ${moneyLabel(value.totalLimitMinor - value.spentMinor, value.currency)}`}</p>
+    <h3>예산·실제 지출 장부</h3><p>예상 <strong>{moneyLabel(value.expectedMinor, value.currency)}</strong> · 실제 지출 <strong>{moneyLabel(value.spentMinor, value.currency)}</strong> · {value.remainingExpectedMinor < 0 ? '예상 초과' : '남은 예상'} <strong>{moneyLabel(Math.abs(value.remainingExpectedMinor), value.currency)}</strong>{value.totalLimitMinor != null && ` · 전체 예산 잔액 ${moneyLabel(value.totalLimitMinor - value.spentMinor, value.currency)}`}</p>
     <button type="button" disabled={busy} onClick={() => void run(() => advanced.spending(trip.id))}>장부 새로고침</button>
     <p>날짜·항목 한도는 실제 지출 관리용입니다. 일정 장소 선택에는 여행 전체 예상 예산만 적용합니다.</p>
     <form onSubmit={e => { e.preventDefault(); void run(async () => {
-      const result = await advanced.expense(trip.id, value.currency, { requestId, date, category, description, amountMinor: parseMinor(amount, value.currency, false)! }, editing)
-      setDescription(''); setAmount(''); setEditing(undefined); setRequestId(crypto.randomUUID()); return result
+      const result = await advanced.expense(trip.id, value.currency, { requestId, date, category, description, amountMinor: parseMinor(amount, value.currency, false)!, placeId }, editing)
+      setDescription(''); setAmount(''); setPlaceId(null); setEditing(undefined); setRequestId(crypto.randomUUID()); return result
     }) }}><fieldset className="advanced-grid" disabled={busy}>
       <label className="field"><span>지출 날짜</span><input aria-label="지출 날짜" type="date" value={date} min={trip.startDate} max={trip.endDate} required onChange={e => setDate(e.target.value)} /></label>
       <label className="field"><span>지출 항목</span><select aria-label="지출 항목" value={category} onChange={e => setCategory(e.target.value as ExpenseCategory)}>{categories.map(c => <option key={c} value={c}>{categoryNames[c]}</option>)}</select></label>
       <label className="field"><span>내용</span><input aria-label="지출 내용" value={description} maxLength={200} required onChange={e => setDescription(e.target.value)} /></label>
+      <label className="field"><span>연결 장소 · 선택</span><select aria-label="지출 연결 장소" value={placeId ?? ''} onChange={e => setPlaceId(e.target.value ? Number(e.target.value) : null)}><option value="">장소 연결 안 함</option>{trip.places.map(place => <option key={place.placeId} value={place.placeId}>{place.name}</option>)}</select></label>
       <label className="field"><span>금액 · {value.currency}</span><input aria-label="실제 지출 금액" inputMode="decimal" value={amount} maxLength={16} required onChange={e => setAmount(e.target.value)} /></label>
-      <button className="button button-ghost">{editing ? '지출 수정 저장' : '지출 기록'}</button>{editing && <button type="button" onClick={() => { setEditing(undefined); setRequestId(crypto.randomUUID()); setDescription(''); setAmount('') }}>수정 취소</button>}
+      <button className="button button-ghost">{editing ? '지출 수정 저장' : '지출 기록'}</button>{editing && <button type="button" onClick={() => { setEditing(undefined); setRequestId(crypto.randomUUID()); setDescription(''); setAmount(''); setPlaceId(null) }}>수정 취소</button>}
     </fieldset></form>
-    <div className="advanced-list">{value.expenses.map(entry => <article key={entry.id}><div><strong>{entry.description}</strong><small>{entry.date} · {categoryNames[entry.category]} · {moneyLabel(entry.amountMinor, value.currency)}</small></div><button disabled={busy} onClick={() => edit(entry)}>수정</button><button disabled={busy} onClick={() => { if (window.confirm('이 지출 기록을 삭제할까요?')) void run(() => advanced.deleteExpense(trip.id, entry.id)) }}>삭제</button></article>)}{!value.expenses.length && <p>아직 기록한 지출이 없습니다.</p>}</div>
+    <div className="spending-day-summary">{value.days.map(day => <article key={day.date}><strong>{day.date}</strong><span>예상 {moneyLabel(day.expectedMinor, value.currency)}</span><span>실제 {moneyLabel(day.spentMinor, value.currency)}</span><em className={day.remainingExpectedMinor < 0 ? 'over' : ''}>{day.remainingExpectedMinor < 0 ? '초과' : '남음'} {moneyLabel(Math.abs(day.remainingExpectedMinor), value.currency)}</em></article>)}</div>
+    <div className="advanced-list">{value.expenses.map(entry => <article key={entry.id}><div><strong>{entry.description}</strong><small>{entry.date} · {categoryNames[entry.category]}{entry.placeName ? ` · ${entry.placeName}` : ''} · {moneyLabel(entry.amountMinor, value.currency)}</small></div><button disabled={busy} onClick={() => edit(entry)}>수정</button><button disabled={busy} onClick={() => { if (window.confirm('이 지출 기록을 삭제할까요?')) void run(() => advanced.deleteExpense(trip.id, entry.id)) }}>삭제</button></article>)}{!value.expenses.length && <p>아직 기록한 지출이 없습니다.</p>}</div>
     <h4>날짜별·항목별 한도</h4><form onSubmit={e => { e.preventDefault(); void run(() => {
       if (!limitDate && !limitCategory) throw new Error('날짜 또는 항목을 선택해 주세요.')
       const next = { date: limitDate || null, category: limitCategory || null, limitMinor: parseMinor(limit, value.currency, false)! }

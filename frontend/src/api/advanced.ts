@@ -6,8 +6,9 @@ export const categories = ['ACCOMMODATION', 'FOOD', 'TRANSPORT', 'ACTIVITY', 'SH
 export type ExpenseCategory = typeof categories[number]
 export const categoryNames: Record<ExpenseCategory, string> = { ACCOMMODATION: '숙박', FOOD: '식비', TRANSPORT: '교통', ACTIVITY: '입장·활동', SHOPPING: '쇼핑', OTHER: '기타' }
 export interface Allocation { date: string | null; category: ExpenseCategory | null; limitMinor: number }
-export interface Expense { id: number; requestId: string; date: string; category: ExpenseCategory; description: string; amountMinor: number }
-export interface Spending { currency: BudgetCurrency; totalLimitMinor: number | null; spentMinor: number; scopes: (Allocation & { spentMinor: number; remainingMinor: number })[]; expenses: Expense[] }
+export interface Expense { id: number; requestId: string; date: string; category: ExpenseCategory; description: string; amountMinor: number; placeId: number | null; placeName: string | null }
+export interface DaySpending { date: string; expectedMinor: number; spentMinor: number; remainingExpectedMinor: number }
+export interface Spending { currency: BudgetCurrency; totalLimitMinor: number | null; expectedMinor: number; spentMinor: number; remainingExpectedMinor: number; days: DaySpending[]; scopes: (Allocation & { spentMinor: number; remainingMinor: number })[]; expenses: Expense[] }
 export const interests = ['CULTURE', 'NATURE', 'FOOD', 'SHOPPING', 'RELAXATION', 'ADVENTURE'] as const
 export type Interest = typeof interests[number]
 export const interestNames: Record<Interest, string> = { CULTURE: '문화·역사', NATURE: '자연', FOOD: '미식', SHOPPING: '쇼핑', RELAXATION: '휴식', ADVENTURE: '체험·모험' }
@@ -58,7 +59,7 @@ export const advanced = {
   geometry: (id: number, date: string) => send<{ encodedPolylines: string[] }>(`/itineraries/${id}/road-geometry?date=${encodeURIComponent(date)}`, 'POST'),
   spending: (id: number) => request<Spending>(`/trips/${id}/spending`),
   allocations: (id: number, currency: BudgetCurrency, allocations: Allocation[]) => send<Spending>(`/trips/${id}/spending/allocations`, 'PUT', { currency, allocations }),
-  expense: (id: number, currency: BudgetCurrency, value: Omit<Expense, 'id'>, expenseId?: number) => send<Spending>(`/trips/${id}/spending/expenses${expenseId ? `/${expenseId}` : ''}`, expenseId ? 'PUT' : 'POST', { ...value, currency }),
+  expense: (id: number, currency: BudgetCurrency, value: Omit<Expense, 'id' | 'placeName'>, expenseId?: number) => send<Spending>(`/trips/${id}/spending/expenses${expenseId ? `/${expenseId}` : ''}`, expenseId ? 'PUT' : 'POST', { ...value, currency }),
   deleteExpense: (id: number, expenseId: number) => send<Spending>(`/trips/${id}/spending/expenses/${expenseId}`, 'DELETE'),
   preferences: () => request<Preferences>('/me/preferences'),
   savePreferences: (value: Preferences) => send<Preferences>('/me/preferences', 'PUT', value),

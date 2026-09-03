@@ -71,10 +71,12 @@ describe('public RoutePlan experience', () => {
 
   it('opens country recommendations and searches community routes', async () => {
     const onExplore = vi.fn()
+    const onDiscover = vi.fn()
     render(
       <LandingPage
         user={null}
         onExplore={onExplore}
+        onDiscover={onDiscover}
         onCreateTrip={vi.fn()}
         onError={vi.fn()}
       />,
@@ -84,11 +86,17 @@ describe('public RoutePlan experience', () => {
     fireEvent.click(screen.getByRole('button', { name: /대한민국.*서울/ }))
     expect(onExplore).toHaveBeenCalledWith('서울')
 
-    fireEvent.change(screen.getByPlaceholderText(/어디로 떠나시나요/), {
+    fireEvent.change(screen.getByPlaceholderText(/SNS URL 또는 도시/), {
       target: { value: '파리' },
     })
-    fireEvent.click(screen.getByRole('button', { name: /루트 찾기/ }))
+    fireEvent.click(screen.getByRole('button', { name: /여행 발견하기/ }))
     expect(onExplore).toHaveBeenCalledWith('파리')
+
+    fireEvent.change(screen.getByPlaceholderText(/SNS URL 또는 도시/), {
+      target: { value: 'https://www.instagram.com/p/example/' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /여행 발견하기/ }))
+    expect(onDiscover).toHaveBeenCalledWith('https://www.instagram.com/p/example/')
   })
 
   it('authenticates from the login form and returns the server user', async () => {
@@ -157,6 +165,7 @@ describe('public RoutePlan experience', () => {
         user={authenticated.user}
         activePage="home"
         onHome={vi.fn()}
+        onDiscover={vi.fn()}
         onCommunity={onCommunity}
         onMyTrip={vi.fn()}
         onProfile={onProfile}

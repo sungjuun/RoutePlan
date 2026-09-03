@@ -39,6 +39,7 @@ import { BudgetSummary } from './BudgetSummary'
 import { moneyLabel } from '../lib/money'
 import { LiveDataPanel } from './LiveDataPanel'
 import { SpendingPanel } from './SpendingPanel'
+import { ManualScheduleEditor } from './ManualScheduleEditor'
 
 interface Props {
   trip: Trip
@@ -171,6 +172,8 @@ export function ItineraryWorkspace(props: Props) {
           calculating={calculating}
           budgetBlocked={budgetBlocked}
           optimize={optimize}
+          onItineraryChanged={onItineraryChanged}
+          onError={onError}
         />
       )}
       {tab === 'reoptimize' && (
@@ -213,6 +216,8 @@ function RouteView({
   calculating,
   budgetBlocked,
   optimize,
+  onItineraryChanged,
+  onError,
 }: {
   trip: Trip
   itinerary: Itinerary
@@ -222,6 +227,8 @@ function RouteView({
   calculating: boolean
   budgetBlocked: boolean
   optimize: () => Promise<void>
+  onItineraryChanged: (itinerary: Itinerary, message: string) => Promise<void>
+  onError: (error: unknown) => void
 }) {
   const completedCount = minimumCompletedCount(itinerary)
   const days = itinerary.days.length > 0 ? itinerary.days : [{
@@ -253,7 +260,8 @@ function RouteView({
 
   return (
     <>
-      <BudgetSummary summary={itinerary.costSummary} />
+      <BudgetSummary summary={itinerary.costSummary} tripId={trip.id} />
+      <ManualScheduleEditor trip={trip} itinerary={itinerary} onItineraryChanged={onItineraryChanged} onError={onError} />
       <div className="metric-strip">
         <Metric icon={<Navigation size={18} />} label="총 이동" value={distanceLabel(itinerary.totalDistanceMeters)} note={durationLabel(itinerary.estimatedTravelMinutes)} />
         <Metric icon={<MapPin size={18} />} label="방문 장소" value={`${itinerary.items.length}곳`} note={itinerary.exclusions.length ? `${itinerary.exclusions.length}곳 제외` : '모두 포함'} />

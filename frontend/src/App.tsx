@@ -5,6 +5,7 @@ import { AppHeader } from './components/AppHeader'
 import { CommunityWorkspace } from './components/CommunityWorkspace'
 import { ItineraryWorkspace } from './components/ItineraryWorkspace'
 import { LandingPage } from './components/LandingPage'
+import { DiscoveryPage } from './components/DiscoveryPage'
 import { MyTripsPage } from './components/MyTripsPage'
 import { NaturalLanguageWorkspace } from './components/NaturalLanguageWorkspace'
 import { PlaceWorkspace } from './components/PlaceWorkspace'
@@ -23,9 +24,9 @@ const AccountLinkPage = lazy(() => import('./components/AccountLinkPage').then(m
 const NotificationCenter = lazy(() => import('./components/NotificationCenter').then(module => ({ default: module.NotificationCenter })))
 
 type Section = 'places' | 'itinerary' | 'settings' | 'community' | 'natural-language'
-type PublicPage = 'home' | 'community' | 'auth' | 'create-trip' | 'trips' | 'profile' | 'workspace'
+type PublicPage = 'home' | 'discover' | 'community' | 'auth' | 'create-trip' | 'trips' | 'profile' | 'workspace'
 type AuthMode = 'login' | 'signup'
-type AfterAuth = 'home' | 'create-trip' | 'trips' | 'profile' | 'requested-trip'
+type AfterAuth = 'home' | 'discover' | 'create-trip' | 'trips' | 'profile' | 'requested-trip'
 
 interface Notice {
   kind: 'success' | 'error' | 'info'
@@ -44,6 +45,8 @@ export function App() {
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [afterAuth, setAfterAuth] = useState<AfterAuth>('home')
   const [communityRegion, setCommunityRegion] = useState('')
+  const [discoveryUrl, setDiscoveryUrl] = useState('')
+  const [wishlistDraft, setWishlistDraft] = useState<{ wishlistId: number; wishlistPlaceIds: number[] } | null>(null)
   const [trip, setTrip] = useState<Trip | null>(null)
   const [itinerary, setItinerary] = useState<Itinerary | null>(null)
   const [previousItinerary, setPreviousItinerary] = useState<Itinerary | null>(null)
@@ -215,6 +218,28 @@ export function App() {
       return
     }
     clearTripReference()
+    setWishlistDraft(null)
+    setTrip(null)
+    setItinerary(null)
+    setPreviousItinerary(null)
+    setItineraryPlaces({})
+    setPage('create-trip')
+    window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  const openDiscovery = (url = '') => {
+    setDiscoveryUrl(url)
+    if (!user) {
+      showAuth('login', 'discover')
+      return
+    }
+    setPage('discover')
+    window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  const createTripFromWishlist = (wishlistId: number, wishlistPlaceIds: number[]) => {
+    setWishlistDraft({ wishlistId, wishlistPlaceIds })
+    clearTripReference()
     setTrip(null)
     setItinerary(null)
     setPreviousItinerary(null)
@@ -247,6 +272,10 @@ export function App() {
     notify('success', `${nextUser.nickname}님, 반갑습니다.`)
     if (afterAuth === 'create-trip') {
       setPage('create-trip')
+      return
+    }
+    if (afterAuth === 'discover') {
+      setPage('discover')
       return
     }
     if (afterAuth === 'requested-trip') {
@@ -284,7 +313,9 @@ export function App() {
     }
   }
 
-  const handleTripReady = (nextTrip: Trip) => {
+  const handleTripReady = async (nextTrip: Trip) => {
+    const shouldOptimize = wishlistDraft != null
+    setWishlistDraft(null)
     setTrip(nextTrip)
     setItinerary(null)
     setPreviousItinerary(null)
@@ -294,6 +325,16 @@ export function App() {
     setSection('places')
     setPage('workspace')
     notify('success', `${nextTrip.name} 작업공간을 만들었습니다.`)
+    if (shouldOptimize) {
+      try {
+        const optimized = await api.optimize(nextTrip.id, 'NEAREST_NEIGHBOR_2_OPT')
+        await loadItineraryContext(optimized)
+        setSection('itinerary')
+        notify('success', '위시리스트 장소를 날짜별로 나누고 이동 동선을 계산했습니다.')
+      } catch (error) {
+        reportError(error)
+      }
+    }
   }
 
   const handleItineraryChanged = async (next: Itinerary, message: string) => {
@@ -330,11 +371,12 @@ export function App() {
   if (page !== 'workspace') {
     return (
       <div className="public-shell">
-        <PublicHeader notifications={notificationCenter} user={user} activePage={page} onHome={showHome} onCommunity={() => showCommunity()} onMyTrip={openMyTrips} onProfile={openProfile} onNewTrip={createTrip} onLogin={() => showAuth('login')} onSignup={() => showAuth('signup')} onLogout={() => void logout()} />
+        <PublicHeader notifications={notificationCenter} user={user} activePage={page} onHome={showHome} onDiscover={() => openDiscovery()} onCommunity={() => showCommunity()} onMyTrip={openMyTrips} onProfile={openProfile} onNewTrip={createTrip} onLogin={() => showAuth('login')} onSignup={() => showAuth('signup')} onLogout={() => void logout()} />
         {errorNotice}
-        {page === 'home' && <LandingPage user={user} onExplore={showCommunity} onCreateTrip={createTrip} onError={reportError} />}
+        {page === 'home' && <LandingPage user={user} onExplore={showCommunity} onDiscover={openDiscovery} onCreateTrip={createTrip} onError={reportError} />}
+        {page === 'discover' && user && <DiscoveryPage initialUrl={discoveryUrl} onCreateTrip={createTripFromWishlist} onError={reportError} />}
         {page === 'community' && <PublicCommunityPage user={user} initialRegion={communityRegion} onRequireAuth={() => showAuth('login', 'create-trip')} onCreateTrip={createTrip} onError={reportError} />}
-        {page === 'create-trip' && <TripSetup onReady={handleTripReady} onError={reportError} />}
+        {page === 'create-trip' && <TripSetup wishlistDraft={wishlistDraft} onReady={handleTripReady} onError={reportError} />}
         {page === 'trips' && <MyTripsPage onOpenTrip={(tripId) => void loadTrip(tripId)} onNewTrip={createTrip} onError={reportError} />}
         {page === 'profile' && user && <Suspense fallback={<p role="status">마이페이지를 불러오는 중…</p>}><MyPage user={user} onUserChanged={next => setUser(current => current?.id === next.id ? { ...current, ...next } : current)} onPasswordChanged={passwordChanged} onEmailChanged={emailChanged} onAccountDeleted={accountDeleted} onOpenTrips={openMyTrips} onNewTrip={createTrip} onLogout={() => void logout()} onError={reportError} /></Suspense>}
       </div>

@@ -15,6 +15,7 @@ import type { CreateTripInput, TransportMode, Trip, TripPace } from '../types'
 interface Props {
   trip?: Trip
   embedded?: boolean
+  wishlistDraft?: { wishlistId: number; wishlistPlaceIds: number[] } | null
   onReady?: (trip: Trip) => void
   onUpdated?: (trip: Trip) => void
   onError: (error: unknown) => void
@@ -36,6 +37,7 @@ function addDays(dateValue: string, days: number): string {
 export function TripSetup({
   trip,
   embedded = false,
+  wishlistDraft,
   onReady,
   onUpdated,
   onError,
@@ -70,6 +72,11 @@ export function TripSetup({
       }
       if (trip) {
         onUpdated?.(await api.updateTrip(trip.id, input))
+      } else if (wishlistDraft) {
+        onReady?.(await api.createTripFromWishlist(wishlistDraft.wishlistId, {
+          ...input,
+          wishlistPlaceIds: wishlistDraft.wishlistPlaceIds,
+        }))
       } else {
         onReady?.(await api.createTrip(input))
       }
@@ -199,7 +206,7 @@ export function TripSetup({
         <div className="onboarding-form-head">
           <span>01 / 여행 만들기</span>
           <h2>어떤 여행을 떠나볼까요?</h2>
-          <p>하루부터 14일까지, 같은 숙소를 기준으로 일자별 일정을 만들어요.</p>
+          <p>{wishlistDraft ? `${wishlistDraft.wishlistPlaceIds.length}곳을 날짜별로 나눠 동선을 계산할 준비를 합니다.` : '하루부터 14일까지, 같은 숙소를 기준으로 일자별 일정을 만들어요.'}</p>
         </div>
         {form}
       </section>

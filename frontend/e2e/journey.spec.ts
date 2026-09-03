@@ -79,7 +79,7 @@ test.describe.serial('인증된 여행 생성과 공개 루트 재사용', () =>
 
     await signUp(page, account)
     await page.goto(`/?tripId=${ownerTripId}`)
-    await expect(page.getByRole('heading', { name: /좋은 여행 동선을 발견하고/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /마음에 든 여행을 저장하고/ })).toBeVisible()
     await expect(page).not.toHaveURL(/tripId=/)
 
     const baseTripId = await createTrip(page, baseTripName, 'V14 부산 숙소')

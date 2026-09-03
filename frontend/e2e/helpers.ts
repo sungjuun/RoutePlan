@@ -16,7 +16,7 @@ export function testAccount(seed: string, role: 'owner' | 'guest'): TestAccount 
 
 export async function signUp(page: Page, account: TestAccount): Promise<void> {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: /좋은 여행 동선을 발견하고/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /마음에 든 여행을 저장하고/ })).toBeVisible()
   await page.getByRole('button', { name: '회원가입', exact: true }).click()
   await expect(page.getByRole('heading', { name: '나만의 여행을 시작하세요' })).toBeVisible()
 
@@ -26,7 +26,16 @@ export async function signUp(page: Page, account: TestAccount): Promise<void> {
   await page.getByLabel('비밀번호 확인', { exact: true }).fill(account.password)
   await page.getByRole('button', { name: /계정 만들기/ }).click()
 
-  await expect(page.getByRole('heading', { name: /좋은 여행 동선을 발견하고/ })).toBeVisible()
+  const duplicate = page.getByRole('alert').filter({ hasText: '이미 가입된 이메일입니다.' })
+  await page.waitForTimeout(150)
+  if (await duplicate.isVisible()) {
+    await page.getByRole('button', { name: '로그인', exact: true }).click()
+    await page.getByLabel('이메일', { exact: true }).fill(account.email)
+    await page.getByLabel('비밀번호', { exact: true }).fill(account.password)
+    await page.locator('form').getByRole('button', { name: '로그인', exact: true }).click()
+  }
+
+  await expect(page.getByRole('heading', { name: /마음에 든 여행을 저장하고/ })).toBeVisible()
   await expect(page.getByRole('button', { name: new RegExp(account.nickname) })).toBeVisible()
 }
 

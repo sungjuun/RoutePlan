@@ -3,6 +3,10 @@ package com.routeplan.itinerary.api;
 import com.routeplan.auth.ResourceAccessService;
 import com.routeplan.auth.RoutePlanPrincipal;
 import com.routeplan.itinerary.application.ItineraryOptimizationService;
+import com.routeplan.itinerary.application.ManualItineraryEditingService;
+import com.routeplan.itinerary.application.ManualItineraryEditingService.DayAssignment;
+import com.routeplan.itinerary.application.ManualItineraryEditingService.ManualEditCommand;
+import com.routeplan.itinerary.application.ManualItineraryEditingService.ManualEditPreview;
 import com.routeplan.itinerary.application.ItineraryQueryService;
 import com.routeplan.itinerary.application.ItineraryReoptimizationService;
 import com.routeplan.itinerary.application.ItineraryReoptimizationService.ReoptimizeCommand;
@@ -38,17 +42,41 @@ public class ItineraryController {
     private final ItineraryReoptimizationService reoptimizationService;
     private final ItineraryQueryService queryService;
     private final ResourceAccessService accessService;
+    private final ManualItineraryEditingService manualEditingService;
 
     public ItineraryController(
             ItineraryOptimizationService optimizationService,
             ItineraryReoptimizationService reoptimizationService,
             ItineraryQueryService queryService,
-            ResourceAccessService accessService
+            ResourceAccessService accessService,
+            ManualItineraryEditingService manualEditingService
     ) {
         this.optimizationService = optimizationService;
         this.reoptimizationService = reoptimizationService;
         this.queryService = queryService;
         this.accessService = accessService;
+        this.manualEditingService = manualEditingService;
+    }
+
+    @PostMapping("/trips/{tripId}/itineraries/manual-edit/preview")
+    public ManualEditPreview previewManualEdit(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
+            @Valid @RequestBody ManualEditRequest request
+    ) {
+        accessService.requireTripOwner(tripId, principal.userId());
+        return manualEditingService.preview(tripId, request.toCommand());
+    }
+
+    @PostMapping("/trips/{tripId}/itineraries/manual-edit")
+    public ResponseEntity<ItineraryView> applyManualEdit(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
+            @Valid @RequestBody ManualEditRequest request
+    ) {
+        accessService.requireTripOwner(tripId, principal.userId());
+        ItineraryView result = manualEditingService.apply(tripId, request.toCommand());
+        return ResponseEntity.created(URI.create("/api/v1/itineraries/" + result.itineraryId())).body(result);
     }
 
     @PostMapping("/trips/{tripId}/reoptimize")
@@ -124,4 +152,19 @@ public class ItineraryController {
             );
         }
     }
+
+    public record ManualEditRequest(
+            @NotNull @Positive Long sourceItineraryId,
+            @NotNull @Size(min = 1, max = 30) List<@NotNull @Valid DayAssignmentRequest> assignments
+    ) {
+        ManualEditCommand toCommand() {
+            return new ManualEditCommand(sourceItineraryId, assignments.stream()
+                    .map(value -> new DayAssignment(value.visitDate(), value.itineraryItemIds())).toList());
+        }
+    }
+
+    public record DayAssignmentRequest(
+            @NotNull LocalDate visitDate,
+            @NotNull @Size(max = 50) List<@NotNull @Positive Long> itineraryItemIds
+    ) {}
 }

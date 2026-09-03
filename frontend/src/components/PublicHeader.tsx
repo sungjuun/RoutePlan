@@ -8,6 +8,7 @@ interface Props {
   user: User | null
   onHome: () => void
   onCommunity: () => void
+  onDiscover: () => void
   onMyTrip: () => void
   onProfile: () => void
   onNewTrip: () => void
@@ -22,6 +23,7 @@ export function PublicHeader({
   user,
   onHome,
   onCommunity,
+  onDiscover,
   onMyTrip,
   onProfile,
   onNewTrip,
@@ -45,6 +47,7 @@ export function PublicHeader({
       </button>
       <nav id="public-navigation" className={menuOpen ? 'open' : ''} aria-label="주요 메뉴">
         <button className={activePage === 'home' ? 'active' : ''} aria-current={activePage === 'home' ? 'page' : undefined} onClick={() => navigate(onHome)}>추천 루트</button>
+        <button className={activePage === 'discover' ? 'active' : ''} aria-current={activePage === 'discover' ? 'page' : undefined} onClick={() => navigate(onDiscover)}>가고 싶은 곳</button>
         <button className={activePage === 'community' ? 'active' : ''} aria-current={activePage === 'community' ? 'page' : undefined} onClick={() => navigate(onCommunity)}>커뮤니티</button>
         <button className={activePage === 'trips' ? 'active' : ''} aria-current={activePage === 'trips' ? 'page' : undefined} onClick={() => navigate(onMyTrip)}>내 여행</button>
       </nav>

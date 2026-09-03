@@ -5,6 +5,8 @@ import type {
   CopyRouteInput,
   CreateTripInput,
   Itinerary,
+  ManualItineraryEditInput,
+  ManualItineraryEditPreview,
   NaturalLanguagePreview,
   OptimizationAlgorithm,
   Place,
@@ -25,6 +27,11 @@ import type {
   TripBudget,
   TripBudgetInput,
   User,
+  Wishlist,
+  WishlistSummary,
+  WishlistPriority,
+  ContentImport,
+  ExchangeRateQuote,
 } from '../types'
 
 interface CsrfView {
@@ -167,6 +174,52 @@ export const api = {
   createTrip: (input: CreateTripInput) =>
     request<Trip>('/trips', json('POST', input)),
 
+  getWishlists: () => request<WishlistSummary[]>('/wishlists'),
+
+  getWishlist: (wishlistId: number) => request<Wishlist>(`/wishlists/${wishlistId}`),
+
+  createWishlist: (input: { name: string; country?: string; city?: string }) =>
+    request<Wishlist>('/wishlists', json('POST', input)),
+
+  updateWishlist: (wishlistId: number, input: { name: string; country?: string; city?: string }) =>
+    request<Wishlist>(`/wishlists/${wishlistId}`, json('PATCH', input)),
+
+  deleteWishlist: (wishlistId: number) => request<void>(`/wishlists/${wishlistId}`, { method: 'DELETE' }),
+
+  addWishlistPlace: (wishlistId: number, input: {
+    placeId: number
+    priority?: WishlistPriority
+    sourceType?: string
+    sourceUrl?: string
+    memo?: string
+    estimatedCostMinor?: number
+  }) => request<Wishlist>(`/wishlists/${wishlistId}/places`, json('POST', input)),
+
+  updateWishlistPlace: (wishlistId: number, wishlistPlaceId: number, input: {
+    priority?: WishlistPriority
+    sourceType?: string
+    sourceUrl?: string
+    memo?: string
+    estimatedCostMinor?: number
+  }) => request<Wishlist>(`/wishlists/${wishlistId}/places/${wishlistPlaceId}`, json('PATCH', input)),
+
+  removeWishlistPlace: (wishlistId: number, wishlistPlaceId: number) =>
+    request<void>(`/wishlists/${wishlistId}/places/${wishlistPlaceId}`, { method: 'DELETE' }),
+
+  createTripFromWishlist: (wishlistId: number, input: CreateTripInput & { wishlistPlaceIds: number[] }) =>
+    request<Trip>(`/wishlists/${wishlistId}/trips`, json('POST', input)),
+
+  startContentImport: (input: { url: string; inputText?: string; wishlistId?: number }) =>
+    request<ContentImport>('/imports/url', json('POST', input)),
+
+  getContentImport: (importId: number) => request<ContentImport>(`/imports/${importId}`),
+
+  retryContentImport: (importId: number, inputText: string) =>
+    request<ContentImport>(`/imports/${importId}/retry`, json('POST', { inputText })),
+
+  saveContentImport: (importId: number, wishlistId: number, candidateIds: number[]) =>
+    request<Wishlist>(`/imports/${importId}/save`, json('POST', { wishlistId, candidateIds })),
+
   getTrips: () => request<TripSummary[]>('/trips'),
 
   getTrip: (tripId: number) => request<Trip>(`/trips/${tripId}`),
@@ -229,6 +282,9 @@ export const api = {
 
   getTripBudget: (tripId: number) => request<TripBudget>(`/trips/${tripId}/budget`),
 
+  getTripExchangeRate: (tripId: number, quote = 'KRW') =>
+    request<ExchangeRateQuote>(`/trips/${tripId}/exchange-rate?quote=${encodeURIComponent(quote)}`),
+
   replaceTripBudget: (tripId: number, input: TripBudgetInput) =>
     request<TripBudget>(`/trips/${tripId}/budget`, json('PUT', input)),
 
@@ -240,6 +296,12 @@ export const api = {
 
   optimize: (tripId: number, algorithm: OptimizationAlgorithm) =>
     request<Itinerary>(`/trips/${tripId}/optimize?algorithm=${algorithm}`, { method: 'POST' }),
+
+  previewManualItineraryEdit: (tripId: number, input: ManualItineraryEditInput) =>
+    request<ManualItineraryEditPreview>(`/trips/${tripId}/itineraries/manual-edit/preview`, json('POST', input)),
+
+  applyManualItineraryEdit: (tripId: number, input: ManualItineraryEditInput) =>
+    request<Itinerary>(`/trips/${tripId}/itineraries/manual-edit`, json('POST', input)),
 
   getLatestItinerary: (tripId: number) =>
     request<Itinerary>(`/trips/${tripId}/itineraries/latest`),

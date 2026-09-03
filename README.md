@@ -10,11 +10,14 @@ RoutePlan은 여행 장소와 사용자 조건을 바탕으로 **실행 가능�
 
 ### 여행 계획과 최적화
 
+- SNS·웹 URL 또는 붙여 넣은 장소 목록에서 후보를 추출해 위시리스트로 저장
+- 여러 위시리스트를 관리하고 선택한 장소로 여행을 만들면 날짜별 배치와 동선을 자동 계산
 - 1~14일 여행 생성과 날짜별 일정 관리
 - 장소별 우선순위, 필수 방문, 체류시간, 선호 시간대, 영업시간 반영
 - `Nearest Neighbor`, `Exact Search`, `Nearest Neighbor + 2-opt` 알고리즘 비교
 - 날씨·예산·이동수단·현지 시간·숙소 복귀 조건을 반영한 일정 생성
 - 완료한 일정은 보존하고 현재 위치·시각부터 남은 일정만 재최적화
+- 장소를 날짜 사이로 끌거나 순서를 바꾸고 이동시간·거리 영향을 확인한 뒤, 변경된 날짜만 새 버전으로 재계산
 - 시간대별 교통량을 고려한 다일 전역 탐색과 안전 상한 초과 시 기본 방식으로 전환
 
 ### 실제 데이터 연동
@@ -38,6 +41,7 @@ RoutePlan은 여행 장소와 사용자 조건을 바탕으로 **실행 가능�
 - 공개 Route 검색·정렬·좋아요·댓글·후기·신고·복사
 - 복사한 Route를 내 숙소·날짜·취향으로 다시 최적화
 - 날짜별·항목별 예산과 실제 지출 기록
+- 장소별 실제 지출 연결, 날짜별 예상/실제 비교와 현재 참고 환율 기준 원화 환산
 
 ### 캐시와 운영 안정성
 
@@ -51,13 +55,15 @@ RoutePlan은 여행 장소와 사용자 조건을 바탕으로 **실행 가능�
 ## 사용자 흐름
 
 ```text
-추천 국가·공개 Route 탐색
+SNS·웹 URL 또는 추천 국가·공개 Route 탐색
 → 회원가입 또는 로그인
-→ 새 여행 생성
-→ 장소 검색 또는 좌표 등록
+→ 추출된 장소 후보 확인
+→ 위시리스트에 저장하고 여행에 포함할 장소 선택
+→ 새 여행 생성 또는 장소 검색·좌표 등록
 → 시간·우선순위·날씨·예산 조건 설정
 → 일정 최적화
 → 날짜별 타임라인과 지도 확인
+→ 장소 순서·날짜를 직접 편집하고 변경 영향 또는 추천 순서 확인
 → 여행 중 남은 일정 재최적화
 → 일정 공개 또는 다른 사용자의 Route 복사
 ```
@@ -72,7 +78,7 @@ RoutePlan은 여행 장소와 사용자 조건을 바탕으로 **실행 가능�
 | Frontend | React 19, TypeScript 6, Vite 8, React Leaflet |
 | Test | JUnit 5, Testcontainers, Vitest, Testing Library, Playwright |
 | Operations | Docker Compose, Nginx, Caddy, Prometheus, Grafana, Alertmanager |
-| External | Google Places·Routes·Maps, Open-Meteo, OpenAI Responses API |
+| External | Google Places·Routes·Maps, Open-Meteo, OpenAI Responses API, Frankfurter 환율 |
 
 ## 아키텍처
 
@@ -85,6 +91,8 @@ flowchart LR
     API --> AUTH[Auth / User]
     API --> PLAN[Trip / Itinerary]
     API --> COMMUNITY[Community]
+    API --> DISCOVERY[Content Import / Wishlist]
+    DISCOVERY --> PLACES[Google Places Matching]
     PLAN --> OPT[Optimization Engine]
     OPT --> MATRIX[Route Matrix Provider]
     MATRIX --> SIMPLE[Simple Distance]
@@ -94,6 +102,7 @@ flowchart LR
     PLAN --> POSTGRES[(PostgreSQL)]
     API --> WEATHER[Open-Meteo]
     API --> AI[Rule-based / OpenAI]
+    API --> FX[ExchangeRate Provider / Frankfurter]
 ```
 
 주요 Backend 패키지는 다음과 같습니다.
@@ -104,6 +113,8 @@ com.routeplan
 ├─ user            계정·프로필·비밀번호
 ├─ trip            여행과 선택 장소
 ├─ place           장소·영업시간·외부 검색
+├─ contentimport   SNS·웹 가져오기 작업·장소 후보 매칭
+├─ wishlist        저장 장소·우선순위·여행 스냅샷 생성
 ├─ optimization    경로 탐색과 제약 일정 계산
 ├─ itinerary       최적화 실행·버전·재최적화
 ├─ community       공개 Route·댓글·후기·신고
@@ -194,12 +205,15 @@ npm run dev
 
 기본 `.env.example`은 과금 없이 실행할 수 있도록 외부 장소 검색과 실제 경로 Provider가 비활성화되어 있습니다.
 
+Instagram URL 가져오기는 비공식 크롤링을 하지 않습니다. 게시물의 캡션이나 장소 목록을 함께 붙여 넣어 사용하며, 일반 웹 URL 가져오기는 공개 HTTP(S) HTML만 제한된 크기로 읽고 내부 네트워크 주소와 리디렉션을 차단합니다. 장소 후보 자동 매칭은 `ROUTEPLAN_PLACE_PROVIDER=GOOGLE`일 때 활성화되고, 비활성 상태에서도 추출된 이름은 확인할 수 있습니다.
+
 | 기능 | 주요 설정 | 기본값 |
 |---|---|---|
 | 장소 검색 | `ROUTEPLAN_PLACE_PROVIDER`, `GOOGLE_MAPS_API_KEY` | `DISABLED` |
 | 실제 경로 Matrix | `ROUTEPLAN_ROUTE_PROVIDER`, `GOOGLE_MAPS_API_KEY` | `SIMPLE` |
 | 브라우저 Google 지도 | `GOOGLE_MAPS_BROWSER_KEY` | 미설정 |
 | 자연어 AI | `ROUTEPLAN_AI_PROVIDER`, `OPENAI_API_KEY` | `RULE_BASED` |
+| 참고 환율 | `ROUTEPLAN_EXCHANGE_PROVIDER` | `FRANKFURTER` |
 | Redis·PostGIS 경로 캐시 | `ROUTEPLAN_ROUTE_CACHE_ENABLED`, `ROUTEPLAN_ROUTE_DB_CACHE_ENABLED` | `false` |
 | 시간대별 전역 최적화 | `ROUTEPLAN_TIME_DEPENDENT_GLOBAL_ENABLED` | `false` |
 
@@ -212,6 +226,8 @@ npm run dev
 - `.env.production.example`: 운영 배포
 
 API 키는 커밋하지 마세요. Google 서버 키와 브라우저 키는 분리하고, 브라우저 키에는 허용 도메인과 Maps JavaScript API 제한을 적용해야 합니다. 자세한 설정은 [실제 데이터·개인화·장부 안내](docs/advanced-integrations.md)를 참고하세요.
+
+RoutePlan 2.0의 재사용 결정, 엔티티·API와 단계별 구현 범위는 [RoutePlan 2.0 Phase 1 분석](docs/routeplan-2-phase1.md), 직접 일정 편집·부분 재계산·환율 설계는 [RoutePlan 2.0 Phase 2](docs/routeplan-2-phase2.md)에 정리되어 있습니다.
 
 ## 전 세계 샘플 데이터
 
@@ -321,7 +337,7 @@ API 계약은 실행 중인 [Swagger UI](http://localhost:8180/swagger-ui.html)�
 - `Exact Search`는 조합 폭증을 막기 위해 최대 10개 장소로 제한됩니다.
 - 시간대별 전역 최적화는 후보·날짜·Matrix·상태·실행시간 안전 상한을 넘으면 기본 방식으로 전환됩니다.
 - 날씨 예보 범위 밖의 먼 미래 날짜와 제공되지 않은 공휴일 예외는 자동 확정하지 않습니다.
-- 예산과 실제 지출은 사용자가 입력하며 실시간 환율·결제·인원별 정산은 지원하지 않습니다.
+- 예산과 실제 지출은 사용자가 입력합니다. 환율은 결제 환율이 아닌 일 단위 참고 환율이며 카드 수수료·환전 스프레드는 반영하지 않습니다. 인원별 정산은 후속 Phase에서 지원합니다.
 - OAuth와 MFA, 다중 턴 AI 대화, AI의 장소 자동 추가는 아직 지원하지 않습니다.
 - 운영 모니터링은 단일 서버 기준이며 외부 Uptime 감시, 중앙 로그, 장기 원격 보존은 별도 구성이 필요합니다.
 
