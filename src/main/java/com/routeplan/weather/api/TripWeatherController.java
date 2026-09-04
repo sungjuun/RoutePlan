@@ -42,7 +42,7 @@ public class TripWeatherController {
     @GetMapping("/auto-refresh")
     public com.routeplan.weather.application.WeatherRefreshSettings.Settings refreshSettings(
             @PathVariable Long tripId, @AuthenticationPrincipal RoutePlanPrincipal principal) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripViewer(tripId, principal.userId());
         return refreshSettings.get(tripId);
     }
 
@@ -50,7 +50,7 @@ public class TripWeatherController {
     public com.routeplan.weather.application.WeatherRefreshSettings.Settings refreshSettings(
             @PathVariable Long tripId, @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody AutoRefreshRequest request) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         return refreshSettings.set(tripId, request.enabled());
     }
 
@@ -61,7 +61,7 @@ public class TripWeatherController {
             @PathVariable Long tripId,
             @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripViewer(tripId, principal.userId());
         return weatherService.get(tripId);
     }
 
@@ -71,7 +71,7 @@ public class TripWeatherController {
             @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody ReplaceForecastsRequest request
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         return weatherService.replace(
                 tripId,
                 request.forecasts().stream().map(ForecastRequest::toCommand).toList()

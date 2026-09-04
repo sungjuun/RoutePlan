@@ -2,6 +2,7 @@ package com.routeplan.trip.application;
 
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
+import com.routeplan.collaboration.domain.TripMemberRole;
 import com.routeplan.place.domain.Place;
 import com.routeplan.place.domain.PlaceEnvironment;
 import com.routeplan.place.persistence.PlaceRepository;
@@ -12,7 +13,6 @@ import com.routeplan.trip.domain.TripPace;
 import com.routeplan.trip.domain.TripStatus;
 import com.routeplan.trip.persistence.TripPlaceRepository;
 import com.routeplan.trip.persistence.TripRepository;
-import com.routeplan.trip.persistence.TripRepository.TripListProjection;
 import com.routeplan.user.domain.User;
 import com.routeplan.user.persistence.UserRepository;
 import java.math.BigDecimal;
@@ -70,7 +70,9 @@ public class TripService {
                 command.dailyEndTime() == null ? LocalTime.of(20, 0) : command.dailyEndTime(),
                 command.pace() == null ? TripPace.STANDARD : command.pace()
         );
-        return toResult(tripRepository.save(trip), List.of());
+        Trip saved = tripRepository.saveAndFlush(trip);
+        addOwnerMembership(saved.getId(), user.getId());
+        return toResult(saved, List.of());
     }
 
     @Transactional
@@ -101,7 +103,7 @@ public class TripService {
             throw new RoutePlanException(ErrorCode.PLACE_NOT_FOUND);
         }
 
-        Trip trip = tripRepository.save(Trip.create(
+        Trip trip = tripRepository.saveAndFlush(Trip.create(
                 user,
                 command.name(),
                 command.startDate(),
@@ -114,6 +116,7 @@ public class TripService {
                 command.dailyEndTime() == null ? LocalTime.of(20, 0) : command.dailyEndTime(),
                 command.pace() == null ? TripPace.STANDARD : command.pace()
         ));
+        addOwnerMembership(trip.getId(), user.getId());
         List<TripPlace> tripPlaces = uniqueCommands.values().stream()
                 .map(placeCommand -> new TripPlace(
                         trip,
@@ -137,9 +140,31 @@ public class TripService {
 
     @Transactional(readOnly = true)
     public List<TripSummaryResult> list(Long userId) {
-        return tripRepository.findAllSummariesByUserId(userId).stream()
-                .map(TripSummaryResult::from)
-                .toList();
+        return jdbc.query("""
+                SELECT trip.id, trip.user_id, trip.name, trip.start_date, trip.end_date,
+                       trip.accommodation_name, trip.transport_mode, trip.pace, trip.status,
+                       trip.created_at, trip.updated_at,
+                       (SELECT count(*) FROM trip_places place WHERE place.trip_id=trip.id) AS place_count,
+                       CASE WHEN trip.user_id=? THEN 'OWNER' ELSE member.role END AS access_role
+                FROM trips trip
+                LEFT JOIN trip_members member ON member.trip_id=trip.id AND member.user_id=?
+                WHERE trip.user_id=? OR member.user_id IS NOT NULL
+                ORDER BY trip.updated_at DESC
+                """, (rs, row) -> new TripSummaryResult(
+                rs.getLong("id"),
+                rs.getLong("user_id"),
+                TripMemberRole.valueOf(rs.getString("access_role")),
+                rs.getString("name"),
+                rs.getObject("start_date", LocalDate.class),
+                rs.getObject("end_date", LocalDate.class),
+                rs.getString("accommodation_name"),
+                TransportMode.valueOf(rs.getString("transport_mode")),
+                TripPace.valueOf(rs.getString("pace")),
+                TripStatus.valueOf(rs.getString("status")),
+                rs.getLong("place_count"),
+                rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("updated_at").toInstant()
+        ), userId, userId, userId);
     }
 
     @Transactional
@@ -294,6 +319,14 @@ public class TripService {
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_NOT_FOUND));
     }
 
+    private void addOwnerMembership(Long tripId, Long userId) {
+        jdbc.update("""
+                INSERT INTO trip_members(trip_id,user_id,role,invited_by)
+                VALUES(?,?,'OWNER',?)
+                ON CONFLICT(trip_id,user_id) DO NOTHING
+                """, tripId, userId, userId);
+    }
+
     private TripResult toResult(Trip trip, List<TripPlace> tripPlaces) {
         List<TripPlaceResult> places = tripPlaces.stream()
                 .map(tripPlace -> {
@@ -429,6 +462,8 @@ public class TripService {
 
     public record TripSummaryResult(
             Long id,
+            Long ownerId,
+            TripMemberRole accessRole,
             String name,
             LocalDate startDate,
             LocalDate endDate,
@@ -439,24 +474,7 @@ public class TripService {
             long placeCount,
             Instant createdAt,
             Instant updatedAt
-    ) {
-
-        static TripSummaryResult from(TripListProjection trip) {
-            return new TripSummaryResult(
-                    trip.getId(),
-                    trip.getName(),
-                    trip.getStartDate(),
-                    trip.getEndDate(),
-                    trip.getAccommodationName(),
-                    trip.getTransportMode(),
-                    trip.getPace(),
-                    trip.getStatus(),
-                    trip.getPlaceCount(),
-                    trip.getCreatedAt(),
-                    trip.getUpdatedAt()
-            );
-        }
-    }
+    ) {}
 
     public record TripPlaceResult(
             Long placeId,

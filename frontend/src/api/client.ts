@@ -2,6 +2,7 @@ import type {
   ApiErrorBody,
   ApplyNaturalLanguageConstraintsInput,
   AuthSession,
+  BudgetCurrency,
   CopyRouteInput,
   CreateTripInput,
   Itinerary,
@@ -18,6 +19,7 @@ import type {
   SharedRouteDetail,
   SharedRoutePage,
   SharedRouteSort,
+  SharedExpense,
   SignupInput,
   Trip,
   TripSummary,
@@ -32,6 +34,11 @@ import type {
   WishlistPriority,
   ContentImport,
   ExchangeRateQuote,
+  NearbyPlaceRecommendation,
+  TripCollaboration,
+  TripMemberRole,
+  TripSettlement,
+  TripVoteValue,
 } from '../types'
 
 interface CsrfView {
@@ -223,6 +230,63 @@ export const api = {
   getTrips: () => request<TripSummary[]>('/trips'),
 
   getTrip: (tripId: number) => request<Trip>(`/trips/${tripId}`),
+
+  getTripCollaboration: (tripId: number) =>
+    request<TripCollaboration>(`/trips/${tripId}/collaboration`),
+
+  addTripMember: (tripId: number, email: string, role: Exclude<TripMemberRole, 'OWNER'>) =>
+    request<TripCollaboration>(`/trips/${tripId}/members`, json('POST', { email, role })),
+
+  updateTripMember: (tripId: number, memberId: number, role: Exclude<TripMemberRole, 'OWNER'>) =>
+    request<TripCollaboration>(`/trips/${tripId}/members/${memberId}`, json('PATCH', { role })),
+
+  removeTripMember: (tripId: number, memberId: number) =>
+    request<TripCollaboration>(`/trips/${tripId}/members/${memberId}`, { method: 'DELETE' }),
+
+  voteTripPlace: (tripId: number, placeId: number, value: TripVoteValue) =>
+    request<TripCollaboration>(`/trips/${tripId}/places/${placeId}/vote`, json('PUT', { value })),
+
+  removeTripPlaceVote: (tripId: number, placeId: number) =>
+    request<TripCollaboration>(`/trips/${tripId}/places/${placeId}/vote`, { method: 'DELETE' }),
+
+  getTripSettlement: (tripId: number) =>
+    request<TripSettlement>(`/trips/${tripId}/settlement`),
+
+  addSharedExpense: (tripId: number, input: {
+    requestId: string
+    date: string
+    category: SharedExpense['category']
+    description: string
+    amountMinor: number
+    placeId: number | null
+    currency: BudgetCurrency
+    payerUserId: number
+    participantUserIds: number[]
+  }) => request<TripSettlement>(`/trips/${tripId}/settlement/expenses`, json('POST', input)),
+
+  removeSharedExpense: (tripId: number, expenseId: number) =>
+    request<TripSettlement>(`/trips/${tripId}/settlement/expenses/${expenseId}`, { method: 'DELETE' }),
+
+  getNearbyRecommendations: (tripId: number, input: {
+    date: string
+    currentTime: string
+    currentLatitude: number
+    currentLongitude: number
+    nextPlaceId?: number
+    availableMinutes: number
+    maxResults?: number
+  }) => {
+    const params = new URLSearchParams({
+      date: input.date,
+      currentTime: input.currentTime,
+      currentLatitude: String(input.currentLatitude),
+      currentLongitude: String(input.currentLongitude),
+      availableMinutes: String(input.availableMinutes),
+      maxResults: String(input.maxResults ?? 5),
+    })
+    if (input.nextPlaceId != null) params.set('nextPlaceId', String(input.nextPlaceId))
+    return request<NearbyPlaceRecommendation[]>(`/trips/${tripId}/nearby-recommendations?${params}`)
+  },
 
   updateTrip: (tripId: number, input: CreateTripInput) =>
     request<Trip>(`/trips/${tripId}`, json('PATCH', input)),

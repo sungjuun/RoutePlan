@@ -64,7 +64,7 @@ public class ItineraryController {
             @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody ManualEditRequest request
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         return manualEditingService.preview(tripId, request.toCommand());
     }
 
@@ -74,7 +74,7 @@ public class ItineraryController {
             @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody ManualEditRequest request
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         ItineraryView result = manualEditingService.apply(tripId, request.toCommand());
         return ResponseEntity.created(URI.create("/api/v1/itineraries/" + result.itineraryId())).body(result);
     }
@@ -86,7 +86,7 @@ public class ItineraryController {
             @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody ReoptimizeRequest request
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         ItineraryView result = reoptimizationService.reoptimize(
                 tripId,
                 algorithm,
@@ -103,7 +103,7 @@ public class ItineraryController {
             @RequestParam(defaultValue = "NEAREST_NEIGHBOR") OptimizationAlgorithm algorithm,
             @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         ItineraryView result = optimizationService.optimize(tripId, algorithm);
         return ResponseEntity.created(
                 URI.create("/api/v1/itineraries/" + result.itineraryId())
@@ -115,7 +115,7 @@ public class ItineraryController {
             @PathVariable Long tripId,
             @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripViewer(tripId, principal.userId());
         return queryService.getLatest(tripId);
     }
 
@@ -124,7 +124,7 @@ public class ItineraryController {
             @PathVariable Long itineraryId,
             @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
-        accessService.requireItineraryOwner(itineraryId, principal.userId());
+        accessService.requireItineraryViewer(itineraryId, principal.userId());
         return queryService.get(itineraryId);
     }
 

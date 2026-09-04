@@ -82,6 +82,14 @@ public class AccountSecurityService {
         Account account = lockAccount(principal.userId());
         requireCurrentPassword(principal, account, currentPassword);
         revokeAccountAccess(account);
+        jdbc.update("""
+                DELETE FROM trip_expenses expense
+                WHERE expense.payer_user_id = ? OR expense.created_by_user_id = ?
+                   OR EXISTS (
+                       SELECT 1 FROM trip_expense_participants participant
+                       WHERE participant.expense_id = expense.id AND participant.user_id = ?
+                   )
+                """, account.id(), account.id(), account.id());
         int removed = jdbc.update("DELETE FROM users WHERE id = ?", account.id());
         if (removed != 1) throw new RoutePlanException(ErrorCode.USER_NOT_FOUND);
     }

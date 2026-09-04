@@ -19,26 +19,26 @@ public class TripSpendingController {
     public TripSpendingController(TripSpendingService service, ResourceAccessService access) { this.service = service; this.access = access; }
     @GetMapping
     public Spending get(@PathVariable long tripId, @AuthenticationPrincipal RoutePlanPrincipal user) {
-        access.requireTripOwner(tripId, user.userId()); return service.get(tripId);
+        access.requireTripViewer(tripId, user.userId()); return service.get(tripId);
     }
     @PutMapping("/allocations")
     public Spending limits(@PathVariable long tripId, @AuthenticationPrincipal RoutePlanPrincipal user, @Valid @RequestBody Limits body) {
-        access.requireTripOwner(tripId, user.userId());
+        access.requireTripEditor(tripId, user.userId());
         return service.allocations(tripId, body.allocations().stream().map(v -> new Allocation(v.date(), v.category(), v.limitMinor().longValueExact())).toList(), body.currency());
     }
     @PostMapping("/expenses")
     public Spending create(@PathVariable long tripId, @AuthenticationPrincipal RoutePlanPrincipal user, @Valid @RequestBody ExpenseRequest body) {
-        access.requireTripOwner(tripId, user.userId()); return save(tripId, null, body);
+        access.requireTripEditor(tripId, user.userId()); return save(tripId, user.userId(), null, body);
     }
     @PutMapping("/expenses/{expenseId}")
     public Spending update(@PathVariable long tripId, @PathVariable long expenseId, @AuthenticationPrincipal RoutePlanPrincipal user, @Valid @RequestBody ExpenseRequest body) {
-        access.requireTripOwner(tripId, user.userId()); return save(tripId, expenseId, body);
+        access.requireTripEditor(tripId, user.userId()); return save(tripId, user.userId(), expenseId, body);
     }
     @DeleteMapping("/expenses/{expenseId}")
     public Spending delete(@PathVariable long tripId, @PathVariable long expenseId, @AuthenticationPrincipal RoutePlanPrincipal user) {
-        access.requireTripOwner(tripId, user.userId()); return service.delete(tripId, expenseId);
+        access.requireTripEditor(tripId, user.userId()); return service.delete(tripId, user.userId(), expenseId);
     }
-    private Spending save(long tripId, Long id, ExpenseRequest b) { return service.save(tripId,id,b.requestId(),b.date(),b.category(),b.description(),b.amountMinor().longValueExact(), b.placeId(), b.currency()); }
+    private Spending save(long tripId, long actorId, Long id, ExpenseRequest b) { return service.save(tripId,actorId,id,b.requestId(),b.date(),b.category(),b.description(),b.amountMinor().longValueExact(), b.placeId(), b.currency()); }
     public record Limits(@NotNull com.routeplan.budget.domain.BudgetCurrency currency, @NotNull @Size(max=100) List<@NotNull @Valid LimitRequest> allocations) {}
     public record LimitRequest(LocalDate date, Category category,
             @NotNull @DecimalMin("0") @DecimalMax("1000000000000") @Digits(integer=13,fraction=0) BigDecimal limitMinor) {}

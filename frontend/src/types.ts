@@ -24,6 +24,9 @@ export type BudgetCurrency = 'KRW' | 'JPY' | 'USD' | 'EUR' | 'GBP' | 'CNY'
 export type WishlistPriority = 'MUST' | 'HIGH' | 'NORMAL' | 'LOW'
 export type ContentSourceType = 'MANUAL' | 'INSTAGRAM' | 'YOUTUBE' | 'TIKTOK' | 'BLOG' | 'COMMUNITY' | 'GENERIC_WEB'
 export type ContentImportStatus = 'RECEIVED' | 'PROCESSING' | 'PLACE_MATCHING' | 'COMPLETED' | 'AWAITING_INPUT' | 'FAILED'
+export type TripMemberRole = 'OWNER' | 'EDITOR' | 'VIEWER'
+export type TripVoteValue = 'YES' | 'NO'
+export type VotePriorityBand = 'MUST' | 'HIGH' | 'NORMAL' | 'LOW' | 'UNVOTED'
 
 export interface TripBudgetInput {
   currency: BudgetCurrency
@@ -118,6 +121,8 @@ export interface Trip {
 
 export interface TripSummary {
   id: number
+  ownerId?: number
+  accessRole?: TripMemberRole
   name: string
   startDate: string
   endDate: string
@@ -128,6 +133,99 @@ export interface TripSummary {
   placeCount: number
   createdAt: string
   updatedAt: string
+}
+
+export interface TripMember {
+  memberId: number
+  userId: number
+  nickname: string
+  email: string | null
+  role: TripMemberRole
+  joinedAt: string
+}
+
+export interface TripPlaceVote {
+  placeId: number
+  placeName: string
+  mustVisit: boolean
+  configuredPriority: number
+  effectivePriority: number
+  priorityBand: VotePriorityBand
+  yesCount: number
+  noCount: number
+  pendingCount: number
+  myVote: TripVoteValue | null
+}
+
+export interface TripCollaboration {
+  tripId: number
+  currentUserId: number
+  currentRole: TripMemberRole
+  members: TripMember[]
+  places: TripPlaceVote[]
+}
+
+export interface SettlementShare {
+  userId: number
+  nickname: string
+  shareMinor: number
+}
+
+export interface SharedExpense {
+  expenseId: number
+  requestId: string
+  date: string
+  category: 'ACCOMMODATION' | 'FOOD' | 'TRANSPORT' | 'ACTIVITY' | 'SHOPPING' | 'OTHER'
+  description: string
+  amountMinor: number
+  placeId: number | null
+  placeName: string | null
+  payerUserId: number | null
+  payerNickname: string
+  createdByUserId: number | null
+  participants: SettlementShare[]
+}
+
+export interface SettlementBalance {
+  userId: number
+  nickname: string
+  paidMinor: number
+  owedMinor: number
+  netMinor: number
+}
+
+export interface SettlementTransfer {
+  fromUserId: number
+  fromNickname: string
+  toUserId: number
+  toNickname: string
+  amountMinor: number
+}
+
+export interface TripSettlement {
+  tripId: number
+  currency: BudgetCurrency
+  expenses: SharedExpense[]
+  balances: SettlementBalance[]
+  transfers: SettlementTransfer[]
+  exactMinimum: boolean
+}
+
+export interface NearbyPlaceRecommendation {
+  placeId: number
+  name: string
+  category: string | null
+  latitude: number
+  longitude: number
+  distanceFromCurrentMeters: number
+  distanceToNextMeters: number
+  detourMeters: number
+  walkingMinutes: number
+  stayMinutes: number
+  requiredMinutes: number
+  openingHoursKnown: boolean
+  interestMatch: boolean
+  score: number
 }
 
 export interface Place {

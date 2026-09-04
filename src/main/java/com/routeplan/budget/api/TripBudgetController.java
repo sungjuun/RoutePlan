@@ -38,7 +38,7 @@ public class TripBudgetController {
 
     @GetMapping
     public BudgetView get(@PathVariable Long tripId, @AuthenticationPrincipal RoutePlanPrincipal principal) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripViewer(tripId, principal.userId());
         return service.get(tripId);
     }
 
@@ -48,7 +48,7 @@ public class TripBudgetController {
             @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody BudgetRequest request
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         return service.replace(tripId,
                 new BudgetSettings(request.currency(), toMinor(request.limitMinor()),
                         request.fixedCostMinor().longValueExact()),

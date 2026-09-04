@@ -1,8 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Compass, LoaderCircle, MapPinned, MessageSquareText, Route, Settings2, UsersRound } from 'lucide-react'
+import { Compass, LoaderCircle, MapPinned, MessageSquareText, Route, Settings2, UserRoundPlus, UsersRound } from 'lucide-react'
 import { ApiError, api } from './api/client'
 import { AppHeader } from './components/AppHeader'
 import { CommunityWorkspace } from './components/CommunityWorkspace'
+import { CollaborationWorkspace } from './components/CollaborationWorkspace'
 import { ItineraryWorkspace } from './components/ItineraryWorkspace'
 import { LandingPage } from './components/LandingPage'
 import { DiscoveryPage } from './components/DiscoveryPage'
@@ -23,7 +24,7 @@ const AuthPage = lazy(() => import('./components/AuthPage').then(module => ({ de
 const AccountLinkPage = lazy(() => import('./components/AccountLinkPage').then(module => ({ default: module.AccountLinkPage })))
 const NotificationCenter = lazy(() => import('./components/NotificationCenter').then(module => ({ default: module.NotificationCenter })))
 
-type Section = 'places' | 'itinerary' | 'settings' | 'community' | 'natural-language'
+type Section = 'places' | 'itinerary' | 'settings' | 'collaboration' | 'community' | 'natural-language'
 type PublicPage = 'home' | 'discover' | 'community' | 'auth' | 'create-trip' | 'trips' | 'profile' | 'workspace'
 type AuthMode = 'login' | 'signup'
 type AfterAuth = 'home' | 'discover' | 'create-trip' | 'trips' | 'profile' | 'requested-trip'
@@ -395,6 +396,7 @@ export function App() {
           <button className={section === 'itinerary' ? 'active' : ''} onClick={() => setSection('itinerary')}><span><Compass size={19} /></span><span><strong>일정 보기</strong><small>{itinerary ? `버전 ${itinerary.version}` : '계산 전'}</small></span></button>
           <button className={section === 'natural-language' ? 'active' : ''} onClick={() => setSection('natural-language')}><span><MessageSquareText size={19} /></span><span><strong>자연어 조건</strong><small>말로 취향 설정</small></span></button>
           <button className={section === 'settings' ? 'active' : ''} onClick={() => setSection('settings')}><span><Settings2 size={19} /></span><span><strong>여행 설정</strong><small>시간·숙소·이동</small></span></button>
+          <button className={section === 'collaboration' ? 'active' : ''} onClick={() => setSection('collaboration')}><span><UserRoundPlus size={19} /></span><span><strong>동행 여행</strong><small>투표·정산·주변 추천</small></span></button>
           <button className={section === 'community' ? 'active' : ''} onClick={() => setSection('community')}><span><UsersRound size={19} /></span><span><strong>루트 커뮤니티</strong><small>공개·탐색·가져오기</small></span></button>
         </nav>
         <main className="workspace-main">
@@ -402,6 +404,7 @@ export function App() {
           {section === 'itinerary' && <ItineraryWorkspace trip={trip} itinerary={itinerary} previousItinerary={previousItinerary} itineraryPlaces={itineraryPlaces} onItineraryChanged={handleItineraryChanged} onError={reportError} onGoToPlaces={() => setSection('places')} />}
           {section === 'settings' && <TripSetup trip={trip} embedded onUpdated={(next) => { setTrip(next); notify('success', '여행 설정을 저장했습니다.') }} onError={reportError} />}
           {section === 'natural-language' && <NaturalLanguageWorkspace trip={trip} onTripChanged={setTrip} onGoToPlaces={() => setSection('places')} onGoToItinerary={() => setSection('itinerary')} onError={reportError} />}
+          {section === 'collaboration' && <CollaborationWorkspace trip={trip} user={user} onTripChanged={(next, message) => { setTrip(next); notify('success', message) }} onNotify={notify} onError={reportError} />}
           {section === 'community' && <CommunityWorkspace user={user} trip={trip} itinerary={itinerary} onTripCopied={handleRouteCopied} onNotify={notify} onError={reportError} />}
         </main>
       </div>

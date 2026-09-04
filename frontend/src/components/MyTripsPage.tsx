@@ -72,7 +72,7 @@ export function MyTripsPage({ onOpenTrip, onNewTrip, onError }: Props) {
           <div className="my-trip-grid">
             {trips.map((trip, index) => (
               <button key={trip.id} className="my-trip-card panel" onClick={() => onOpenTrip(trip.id)}>
-                <div className={`my-trip-cover trip-cover-${(index % 4) + 1}`}><span>{trip.status === 'OPTIMIZED' ? '일정 완성' : '계획 중'}</span><MapPinned size={28} /></div>
+                <div className={`my-trip-cover trip-cover-${(index % 4) + 1}`}><span>{!trip.accessRole || trip.accessRole === 'OWNER' ? (trip.status === 'OPTIMIZED' ? '일정 완성' : '계획 중') : `동행 · ${trip.accessRole === 'EDITOR' ? '편집자' : '조회자'}`}</span><MapPinned size={28} /></div>
                 <div className="my-trip-card-body">
                   <small>TRIP #{trip.id}</small><h3>{trip.name}</h3>
                   <p><CalendarDays size={14} /> {dateLabel(trip.startDate)}{trip.startDate !== trip.endDate ? ` – ${dateLabel(trip.endDate)}` : ''}</p>

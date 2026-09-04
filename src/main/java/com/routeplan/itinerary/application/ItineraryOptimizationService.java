@@ -1,6 +1,7 @@
 package com.routeplan.itinerary.application;
 
 import com.routeplan.budget.application.BudgetInput;
+import com.routeplan.collaboration.application.TripCollaborationService;
 import com.routeplan.optimization.constraint.ScheduleBudget;
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
@@ -60,6 +61,7 @@ public class ItineraryOptimizationService {
     private final TripWeatherForecastRepository weatherRepository;
     private final WeatherSuitabilityPolicy weatherPolicy;
     private final RoutePlanMetrics metrics;
+    private final TripCollaborationService collaborationService;
     private final TransactionTemplate readTransaction;
     private final TransactionTemplate writeTransaction;
     @org.springframework.beans.factory.annotation.Autowired
@@ -80,6 +82,7 @@ public class ItineraryOptimizationService {
             TripWeatherForecastRepository weatherRepository,
             WeatherSuitabilityPolicy weatherPolicy,
             RoutePlanMetrics metrics,
+            TripCollaborationService collaborationService,
             PlatformTransactionManager transactionManager
     ) {
         this.tripRepository = tripRepository;
@@ -92,6 +95,7 @@ public class ItineraryOptimizationService {
         this.weatherRepository = weatherRepository;
         this.weatherPolicy = weatherPolicy;
         this.metrics = metrics;
+        this.collaborationService = collaborationService;
         this.readTransaction = new TransactionTemplate(transactionManager);
         this.readTransaction.setReadOnly(true);
         this.writeTransaction = new TransactionTemplate(transactionManager);
@@ -277,6 +281,7 @@ public class ItineraryOptimizationService {
     }
 
     private OptimizationSnapshot buildSnapshot(Trip trip, List<TripPlace> tripPlaces) {
+        Map<Long, Integer> effectivePriorities = collaborationService.effectivePriorities(trip.getId());
         Location accommodation = Location.of(
                 trip.getAccommodationLatitude(),
                 trip.getAccommodationLongitude()
@@ -329,6 +334,8 @@ public class ItineraryOptimizationService {
                             .map(tripPlace -> toScheduleCandidate(
                                     trip,
                                     tripPlace,
+                                    effectivePriorities.getOrDefault(
+                                            tripPlace.getPlace().getId(), tripPlace.getPriority()),
                                     openingHours.get(new OpeningHourKey(
                                             tripPlace.getPlace().getId(), visitDate.getDayOfWeek()
                                     )),
@@ -353,6 +360,7 @@ public class ItineraryOptimizationService {
     private ScheduleCandidate toScheduleCandidate(
             Trip trip,
             TripPlace tripPlace,
+            int effectivePriority,
             PlaceOpeningHour openingHour,
             WeatherSnapshot weather
     ) {
@@ -362,7 +370,7 @@ public class ItineraryOptimizationService {
                 place.getId(),
                 place.getName(),
                 Location.of(place.getLatitude(), place.getLongitude()),
-                tripPlace.getPriority(),
+                effectivePriority,
                 tripPlace.isMustVisit(),
                 openingHour == null ? null : openingHour.getOpenTime(),
                 openingHour == null ? null : openingHour.getCloseTime(),

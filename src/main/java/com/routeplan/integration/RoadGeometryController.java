@@ -22,7 +22,7 @@ public class RoadGeometryController {
     @PostMapping("/itineraries/{itineraryId}/road-geometry")
     public RoadGeometryService.Geometry geometry(@PathVariable long itineraryId, @RequestParam LocalDate date,
             @AuthenticationPrincipal RoutePlanPrincipal user) {
-        access.requireItineraryOwner(itineraryId, user.userId());
+        access.requireItineraryViewer(itineraryId, user.userId());
         return service.fetch(itineraryId, date);
     }
 }

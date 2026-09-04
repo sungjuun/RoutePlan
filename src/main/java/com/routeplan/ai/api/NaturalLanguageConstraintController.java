@@ -46,7 +46,7 @@ public class NaturalLanguageConstraintController {
             @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody PreviewRequest request
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripViewer(tripId, principal.userId());
         return service.preview(tripId, request.text().trim());
     }
 
@@ -56,7 +56,7 @@ public class NaturalLanguageConstraintController {
             @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody ApplyRequest request
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         return service.apply(tripId, request.toProposal());
     }
 

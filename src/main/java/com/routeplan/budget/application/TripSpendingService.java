@@ -21,7 +21,9 @@ public class TripSpendingService {
     public Spending get(long tripId) {
         Trip trip = require(tripId, false);
         var expenses = jdbc.query("""
-                SELECT expense.*, place.name AS place_name
+                SELECT expense.*, place.name AS place_name,
+                       (SELECT count(*) FROM trip_expense_participants participant
+                        WHERE participant.expense_id=expense.id) AS participant_count
                 FROM trip_expenses expense
                 LEFT JOIN places place ON place.id=expense.place_id
                 WHERE expense.trip_id=? ORDER BY expense.spend_date, expense.id
@@ -29,7 +31,9 @@ public class TripSpendingService {
                 (rs, row) -> new Expense(rs.getLong("id"), rs.getObject("request_id", UUID.class),
                         rs.getObject("spend_date", LocalDate.class), Category.valueOf(rs.getString("category")),
                         rs.getString("description"), rs.getLong("amount_minor"),
-                        rs.getObject("place_id", Long.class), rs.getString("place_name")), tripId);
+                        rs.getObject("place_id", Long.class), rs.getString("place_name"),
+                        rs.getObject("payer_user_id", Long.class), rs.getString("payer_nickname_snapshot"),
+                        rs.getInt("participant_count")), tripId);
         var allocations = jdbc.query("SELECT * FROM trip_budget_allocations WHERE trip_id=? ORDER BY spend_date NULLS FIRST, category NULLS FIRST",
                 (rs, row) -> new Allocation(rs.getObject("spend_date", LocalDate.class),
                         rs.getString("category") == null ? null : Category.valueOf(rs.getString("category")), rs.getLong("limit_minor")), tripId);
@@ -83,7 +87,7 @@ public class TripSpendingService {
     }
 
     @Transactional
-    public Spending save(long tripId, Long expenseId, UUID requestId, LocalDate date, Category category, String description, long amount, Long placeId, com.routeplan.budget.domain.BudgetCurrency currency) {
+    public Spending save(long tripId, long actorId, Long expenseId, UUID requestId, LocalDate date, Category category, String description, long amount, Long placeId, com.routeplan.budget.domain.BudgetCurrency currency) {
         Trip trip = require(tripId, true); validateDate(trip, date); BudgetSettings.requireAmount(amount);
         if (trip.getBudgetSettings().currency() != currency) throw new RoutePlanException(ErrorCode.CONFLICT, "통화가 변경되었습니다. 지출 장부를 새로고침해 주세요.");
         if (description == null || description.isBlank() || description.length() > 200 || category == null || requestId == null) throw new IllegalArgumentException("지출 입력을 확인해 주세요.");
@@ -94,24 +98,57 @@ public class TripSpendingService {
         }
         if (expenseId == null) {
             int inserted = jdbc.update("""
-                    INSERT INTO trip_expenses(trip_id,request_id,spend_date,category,description,amount_minor,place_id)
-                    VALUES(?,?,?,?,?,?,?) ON CONFLICT(trip_id,request_id) DO NOTHING
-                    """, tripId, requestId, date, category.name(), description.strip(), amount, placeId);
+                    INSERT INTO trip_expenses(
+                        trip_id,request_id,spend_date,category,description,amount_minor,place_id,
+                        payer_user_id,created_by_user_id,payer_nickname_snapshot
+                    )
+                    SELECT ?,?,?,?,?,?,?,?,?,nickname FROM users WHERE id=?
+                    ON CONFLICT(trip_id,request_id) DO NOTHING
+                    """, tripId, requestId, date, category.name(), description.strip(), amount, placeId,
+                    actorId, actorId, actorId);
             if (inserted == 0) {
                 boolean same = get(tripId).expenses().stream().anyMatch(e -> e.requestId().equals(requestId)
                         && e.date().equals(date) && e.category() == category && e.description().equals(description.strip())
                         && e.amountMinor() == amount && Objects.equals(e.placeId(), placeId));
                 if (!same) throw new RoutePlanException(ErrorCode.CONFLICT, "이미 사용한 지출 요청 ID입니다.");
+            } else {
+                Long insertedId = jdbc.queryForObject(
+                        "SELECT id FROM trip_expenses WHERE trip_id=? AND request_id=?",
+                        Long.class, tripId, requestId);
+                jdbc.update("""
+                        INSERT INTO trip_expense_participants(expense_id,user_id,nickname_snapshot,share_minor)
+                        SELECT ?,id,nickname,? FROM users WHERE id=?
+                        """, insertedId, amount, actorId);
             }
-        } else if (jdbc.update("UPDATE trip_expenses SET spend_date=?,category=?,description=?,amount_minor=?,place_id=? WHERE id=? AND trip_id=?",
-                date, category.name(), description.strip(), amount, placeId, expenseId, tripId) != 1) throw new RoutePlanException(ErrorCode.ACCESS_DENIED);
+        } else {
+            Integer participantCount = jdbc.queryForObject(
+                    "SELECT count(*) FROM trip_expense_participants WHERE expense_id=?",
+                    Integer.class, expenseId);
+            if (participantCount != null && participantCount > 1) {
+                throw new RoutePlanException(ErrorCode.CONFLICT,
+                        "공동 정산 지출은 동행 정산 화면에서 삭제한 뒤 다시 등록해 주세요.");
+            }
+            if (jdbc.update("UPDATE trip_expenses SET spend_date=?,category=?,description=?,amount_minor=?,place_id=? WHERE id=? AND trip_id=?",
+                    date, category.name(), description.strip(), amount, placeId, expenseId, tripId) != 1) {
+                throw new RoutePlanException(ErrorCode.ACCESS_DENIED);
+            }
+            jdbc.update("UPDATE trip_expense_participants SET share_minor=? WHERE expense_id=?", amount, expenseId);
+        }
         return get(tripId);
     }
 
     @Transactional
-    public Spending delete(long tripId, long expenseId) {
+    public Spending delete(long tripId, long actorId, long expenseId) {
         require(tripId, true);
-        if (jdbc.update("DELETE FROM trip_expenses WHERE id=? AND trip_id=?", expenseId, tripId) != 1) throw new RoutePlanException(ErrorCode.ACCESS_DENIED);
+        if (jdbc.update("""
+                DELETE FROM trip_expenses expense
+                WHERE expense.id=? AND expense.trip_id=?
+                  AND (expense.created_by_user_id=? OR EXISTS(
+                      SELECT 1 FROM trips trip WHERE trip.id=expense.trip_id AND trip.user_id=?
+                  ))
+                """, expenseId, tripId, actorId, actorId) != 1) {
+            throw new RoutePlanException(ErrorCode.ACCESS_DENIED);
+        }
         return get(tripId);
     }
     private Trip require(long id, boolean lock) { return (lock ? trips.findByIdForUpdate(id) : trips.findById(id)).orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_NOT_FOUND)); }
@@ -120,7 +157,8 @@ public class TripSpendingService {
     }
     public record Allocation(LocalDate date, Category category, long limitMinor) {}
     public record Expense(long id, UUID requestId, LocalDate date, Category category, String description,
-                          long amountMinor, Long placeId, String placeName) {}
+                          long amountMinor, Long placeId, String placeName, Long payerUserId,
+                          String payerNickname, int participantCount) {}
     public record DaySpending(LocalDate date, long expectedMinor, long spentMinor, long remainingExpectedMinor) {}
     public record Scope(LocalDate date, Category category, long limitMinor, long spentMinor, long remainingMinor) {}
     public record Spending(String currency, Long totalLimitMinor, long expectedMinor, long spentMinor,

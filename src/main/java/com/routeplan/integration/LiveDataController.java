@@ -28,22 +28,22 @@ public class LiveDataController {
     }
     @GetMapping("/trips/{tripId}/time-zone")
     public Map<String, String> zone(@PathVariable long tripId, @AuthenticationPrincipal RoutePlanPrincipal user) {
-        access.requireTripOwner(tripId, user.userId()); return Map.of("timeZoneId", weather.zone(tripId));
+        access.requireTripViewer(tripId, user.userId()); return Map.of("timeZoneId", weather.zone(tripId));
     }
     @PutMapping("/trips/{tripId}/time-zone")
     public Map<String, String> zone(@PathVariable long tripId, @AuthenticationPrincipal RoutePlanPrincipal user,
             @Valid @RequestBody ZoneRequest request) {
-        access.requireTripOwner(tripId, user.userId()); weather.setZone(tripId, request.timeZoneId());
+        access.requireTripEditor(tripId, user.userId()); weather.setZone(tripId, request.timeZoneId());
         return Map.of("timeZoneId", weather.zone(tripId));
     }
     @PostMapping("/trips/{tripId}/weather/refresh")
     public AutomaticWeatherService.RefreshResult weather(@PathVariable long tripId, @AuthenticationPrincipal RoutePlanPrincipal user) {
-        access.requireTripOwner(tripId, user.userId()); return weather.refresh(tripId);
+        access.requireTripEditor(tripId, user.userId()); return weather.refresh(tripId);
     }
     @PostMapping("/trips/{tripId}/places/{placeId}/opening-hours/refresh")
     public LiveOpeningHours.Hours hours(@PathVariable long tripId, @PathVariable long placeId,
             @AuthenticationPrincipal RoutePlanPrincipal user) {
-        access.requireTripOwner(tripId, user.userId());
+        access.requireTripEditor(tripId, user.userId());
         var place = places.findByTripIdAndPlaceId(tripId, placeId)
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.PLACE_NOT_FOUND));
         return hours.fetch(place.getPlace().getExternalPlaceId());

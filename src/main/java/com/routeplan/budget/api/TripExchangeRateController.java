@@ -42,7 +42,7 @@ public class TripExchangeRateController {
             @RequestParam(defaultValue = "KRW") BudgetCurrency quote,
             @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripViewer(tripId, principal.userId());
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new RoutePlanException(ErrorCode.TRIP_NOT_FOUND));
         ExchangeRateProvider.RateQuote result = provider.latest(trip.getBudgetSettings().currency(), quote);

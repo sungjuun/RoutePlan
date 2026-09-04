@@ -37,11 +37,15 @@ RoutePlan은 여행 장소와 사용자 조건을 바탕으로 **실행 가능�
 - 이메일 인증, 비밀번호 재설정·변경, 로그인 시도 제한
 - 프로필 이미지·닉네임·이메일 변경과 회원 탈퇴
 - 내가 만든 여행과 가져온 여행 목록
+- 초대받은 여행 목록과 `OWNER`·`EDITOR`·`VIEWER` 기반 공동 일정 편집
+- 동행자 장소 투표를 다음 일정 최적화의 우선순위에 반영
 - 완성된 일정을 변경 불가능한 공개 Route Snapshot으로 공유
 - 공개 Route 검색·정렬·좋아요·댓글·후기·신고·복사
 - 복사한 Route를 내 숙소·날짜·취향으로 다시 최적화
 - 날짜별·항목별 예산과 실제 지출 기록
 - 장소별 실제 지출 연결, 날짜별 예상/실제 비교와 현재 참고 환율 기준 원화 환산
+- 결제자·분담자별 N분의 1, 사용자별 순잔액과 최소 송금안
+- 현재 위치·다음 일정·빈 시간·영업시간·취향 기반 주변 장소 추천
 
 ### 캐시와 운영 안정성
 
@@ -64,6 +68,7 @@ SNS·웹 URL 또는 추천 국가·공개 Route 탐색
 → 일정 최적화
 → 날짜별 타임라인과 지도 확인
 → 장소 순서·날짜를 직접 편집하고 변경 영향 또는 추천 순서 확인
+→ 동행자와 장소를 투표하고 공동 일정·지출·최종 송금안 관리
 → 여행 중 남은 일정 재최적화
 → 일정 공개 또는 다른 사용자의 Route 복사
 ```
@@ -91,6 +96,7 @@ flowchart LR
     API --> AUTH[Auth / User]
     API --> PLAN[Trip / Itinerary]
     API --> COMMUNITY[Community]
+    API --> COLLAB[Collaboration / Settlement]
     API --> DISCOVERY[Content Import / Wishlist]
     DISCOVERY --> PLACES[Google Places Matching]
     PLAN --> OPT[Optimization Engine]
@@ -118,6 +124,7 @@ com.routeplan
 ├─ optimization    경로 탐색과 제약 일정 계산
 ├─ itinerary       최적화 실행·버전·재최적화
 ├─ community       공개 Route·댓글·후기·신고
+├─ collaboration   동행자·투표·정산·주변 추천
 ├─ weather         예보와 장소 환경 적합도
 ├─ budget          예상 비용·예산·실제 지출
 ├─ ai              자연어 조건 해석
@@ -227,7 +234,7 @@ Instagram URL 가져오기는 비공식 크롤링을 하지 않습니다. 게시
 
 API 키는 커밋하지 마세요. Google 서버 키와 브라우저 키는 분리하고, 브라우저 키에는 허용 도메인과 Maps JavaScript API 제한을 적용해야 합니다. 자세한 설정은 [실제 데이터·개인화·장부 안내](docs/advanced-integrations.md)를 참고하세요.
 
-RoutePlan 2.0의 재사용 결정, 엔티티·API와 단계별 구현 범위는 [RoutePlan 2.0 Phase 1 분석](docs/routeplan-2-phase1.md), 직접 일정 편집·부분 재계산·환율 설계는 [RoutePlan 2.0 Phase 2](docs/routeplan-2-phase2.md)에 정리되어 있습니다.
+RoutePlan 2.0의 재사용 결정, 엔티티·API와 단계별 구현 범위는 [RoutePlan 2.0 Phase 1 분석](docs/routeplan-2-phase1.md), 직접 일정 편집·부분 재계산·환율 설계는 [RoutePlan 2.0 Phase 2](docs/routeplan-2-phase2.md), 동행자·투표·정산·주변 추천은 [RoutePlan 2.0 Phase 3](docs/routeplan-2-phase3.md)에 정리되어 있습니다.
 
 ## 전 세계 샘플 데이터
 
@@ -316,6 +323,7 @@ RoutePlan/
 | [운영 모니터링](docs/production-monitoring.md) | Prometheus, Grafana, Alertmanager |
 | [운영 검증](docs/operational-validation.md) | 부하·장애 주입과 다중 인스턴스 검증 |
 | [전 세계 샘플 데이터](docs/global-sample-data.md) | 40개 공개 추천 Route와 출처·적재 방법 |
+| [RoutePlan 2.0 Phase 3](docs/routeplan-2-phase3.md) | 동행 권한, 장소 투표, N분의 1·최소 송금과 주변 추천 |
 
 API 계약은 실행 중인 [Swagger UI](http://localhost:8180/swagger-ui.html)에서 확인할 수 있습니다.
 
@@ -329,6 +337,7 @@ API 계약은 실행 중인 [Swagger UI](http://localhost:8180/swagger-ui.html)�
 | V21~V22 | 외부 API 품질·비용 대시보드, Circuit Breaker, 동시 호출 격리, 분산 잠금 |
 | V23~V24 | 운영 배포, 백업·복구·롤백, 다중 Backend, 모니터링과 알림 |
 | V25 | 시간대별 교통량 전역 최적화, PostGIS 영속 캐시, 부하·장애·동시 요청 E2E |
+| RoutePlan 2.0 Phase 1~3 | 콘텐츠 가져오기·위시리스트, 직접 일정 편집, 환율, 동행자·투표·정산·주변 추천 |
 
 ## 현재 제한사항
 
@@ -337,7 +346,8 @@ API 계약은 실행 중인 [Swagger UI](http://localhost:8180/swagger-ui.html)�
 - `Exact Search`는 조합 폭증을 막기 위해 최대 10개 장소로 제한됩니다.
 - 시간대별 전역 최적화는 후보·날짜·Matrix·상태·실행시간 안전 상한을 넘으면 기본 방식으로 전환됩니다.
 - 날씨 예보 범위 밖의 먼 미래 날짜와 제공되지 않은 공휴일 예외는 자동 확정하지 않습니다.
-- 예산과 실제 지출은 사용자가 입력합니다. 환율은 결제 환율이 아닌 일 단위 참고 환율이며 카드 수수료·환전 스프레드는 반영하지 않습니다. 인원별 정산은 후속 Phase에서 지원합니다.
+- 예산과 실제 지출은 사용자가 입력합니다. 환율은 결제 환율이 아닌 일 단위 참고 환율이며 카드 수수료·환전 스프레드는 반영하지 않습니다.
+- 주변 장소 추천은 현재 로컬 장소 데이터의 거리·영업시간·관심 카테고리를 사용합니다. 공급자 평점은 장소 엔티티에 저장되지 않아 아직 추천 점수에 포함하지 않습니다.
 - OAuth와 MFA, 다중 턴 AI 대화, AI의 장소 자동 추가는 아직 지원하지 않습니다.
 - 운영 모니터링은 단일 서버 기준이며 외부 Uptime 감시, 중앙 로그, 장기 원격 보존은 별도 구성이 필요합니다.
 

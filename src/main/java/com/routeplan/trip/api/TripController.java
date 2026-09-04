@@ -68,7 +68,7 @@ public class TripController {
             @PathVariable Long tripId,
             @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripViewer(tripId, principal.userId());
         return tripService.get(tripId);
     }
 
@@ -78,7 +78,7 @@ public class TripController {
             @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody UpdateTripRequest request
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         return tripService.update(tripId, request.toCommand());
     }
 
@@ -88,7 +88,7 @@ public class TripController {
             @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody AddTripPlaceRequest request
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         TripResult result = tripService.addPlace(tripId, request.toCommand());
         return ResponseEntity.created(
                 URI.create("/api/v1/trips/" + tripId + "/places/" + request.placeId())
@@ -102,7 +102,7 @@ public class TripController {
             @AuthenticationPrincipal RoutePlanPrincipal principal,
             @Valid @RequestBody UpdateTripPlaceRequest request
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         return tripService.updatePlaceConstraints(tripId, placeId, request.toCommand());
     }
 
@@ -112,7 +112,7 @@ public class TripController {
             @PathVariable Long placeId,
             @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
-        accessService.requireTripOwner(tripId, principal.userId());
+        accessService.requireTripEditor(tripId, principal.userId());
         tripService.removePlace(tripId, placeId);
         return ResponseEntity.noContent().build();
     }
