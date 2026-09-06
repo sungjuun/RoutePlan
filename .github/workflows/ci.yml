@@ -31,6 +31,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - name: Run backend tests
         run: ./gradlew test --no-daemon
+      - name: Upload backend failure reports
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: routeplan-backend-failure
+          path: |
+            build/reports/tests/test
+            build/test-results/test
+          if-no-files-found: ignore
+          retention-days: 7
 
   frontend:
     name: Frontend checks

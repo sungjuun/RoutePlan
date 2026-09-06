@@ -100,7 +100,9 @@ GET    /api/v1/trips/{tripId}/nearby-recommendations
 
 - Backend 통합 테스트: 소유자·편집자·조회자 권한, 3/3·2/3·1/3 투표 점수와 최적화 반영, 균등 분할과 송금안, 영업 중 주변 추천
 - Frontend 단위 테스트: 소유자 동행자 관리, 조회자 편집 제어 차단, 모든 역할의 투표, 실패 시 공동 지출 입력 보존
-- Java 21 `javac` 기준 main·test 소스 전체 컴파일
+- Java 21 + PostgreSQL/PostGIS Testcontainers에서 `./gradlew test --no-daemon`: 162개 전체 통과, 실패·오류·건너뜀 0개 (2026-09-07)
 - Vitest 53개, ESLint, TypeScript/Vite production build
 
-PostgreSQL Testcontainers 통합 테스트는 Docker Engine이 실행되는 환경에서 `./gradlew test`로 최종 실행한다.
+초기 CI에서 동행자 통합 테스트 5개가 사용자 준비 중 실패한 원인은 이메일만 직접 갱신해 `ck_users_auth_pair` 제약을 위반한 테스트 데이터였다. 실제 가입 서비스로 이메일과 암호화된 비밀번호를 함께 저장하도록 수정한 뒤 해당 5개와 전체 회귀 테스트의 통과를 확인했다. 운영 DB 제약이나 테스트 검증 조건은 완화하지 않았다.
+
+GitHub Actions는 백엔드 실패 시 HTML 및 JUnit XML 보고서를 `routeplan-backend-failure` 아티팩트로 7일간 보관한다.

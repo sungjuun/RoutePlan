@@ -11,8 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.routeplan.auth.AuthService;
 import com.routeplan.auth.AuthenticatedMockMvc;
-import com.routeplan.user.application.UserService;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,7 +37,7 @@ class TripCollaborationApiIntegrationTest {
     static final PostgreSQLContainer POSTGRES = com.routeplan.testsupport.PostgisTestContainer.create();
 
     @Autowired MockMvc raw;
-    @Autowired UserService users;
+    @Autowired AuthService auth;
     @Autowired JdbcTemplate jdbc;
 
     private AuthenticatedMockMvc mvc;
@@ -233,9 +233,8 @@ class TripCollaborationApiIntegrationTest {
     }
 
     private long user(String prefix) {
-        long id = users.create(prefix + "-" + UUID.randomUUID()).id();
-        jdbc.update("UPDATE users SET email=? WHERE id=?", prefix + "-" + id + "@routeplan.test", id);
-        return id;
+        String nickname = prefix + "-" + UUID.randomUUID();
+        return auth.register(nickname + "@routeplan.test", nickname, "routeplan-collaboration-test!").getId();
     }
 
     private String email(long userId) {
