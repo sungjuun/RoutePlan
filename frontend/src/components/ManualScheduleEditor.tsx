@@ -28,7 +28,12 @@ function sourceAssignments(trip: Trip, itinerary: Itinerary): ItineraryDayAssign
   }))
 }
 
-export function ManualScheduleEditor({ trip, itinerary, onItineraryChanged, onError }: Props) {
+export function ManualScheduleEditor(props: Props) {
+  // Item IDs belong to a single snapshot; reset the draft before rendering a new one.
+  return <ManualScheduleDraft key={props.itinerary.itineraryId} {...props} />
+}
+
+function ManualScheduleDraft({ trip, itinerary, onItineraryChanged, onError }: Props) {
   const initial = useMemo(() => sourceAssignments(trip, itinerary), [trip, itinerary])
   const [assignments, setAssignments] = useState(initial)
   const [dragging, setDragging] = useState<number | null>(null)

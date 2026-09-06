@@ -101,8 +101,11 @@ GET    /api/v1/trips/{tripId}/nearby-recommendations
 - Backend 통합 테스트: 소유자·편집자·조회자 권한, 3/3·2/3·1/3 투표 점수와 최적화 반영, 균등 분할과 송금안, 영업 중 주변 추천
 - Frontend 단위 테스트: 소유자 동행자 관리, 조회자 편집 제어 차단, 모든 역할의 투표, 실패 시 공동 지출 입력 보존
 - Java 21 + PostgreSQL/PostGIS Testcontainers에서 `./gradlew test --no-daemon`: 162개 전체 통과, 실패·오류·건너뜀 0개 (2026-09-07)
-- Vitest 53개, ESLint, TypeScript/Vite production build
+- Vitest 54개, ESLint, TypeScript/Vite production build
+- V25 Docker E2E 4개 시나리오를 `--repeat-each=2`로 반복: 8개 통과. Google 응답은 테스트 Stub을 사용하며 실제 유료 API를 호출하지 않는다.
 
 초기 CI에서 동행자 통합 테스트 5개가 사용자 준비 중 실패한 원인은 이메일만 직접 갱신해 `ck_users_auth_pair` 제약을 위반한 테스트 데이터였다. 실제 가입 서비스로 이메일과 암호화된 비밀번호를 함께 저장하도록 수정한 뒤 해당 5개와 전체 회귀 테스트의 통과를 확인했다. 운영 DB 제약이나 테스트 검증 조건은 완화하지 않았다.
 
 GitHub Actions는 백엔드 실패 시 HTML 및 JUnit XML 보고서를 `routeplan-backend-failure` 아티팩트로 7일간 보관한다.
+
+이어 실행된 V25 E2E에서 새 일정 버전으로 전환할 때 직접 편집 화면이 이전 버전의 항목 ID를 참조하는 렌더링 오류를 발견했다. 편집 컴포넌트를 일정 ID별로 분리해 첫 렌더링부터 초안·미리보기를 초기화하며, 새 버전에서 다시 편집할 때 새 항목 ID만 전송하는 회귀 테스트를 추가했다. V25 E2E의 재시도·반복 실행은 서로 다른 좌표를 사용해 이전 실행의 Redis/PostGIS 캐시가 초기 호출량 검증에 섞이지 않도록 한다. 같은 동시 요청 테스트의 두 사용자는 계속 동일한 좌표를 공유한다.

@@ -29,6 +29,7 @@ interface ItineraryResult {
   routeProviderCallCount: number
   routeCacheHitCount: number
   routeCacheMissCount: number
+  routeCacheFailureCount: number
   dataWarnings: string
 }
 
@@ -80,6 +81,10 @@ async function stubState(request: APIRequestContext): Promise<StubState> {
 
 async function createTrafficTrip(page: Page, seed: string, placeCount: number, dateOffset: number): Promise<number> {
   const date = futureDate(dateOffset)
+  const info = test.info()
+  const attempt = info.repeatEachIndex * (info.project.retries + 1) + info.retry
+  // Retries need cold cache keys, while both users in a concurrency test must share them.
+  const coordinateOffset = dateOffset * 0.0001 + attempt * 0.02
   const trip = await mutate<{ id: number }>(page.request, 'POST', '/trips', {
     name: `V25 교통량 E2E ${seed}`,
     startDate: date,
@@ -87,16 +92,16 @@ async function createTrafficTrip(page: Page, seed: string, placeCount: number, d
     dailyStartTime: '09:00',
     dailyEndTime: placeCount > 3 ? '18:00' : '12:00',
     accommodationName: 'V25 E2E 숙소',
-    accommodationLatitude: 35.6800 + dateOffset * 0.0001,
-    accommodationLongitude: 139.7600 + dateOffset * 0.0001,
+    accommodationLatitude: 35.6800 + coordinateOffset,
+    accommodationLongitude: 139.7600 + coordinateOffset,
     transportMode: 'DRIVING',
     pace: 'STANDARD',
   })
   for (let index = 0; index < placeCount; index += 1) {
     const place = await mutate<{ id: number }>(page.request, 'POST', '/places', {
       name: `V25 E2E 장소 ${seed}-${index + 1}`,
-      latitude: 35.6815 + dateOffset * 0.0001 + index * 0.004,
-      longitude: 139.7620 + dateOffset * 0.0001 + index * 0.003,
+      latitude: 35.6815 + coordinateOffset + index * 0.004,
+      longitude: 139.7620 + coordinateOffset + index * 0.003,
       category: 'E2E_TRAFFIC',
       averageStayMinutes: 30,
       environment: 'MIXED',
