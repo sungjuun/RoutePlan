@@ -100,6 +100,12 @@ routeplan:
     trusted-proxies: ${ROUTEPLAN_AUTH_TRUSTED_PROXIES:}
   community:
     moderator-emails: ${ROUTEPLAN_MODERATOR_EMAILS:}
+  content-import:
+    youtube-api-key: ${YOUTUBE_API_KEY:}
+    youtube-api-base-url: ${YOUTUBE_API_BASE_URL:https://www.googleapis.com/youtube/v3}
+    tiktok-oembed-base-url: ${TIKTOK_OEMBED_BASE_URL:https://www.tiktok.com/oembed}
+    connect-timeout: ${ROUTEPLAN_CONTENT_IMPORT_CONNECT_TIMEOUT:2s}
+    request-timeout: ${ROUTEPLAN_CONTENT_IMPORT_REQUEST_TIMEOUT:8s}
   external:
     retry:
       enabled: ${ROUTEPLAN_EXTERNAL_RETRY_ENABLED:true}

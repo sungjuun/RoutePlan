@@ -159,7 +159,9 @@ class SharedRouteApiIntegrationTest {
                         .queryParam("viewerUserId", String.valueOf(travelerId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.viewCount").value(1))
-                .andExpect(jsonPath("$.likedByViewer").value(false));
+                .andExpect(jsonPath("$.likedByViewer").value(false))
+                .andExpect(jsonPath("$.savedByViewer").value(false))
+                .andExpect(jsonPath("$.saveCount").value(0));
 
         mockMvc.authenticate(travelerId);
 
@@ -174,6 +176,19 @@ class SharedRouteApiIntegrationTest {
                         .content("{\"userId\":" + travelerId + "}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DUPLICATE_ROUTE_LIKE"));
+
+        mockMvc.perform(post("/api/v1/routes/{routeId}/saves", routeId.longValue()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.saveCount").value(1))
+                .andExpect(jsonPath("$.saved").value(true));
+        mockMvc.perform(post("/api/v1/routes/{routeId}/saves", routeId.longValue()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_ROUTE_SAVE"));
+        mockMvc.perform(get("/api/v1/me/saved-routes"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].routeId").value(routeId.longValue()))
+                .andExpect(jsonPath("$.content[0].saveCount").value(1));
 
         mockMvc.authenticate(ownerId);
         mockMvc.perform(patch("/api/v1/trips/{tripId}", sourceTripId)
@@ -237,13 +252,22 @@ class SharedRouteApiIntegrationTest {
                         .queryParam("viewerUserId", String.valueOf(travelerId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.copyCount").value(1))
-                .andExpect(jsonPath("$.likedByViewer").value(true));
+                .andExpect(jsonPath("$.likedByViewer").value(true))
+                .andExpect(jsonPath("$.savedByViewer").value(true))
+                .andExpect(jsonPath("$.saveCount").value(1));
 
         mockMvc.perform(delete("/api/v1/routes/{routeId}/likes", routeId.longValue())
                         .queryParam("userId", String.valueOf(travelerId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.likeCount").value(0))
                 .andExpect(jsonPath("$.liked").value(false));
+        mockMvc.perform(delete("/api/v1/routes/{routeId}/saves", routeId.longValue()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.saveCount").value(0))
+                .andExpect(jsonPath("$.saved").value(false));
+        mockMvc.perform(get("/api/v1/me/saved-routes"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
     }
 
     @Test

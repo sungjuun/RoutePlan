@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BedDouble,
+  Bookmark,
   CalendarDays,
   Check,
   Clock3,
@@ -65,6 +66,7 @@ export function CommunityWorkspace(props: Props) {
   const [regionInput, setRegionInput] = useState('')
   const [region, setRegion] = useState('')
   const [sort, setSort] = useState<SharedRouteSort>('LATEST')
+  const [savedOnly, setSavedOnly] = useState(false)
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -76,13 +78,15 @@ export function CommunityWorkspace(props: Props) {
   const loadRoutes = useCallback(async () => {
     setLoading(true)
     try {
-      setRoutes(await api.discoverRoutes({ region, travelDays, sort, page, size: 12 }))
+      setRoutes(savedOnly
+        ? await api.getSavedRoutes(page, 12)
+        : await api.discoverRoutes({ region, travelDays, sort, page, size: 12 }))
     } catch (error) {
       onError(error)
     } finally {
       setLoading(false)
     }
-  }, [onError, page, region, sort, travelDays])
+  }, [onError, page, region, savedOnly, sort, travelDays])
 
   useEffect(() => {
     void loadRoutes()
@@ -160,11 +164,17 @@ export function CommunityWorkspace(props: Props) {
         </form>
         <div className="community-sort" aria-label="정렬 방식">
           <button
+            className={savedOnly ? 'active' : ''}
+            onClick={() => { setPage(0); setSavedOnly((value) => !value) }}
+          ><Bookmark size={13} /> 저장한 루트</button>
+          <button
             className={sort === 'LATEST' ? 'active' : ''}
+            disabled={savedOnly}
             onClick={() => { setPage(0); setSort('LATEST') }}
           >최신순</button>
           <button
             className={sort === 'POPULAR' ? 'active' : ''}
+            disabled={savedOnly}
             onClick={() => { setPage(0); setSort('POPULAR') }}
           >인기순</button>
         </div>
@@ -174,10 +184,10 @@ export function CommunityWorkspace(props: Props) {
         <div className="community-results">
           <div className="community-results-head">
             <div>
-              <h2>{region ? `${region} 공개 루트` : '새로 공개된 루트'}</h2>
+              <h2>{savedOnly ? '내가 저장한 루트' : region ? `${region} 공개 루트` : '새로 공개된 루트'}</h2>
               <span>{routes.totalElements.toLocaleString()}개</span>
             </div>
-            {region && (
+            {region && !savedOnly && (
               <button
                 className="button button-ghost button-small"
                 onClick={() => { setRegionInput(''); setRegion(''); setPage(0) }}
@@ -224,8 +234,17 @@ export function CommunityWorkspace(props: Props) {
                 onClose={() => setSelected(null)}
                 onChanged={(next) => {
                   setSelected(next)
+                  if (savedOnly && !next.savedByViewer) {
+                    setRoutes((current) => ({
+                      ...current,
+                      content: current.content.filter((route) => route.routeId !== next.routeId),
+                      totalElements: Math.max(0, current.totalElements - 1),
+                    }))
+                    return
+                  }
                   updateRouteCounts(next.routeId, {
                     likeCount: next.likeCount,
+                    saveCount: next.saveCount,
                     copyCount: next.copyCount,
                     viewCount: next.viewCount,
                   })
@@ -274,6 +293,7 @@ function RouteCard({
       </button>
       <footer>
         <span><Heart size={14} /> {route.likeCount.toLocaleString()}</span>
+        <span><Bookmark size={14} /> {route.saveCount.toLocaleString()}</span>
         <span><Copy size={14} /> {route.copyCount.toLocaleString()}</span>
         <span><Eye size={14} /> {route.viewCount.toLocaleString()}</span>
         <button onClick={onOpen}>루트 보기 <ArrowRight size={14} /></button>
@@ -362,6 +382,7 @@ function RouteDetail({
   onError: Props['onError']
 }) {
   const [liking, setLiking] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
 
   const toggleLike = async () => {
@@ -376,6 +397,21 @@ function RouteDetail({
       onError(error)
     } finally {
       setLiking(false)
+    }
+  }
+
+  const toggleSave = async () => {
+    if (!user) return
+    setSaving(true)
+    try {
+      const result = route.savedByViewer
+        ? await api.unsaveSharedRoute(route.routeId)
+        : await api.saveSharedRoute(route.routeId)
+      onChanged({ ...route, saveCount: result.saveCount, savedByViewer: result.saved })
+    } catch (error) {
+      onError(error)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -423,6 +459,7 @@ function RouteDetail({
 
       <div className="community-social-bar">
         <button aria-label={route.likedByViewer ? '좋아요 취소' : '좋아요'} className={route.likedByViewer ? 'liked' : ''} disabled={!user || liking} onClick={() => void toggleLike()}><Heart size={17} fill={route.likedByViewer ? 'currentColor' : 'none'} /> {route.likeCount.toLocaleString()}</button>
+        <button aria-label={route.savedByViewer ? '저장 취소' : '루트 저장'} className={route.savedByViewer ? 'saved' : ''} disabled={!user || saving} onClick={() => void toggleSave()}><Bookmark size={17} fill={route.savedByViewer ? 'currentColor' : 'none'} /> {route.saveCount.toLocaleString()}</button>
         <span><Copy size={15} /> {route.copyCount.toLocaleString()}회 복사</span>
         <span><Eye size={15} /> {route.viewCount.toLocaleString()}회 조회</span>
       </div>

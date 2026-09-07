@@ -28,6 +28,7 @@ public record SharedRouteSummaryView(
         long viewCount,
         long copyCount,
         long likeCount,
+        long saveCount,
         Instant publishedAt
 ) {
 
@@ -53,6 +54,7 @@ public record SharedRouteSummaryView(
                 route.getViewCount(),
                 route.getCopyCount(),
                 route.getLikeCount(),
+                route.getSaveCount(),
                 route.getPublishedAt()
         );
     }

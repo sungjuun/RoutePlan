@@ -186,7 +186,7 @@ export function DiscoveryPage({ initialUrl = '', onCreateTrip, onError }: Props)
 
         <div className="discovery-main">
           <section className="panel import-panel">
-            <div className="section-heading compact"><span className="eyebrow">CONTENT IMPORT</span><h2>SNS·웹에서 장소 가져오기</h2><p>Instagram은 캡션을 함께 붙여 넣어야 하며 게시물을 자동 크롤링하지 않습니다.</p></div>
+            <div className="section-heading compact"><span className="eyebrow">CONTENT IMPORT</span><h2>SNS·웹에서 장소 가져오기</h2><p>YouTube·TikTok은 공식 메타데이터를 이용하고, Instagram은 캡션을 직접 붙여 넣어 안전하게 분석합니다.</p></div>
             <form className="import-form" onSubmit={startImport}>
               <label className="field field-wide"><span><Link2 size={15} /> 게시물 또는 웹 페이지 URL</span><input type="url" value={url} onChange={event => setUrl(event.target.value)} maxLength={2048} placeholder="https://www.instagram.com/p/..." required /></label>
               <label className="field field-wide"><span>캡션 또는 장소 목록 <small>(선택, 한 줄에 하나 권장)</small></span><textarea value={inputText} onChange={event => setInputText(event.target.value)} maxLength={10000} rows={5} placeholder={'경복궁\n북촌한옥마을\n국립현대미술관 서울'} /></label>

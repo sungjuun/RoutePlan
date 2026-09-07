@@ -40,7 +40,7 @@ RoutePlan은 여행 장소와 사용자 조건을 바탕으로 **실행 가능�
 - 초대받은 여행 목록과 `OWNER`·`EDITOR`·`VIEWER` 기반 공동 일정 편집
 - 동행자 장소 투표를 다음 일정 최적화의 우선순위에 반영
 - 완성된 일정을 변경 불가능한 공개 Route Snapshot으로 공유
-- 공개 Route 검색·정렬·좋아요·댓글·후기·신고·복사
+- 공개 Route 검색·정렬·좋아요·저장 보관함·댓글·후기·신고·복사
 - 복사한 Route를 내 숙소·날짜·취향으로 다시 최적화
 - 날짜별·항목별 예산과 실제 지출 기록
 - 장소별 실제 지출 연결, 날짜별 예상/실제 비교와 현재 참고 환율 기준 원화 환산
@@ -70,7 +70,7 @@ SNS·웹 URL 또는 추천 국가·공개 Route 탐색
 → 장소 순서·날짜를 직접 편집하고 변경 영향 또는 추천 순서 확인
 → 동행자와 장소를 투표하고 공동 일정·지출·최종 송금안 관리
 → 여행 중 남은 일정 재최적화
-→ 일정 공개 또는 다른 사용자의 Route 복사
+→ 일정 공개, 마음에 드는 Route 저장 또는 내 여행으로 복사
 ```
 
 ## 기술 스택
@@ -212,13 +212,14 @@ npm run dev
 
 기본 `.env.example`은 과금 없이 실행할 수 있도록 외부 장소 검색과 실제 경로 Provider가 비활성화되어 있습니다.
 
-Instagram URL 가져오기는 비공식 크롤링을 하지 않습니다. 게시물의 캡션이나 장소 목록을 함께 붙여 넣어 사용하며, 일반 웹 URL 가져오기는 공개 HTTP(S) HTML만 제한된 크기로 읽고 내부 네트워크 주소와 리디렉션을 차단합니다. 장소 후보 자동 매칭은 `ROUTEPLAN_PLACE_PROVIDER=GOOGLE`일 때 활성화되고, 비활성 상태에서도 추출된 이름은 확인할 수 있습니다.
+YouTube는 선택적으로 Data API의 공개 영상 제목·설명·태그를, TikTok은 공식 oEmbed의 공개 캡션을 사용합니다. Instagram은 비공식 크롤링 없이 사용자가 붙여 넣은 캡션만 분석합니다. 블로그와 일반 웹은 공개 HTTP(S) HTML만 제한된 크기로 읽고 내부 네트워크 주소와 리디렉션을 차단합니다. 외부 조회에 실패해도 작업을 종료하지 않고 장소 목록 입력으로 전환합니다. 장소 후보 자동 매칭은 `ROUTEPLAN_PLACE_PROVIDER=GOOGLE`일 때 활성화되고, 비활성 상태에서도 추출된 이름은 확인할 수 있습니다.
 
 | 기능 | 주요 설정 | 기본값 |
 |---|---|---|
 | 장소 검색 | `ROUTEPLAN_PLACE_PROVIDER`, `GOOGLE_MAPS_API_KEY` | `DISABLED` |
 | 실제 경로 Matrix | `ROUTEPLAN_ROUTE_PROVIDER`, `GOOGLE_MAPS_API_KEY` | `SIMPLE` |
 | 브라우저 Google 지도 | `GOOGLE_MAPS_BROWSER_KEY` | 미설정 |
+| YouTube 영상 메타데이터 | `YOUTUBE_API_KEY` | 미설정, 직접 입력으로 전환 |
 | 자연어 AI | `ROUTEPLAN_AI_PROVIDER`, `OPENAI_API_KEY` | `RULE_BASED` |
 | 참고 환율 | `ROUTEPLAN_EXCHANGE_PROVIDER` | `FRANKFURTER` |
 | Redis·PostGIS 경로 캐시 | `ROUTEPLAN_ROUTE_CACHE_ENABLED`, `ROUTEPLAN_ROUTE_DB_CACHE_ENABLED` | `false` |
@@ -234,7 +235,7 @@ Instagram URL 가져오기는 비공식 크롤링을 하지 않습니다. 게시
 
 API 키는 커밋하지 마세요. Google 서버 키와 브라우저 키는 분리하고, 브라우저 키에는 허용 도메인과 Maps JavaScript API 제한을 적용해야 합니다. 자세한 설정은 [실제 데이터·개인화·장부 안내](docs/advanced-integrations.md)를 참고하세요.
 
-RoutePlan 2.0의 재사용 결정, 엔티티·API와 단계별 구현 범위는 [RoutePlan 2.0 Phase 1 분석](docs/routeplan-2-phase1.md), 직접 일정 편집·부분 재계산·환율 설계는 [RoutePlan 2.0 Phase 2](docs/routeplan-2-phase2.md), 동행자·투표·정산·주변 추천은 [RoutePlan 2.0 Phase 3](docs/routeplan-2-phase3.md)에 정리되어 있습니다.
+RoutePlan 2.0의 재사용 결정, 엔티티·API와 단계별 구현 범위는 [RoutePlan 2.0 Phase 1 분석](docs/routeplan-2-phase1.md), 직접 일정 편집·부분 재계산·환율 설계는 [RoutePlan 2.0 Phase 2](docs/routeplan-2-phase2.md), 동행자·투표·정산·주변 추천은 [RoutePlan 2.0 Phase 3](docs/routeplan-2-phase3.md), Route 저장과 SNS·블로그 가져오기는 [RoutePlan 2.0 Phase 4](docs/routeplan-2-phase4.md)에 정리되어 있습니다.
 
 ## 전 세계 샘플 데이터
 
@@ -324,6 +325,7 @@ RoutePlan/
 | [운영 검증](docs/operational-validation.md) | 부하·장애 주입과 다중 인스턴스 검증 |
 | [전 세계 샘플 데이터](docs/global-sample-data.md) | 40개 공개 추천 Route와 출처·적재 방법 |
 | [RoutePlan 2.0 Phase 3](docs/routeplan-2-phase3.md) | 동행 권한, 장소 투표, N분의 1·최소 송금과 주변 추천 |
+| [RoutePlan 2.0 Phase 4](docs/routeplan-2-phase4.md) | Route 저장 보관함과 YouTube·TikTok·블로그 가져오기 |
 
 API 계약은 실행 중인 [Swagger UI](http://localhost:8180/swagger-ui.html)에서 확인할 수 있습니다.
 
@@ -337,7 +339,7 @@ API 계약은 실행 중인 [Swagger UI](http://localhost:8180/swagger-ui.html)�
 | V21~V22 | 외부 API 품질·비용 대시보드, Circuit Breaker, 동시 호출 격리, 분산 잠금 |
 | V23~V24 | 운영 배포, 백업·복구·롤백, 다중 Backend, 모니터링과 알림 |
 | V25 | 시간대별 교통량 전역 최적화, PostGIS 영속 캐시, 부하·장애·동시 요청 E2E |
-| RoutePlan 2.0 Phase 1~3 | 콘텐츠 가져오기·위시리스트, 직접 일정 편집, 환율, 동행자·투표·정산·주변 추천 |
+| RoutePlan 2.0 Phase 1~4 | 콘텐츠 가져오기·위시리스트, 직접 일정 편집, 환율, 동행자·투표·정산·주변 추천, Route 저장·SNS 가져오기 |
 
 ## 현재 제한사항
 

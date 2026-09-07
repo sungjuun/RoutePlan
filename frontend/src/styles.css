@@ -681,6 +681,10 @@ h1, h2, h3 { font-family: 'Manrope', 'DM Sans', sans-serif; letter-spacing: -.03
 .community-social-bar button, .community-social-bar span { border: 0; background: transparent; color: #74837e; font-size: 9px; display: flex; align-items: center; gap: 5px; }
 .community-social-bar button { cursor: pointer; font-weight: 800; }
 .community-social-bar button.liked { color: var(--coral-dark); }
+.community-social-bar button.saved, .public-save-route.saved { color: var(--ink-2); }
+.community-sort button { display: inline-flex; align-items: center; gap: 4px; }
+.community-sort button:disabled { opacity: .45; cursor: not-allowed; }
+.public-save-route { margin: 12px 0 2px; }
 .community-copy-cta { width: 100%; margin-top: 15px; }
 .copy-route-form { margin-top: 16px; padding: 17px; border-radius: 15px; background: #f7f5ef; border: 1px solid var(--line); }
 .copy-route-head { display: flex; justify-content: space-between; align-items: flex-start; }

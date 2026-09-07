@@ -16,6 +16,7 @@ import type {
   ReoptimizeInput,
   PublishRouteInput,
   RouteLikeResult,
+  RouteSaveResult,
   SharedRouteDetail,
   SharedRoutePage,
   SharedRouteSort,
@@ -407,6 +408,15 @@ export const api = {
 
   unlikeSharedRoute: (routeId: number) =>
     request<RouteLikeResult>(`/routes/${routeId}/likes`, { method: 'DELETE' }),
+
+  saveSharedRoute: (routeId: number) =>
+    request<RouteSaveResult>(`/routes/${routeId}/saves`, { method: 'POST' }),
+
+  unsaveSharedRoute: (routeId: number) =>
+    request<RouteSaveResult>(`/routes/${routeId}/saves`, { method: 'DELETE' }),
+
+  getSavedRoutes: (page = 0, size = 12) =>
+    request<SharedRoutePage>(`/me/saved-routes?page=${page}&size=${size}`),
 
   copySharedRoute: (routeId: number, input: CopyRouteInput) =>
     request<Trip>(`/routes/${routeId}/copy`, json('POST', input)),

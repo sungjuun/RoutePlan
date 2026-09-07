@@ -26,8 +26,7 @@ public class GenericWebContentImporter implements ContentImporter {
             "(?is)<meta[^>]+(?:name|property)\\s*=\\s*['\"](?:description|og:description)['\"][^>]+content\\s*=\\s*['\"](.*?)['\"][^>]*>"
     );
     private static final Set<ContentSourceType> TYPES = Set.of(
-            ContentSourceType.GENERIC_WEB, ContentSourceType.YOUTUBE,
-            ContentSourceType.TIKTOK, ContentSourceType.BLOG, ContentSourceType.COMMUNITY
+            ContentSourceType.GENERIC_WEB, ContentSourceType.COMMUNITY
     );
 
     private final WebUrlSecurityPolicy securityPolicy;

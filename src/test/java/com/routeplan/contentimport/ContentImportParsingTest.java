@@ -22,6 +22,10 @@ class ContentImportParsingTest {
                 .isEqualTo(ContentSourceType.INSTAGRAM);
         assertThat(detector.detect("https://m.youtube.com/watch?v=1").sourceType())
                 .isEqualTo(ContentSourceType.YOUTUBE);
+        assertThat(detector.detect("https://travel-note.tistory.com/42").sourceType())
+                .isEqualTo(ContentSourceType.BLOG);
+        assertThat(detector.detect("https://vm.tiktok.com/abc").sourceType())
+                .isEqualTo(ContentSourceType.TIKTOK);
         assertThat(detector.detect("https://instagram.com.evil.example/p/abc").sourceType())
                 .isEqualTo(ContentSourceType.GENERIC_WEB);
     }

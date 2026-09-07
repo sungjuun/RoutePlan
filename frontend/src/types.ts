@@ -509,6 +509,7 @@ export interface SharedRouteSummary {
   viewCount: number
   copyCount: number
   likeCount: number
+  saveCount: number
   publishedAt: string
 }
 
@@ -544,6 +545,7 @@ export interface SharedRouteDetail extends Omit<SharedRouteSummary, 'placePrevie
   accommodationLongitude: number
   algorithm: OptimizationAlgorithm
   likedByViewer: boolean
+  savedByViewer: boolean
   items: SharedRouteItem[]
 }
 
@@ -561,6 +563,12 @@ export interface RouteLikeResult {
   routeId: number
   likeCount: number
   liked: boolean
+}
+
+export interface RouteSaveResult {
+  routeId: number
+  saveCount: number
+  saved: boolean
 }
 
 export interface PublishRouteInput {

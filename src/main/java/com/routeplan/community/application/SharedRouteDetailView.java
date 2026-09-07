@@ -41,12 +41,14 @@ public record SharedRouteDetailView(
         long viewCount,
         long copyCount,
         long likeCount,
+        long saveCount,
         boolean likedByViewer,
+        boolean savedByViewer,
         Instant publishedAt,
         List<Item> items
 ) {
 
-    static SharedRouteDetailView from(SharedRoute route, boolean likedByViewer) {
+    static SharedRouteDetailView from(SharedRoute route, boolean likedByViewer, boolean savedByViewer) {
         return new SharedRouteDetailView(
                 route.getId(),
                 route.getOwner().getId(),
@@ -76,7 +78,9 @@ public record SharedRouteDetailView(
                 route.getViewCount(),
                 route.getCopyCount(),
                 route.getLikeCount(),
+                route.getSaveCount(),
                 likedByViewer,
+                savedByViewer,
                 route.getPublishedAt(),
                 route.getItems().stream().map(Item::from).toList()
         );

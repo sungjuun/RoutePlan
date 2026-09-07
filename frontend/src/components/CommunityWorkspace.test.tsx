@@ -7,6 +7,7 @@ import { CommunityWorkspace } from './CommunityWorkspace'
 vi.mock('../api/client', () => ({
   api: {
     discoverRoutes: vi.fn(),
+    getSavedRoutes: vi.fn(),
   },
 }))
 
@@ -58,6 +59,7 @@ const routePage: SharedRoutePage = {
     viewCount: 12,
     copyCount: 4,
     likeCount: 8,
+    saveCount: 3,
     publishedAt: '2026-08-26T00:00:00Z',
   }],
   page: 0,
@@ -71,6 +73,7 @@ const routePage: SharedRoutePage = {
 describe('CommunityWorkspace', () => {
   beforeEach(() => {
     vi.mocked(api.discoverRoutes).mockResolvedValue(routePage)
+    vi.mocked(api.getSavedRoutes).mockResolvedValue(routePage)
   })
 
   it('shows published route summaries and reloads them using popular sort', async () => {
@@ -97,5 +100,24 @@ describe('CommunityWorkspace', () => {
       page: 0,
       size: 12,
     }))
+  })
+
+  it('opens the current user saved-route collection', async () => {
+    render(
+      <CommunityWorkspace
+        user={user}
+        trip={trip}
+        itinerary={null}
+        onTripCopied={vi.fn()}
+        onNotify={vi.fn()}
+        onError={vi.fn()}
+      />,
+    )
+    await screen.findByText('오사카 핵심 하루')
+
+    fireEvent.click(screen.getByRole('button', { name: /저장한 루트/ }))
+
+    await waitFor(() => expect(api.getSavedRoutes).toHaveBeenCalledWith(0, 12))
+    expect(screen.getByRole('heading', { name: '내가 저장한 루트' })).toBeVisible()
   })
 })

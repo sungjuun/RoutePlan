@@ -3,10 +3,12 @@ package com.routeplan.community.application;
 import com.routeplan.common.error.ErrorCode;
 import com.routeplan.common.error.RoutePlanException;
 import com.routeplan.community.domain.RouteLike;
+import com.routeplan.community.domain.RouteSave;
 import com.routeplan.community.domain.SharedRoute;
 import com.routeplan.community.domain.SharedRouteSort;
 import com.routeplan.community.domain.SharedRouteVisibility;
 import com.routeplan.community.persistence.RouteLikeRepository;
+import com.routeplan.community.persistence.RouteSaveRepository;
 import com.routeplan.community.persistence.SharedRouteRepository;
 import com.routeplan.itinerary.domain.Itinerary;
 import com.routeplan.itinerary.persistence.ItineraryRepository;
@@ -35,6 +37,7 @@ public class SharedRouteService {
 
     private final SharedRouteRepository sharedRouteRepository;
     private final RouteLikeRepository routeLikeRepository;
+    private final RouteSaveRepository routeSaveRepository;
     private final ItineraryRepository itineraryRepository;
     private final UserRepository userRepository;
     private final TripService tripService;
@@ -42,12 +45,14 @@ public class SharedRouteService {
     public SharedRouteService(
             SharedRouteRepository sharedRouteRepository,
             RouteLikeRepository routeLikeRepository,
+            RouteSaveRepository routeSaveRepository,
             ItineraryRepository itineraryRepository,
             UserRepository userRepository,
             TripService tripService
     ) {
         this.sharedRouteRepository = sharedRouteRepository;
         this.routeLikeRepository = routeLikeRepository;
+        this.routeSaveRepository = routeSaveRepository;
         this.itineraryRepository = itineraryRepository;
         this.userRepository = userRepository;
         this.tripService = tripService;
@@ -79,7 +84,7 @@ public class SharedRouteService {
         } catch (IllegalArgumentException exception) {
             throw new RoutePlanException(ErrorCode.ITINERARY_NOT_SHAREABLE, exception.getMessage());
         }
-        return SharedRouteDetailView.from(sharedRouteRepository.saveAndFlush(route), false);
+        return SharedRouteDetailView.from(sharedRouteRepository.saveAndFlush(route), false, false);
     }
 
     @Transactional(readOnly = true)
@@ -124,7 +129,9 @@ public class SharedRouteService {
         route.increaseViewCount();
         boolean liked = viewerUserId != null
                 && routeLikeRepository.existsBySharedRouteIdAndUserId(routeId, viewerUserId);
-        return SharedRouteDetailView.from(route, liked);
+        boolean saved = viewerUserId != null
+                && routeSaveRepository.existsBySharedRouteIdAndUserId(routeId, viewerUserId);
+        return SharedRouteDetailView.from(route, liked, saved);
     }
 
     @Transactional
@@ -151,6 +158,41 @@ public class SharedRouteService {
         }
         route.decreaseLikeCount();
         return new RouteLikeView(routeId, route.getLikeCount(), false);
+    }
+
+    @Transactional
+    public RouteSaveView save(Long routeId, Long userId) {
+        SharedRoute route = getRouteForUpdate(routeId);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RoutePlanException(ErrorCode.USER_NOT_FOUND));
+        if (routeSaveRepository.existsBySharedRouteIdAndUserId(routeId, userId)) {
+            throw new RoutePlanException(ErrorCode.DUPLICATE_ROUTE_SAVE);
+        }
+        routeSaveRepository.save(RouteSave.create(route, user));
+        route.increaseSaveCount();
+        return new RouteSaveView(routeId, route.getSaveCount(), true);
+    }
+
+    @Transactional
+    public RouteSaveView unsave(Long routeId, Long userId) {
+        SharedRoute route = getRouteForUpdate(routeId);
+        if (routeSaveRepository.deleteBySharedRouteIdAndUserId(routeId, userId) == 0) {
+            throw new RoutePlanException(ErrorCode.ROUTE_SAVE_NOT_FOUND);
+        }
+        route.decreaseSaveCount();
+        return new RouteSaveView(routeId, route.getSaveCount(), false);
+    }
+
+    @Transactional(readOnly = true)
+    public SharedRoutePageView saved(Long userId, int page, int size) {
+        if (!userRepository.existsById(userId)) throw new RoutePlanException(ErrorCode.USER_NOT_FOUND);
+        if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+            throw new IllegalArgumentException("페이지 조건이 올바르지 않습니다.");
+        }
+        Page<SharedRouteSummaryView> routes = routeSaveRepository
+                .findVisibleByUserId(userId, PageRequest.of(page, size))
+                .map(save -> SharedRouteSummaryView.from(save.getSharedRoute()));
+        return SharedRoutePageView.from(routes);
     }
 
     @Transactional

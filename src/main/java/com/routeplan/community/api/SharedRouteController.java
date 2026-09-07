@@ -2,6 +2,7 @@ package com.routeplan.community.api;
 
 import com.routeplan.auth.RoutePlanPrincipal;
 import com.routeplan.community.application.RouteLikeView;
+import com.routeplan.community.application.RouteSaveView;
 import com.routeplan.community.application.SharedRouteDetailView;
 import com.routeplan.community.application.SharedRoutePageView;
 import com.routeplan.community.application.SharedRouteService;
@@ -96,6 +97,31 @@ public class SharedRouteController {
             @AuthenticationPrincipal RoutePlanPrincipal principal
     ) {
         return sharedRouteService.unlike(routeId, principal.userId());
+    }
+
+    @PostMapping("/routes/{routeId}/saves")
+    public ResponseEntity<RouteSaveView> save(
+            @PathVariable Long routeId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal
+    ) {
+        return ResponseEntity.status(201).body(sharedRouteService.save(routeId, principal.userId()));
+    }
+
+    @DeleteMapping("/routes/{routeId}/saves")
+    public RouteSaveView unsave(
+            @PathVariable Long routeId,
+            @AuthenticationPrincipal RoutePlanPrincipal principal
+    ) {
+        return sharedRouteService.unsave(routeId, principal.userId());
+    }
+
+    @GetMapping("/me/saved-routes")
+    public SharedRoutePageView saved(
+            @AuthenticationPrincipal RoutePlanPrincipal principal,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "12") @Min(1) @Max(50) int size
+    ) {
+        return sharedRouteService.saved(principal.userId(), page, size);
     }
 
     @PostMapping("/routes/{routeId}/copy")

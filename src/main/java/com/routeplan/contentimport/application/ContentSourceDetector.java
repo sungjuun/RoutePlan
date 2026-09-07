@@ -21,9 +21,9 @@ public class ContentSourceDetector {
             String host = uri.getHost().toLowerCase(Locale.ROOT);
             ContentSourceType type = switch (normalizedHost(host)) {
                 case "instagram.com" -> ContentSourceType.INSTAGRAM;
-                case "youtube.com", "youtu.be" -> ContentSourceType.YOUTUBE;
+                case "youtube.com", "youtube-nocookie.com", "youtu.be" -> ContentSourceType.YOUTUBE;
                 case "tiktok.com" -> ContentSourceType.TIKTOK;
-                case "blog.naver.com", "medium.com" -> ContentSourceType.BLOG;
+                case "blog.naver.com", "medium.com", "tistory.com", "brunch.co.kr" -> ContentSourceType.BLOG;
                 default -> ContentSourceType.GENERIC_WEB;
             };
             return new DetectedSource(uri.normalize(), type);
@@ -34,7 +34,8 @@ public class ContentSourceDetector {
 
     private String normalizedHost(String host) {
         String value = host.startsWith("www.") ? host.substring(4) : host;
-        String[] supported = {"instagram.com", "youtube.com", "tiktok.com"};
+        String[] supported = {"instagram.com", "youtube.com", "youtube-nocookie.com", "youtu.be",
+                "tiktok.com", "medium.com", "tistory.com", "brunch.co.kr"};
         for (String root : supported) {
             if (value.equals(root) || value.endsWith("." + root)) return root;
         }

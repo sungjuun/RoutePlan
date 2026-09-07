@@ -130,6 +130,9 @@ public class SharedRoute {
     @Column(name = "like_count", nullable = false)
     private long likeCount;
 
+    @Column(name = "save_count", nullable = false)
+    private long saveCount;
+
     @CreationTimestamp
     @Column(name = "published_at", nullable = false, updatable = false)
     private Instant publishedAt;
@@ -226,6 +229,15 @@ public class SharedRoute {
             throw new IllegalStateException("좋아요 수는 0보다 작을 수 없습니다.");
         }
         likeCount--;
+    }
+
+    public void increaseSaveCount() {
+        saveCount = increment(saveCount);
+    }
+
+    public void decreaseSaveCount() {
+        if (saveCount <= 0) throw new IllegalStateException("저장 수는 0보다 작을 수 없습니다.");
+        saveCount--;
     }
 
     private long increment(long value) {
@@ -368,6 +380,8 @@ public class SharedRoute {
     public long getLikeCount() {
         return likeCount;
     }
+
+    public long getSaveCount() { return saveCount; }
 
     public Instant getPublishedAt() {
         return publishedAt;

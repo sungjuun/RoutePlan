@@ -59,6 +59,8 @@ public enum ErrorCode {
     SHARED_ROUTE_NOT_FOUND(HttpStatus.NOT_FOUND, "공개 루트를 찾을 수 없습니다."),
     DUPLICATE_ROUTE_LIKE(HttpStatus.CONFLICT, "이미 좋아요한 루트입니다."),
     ROUTE_LIKE_NOT_FOUND(HttpStatus.NOT_FOUND, "취소할 좋아요가 없습니다."),
+    DUPLICATE_ROUTE_SAVE(HttpStatus.CONFLICT, "이미 저장한 루트입니다."),
+    ROUTE_SAVE_NOT_FOUND(HttpStatus.NOT_FOUND, "저장 취소할 루트가 없습니다."),
     CONFLICT(HttpStatus.CONFLICT, "요청이 현재 데이터 상태와 충돌합니다.");
 
     private final HttpStatus status;
