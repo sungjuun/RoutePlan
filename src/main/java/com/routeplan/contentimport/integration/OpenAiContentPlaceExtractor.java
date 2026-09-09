@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.routeplan.ai.integration.openai.OpenAiHttpClient;
 import com.routeplan.ai.integration.openai.OpenAiProperties;
 import com.routeplan.contentimport.application.ContentPlaceExtractor;
+import com.routeplan.contentimport.application.RuleBasedContentPlaceExtractor;
 import com.routeplan.integration.google.ExternalProviderException;
 import com.routeplan.integration.google.ExternalProviderFailure;
 import java.util.LinkedHashMap;
@@ -13,11 +14,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnProperty(prefix = "routeplan.ai", name = "provider", havingValue = "OPENAI")
 public class OpenAiContentPlaceExtractor implements ContentPlaceExtractor {
+    private static final Logger log = LoggerFactory.getLogger(OpenAiContentPlaceExtractor.class);
     private static final String INSTRUCTIONS = """
             You extract concrete real-world place names explicitly mentioned in travel content.
             Never invent or infer a place that is not written in the input. Exclude countries,
@@ -28,16 +32,27 @@ public class OpenAiContentPlaceExtractor implements ContentPlaceExtractor {
     private final OpenAiHttpClient httpClient;
     private final OpenAiProperties properties;
     private final ObjectMapper objectMapper;
+    private final RuleBasedContentPlaceExtractor fallback;
 
     public OpenAiContentPlaceExtractor(OpenAiHttpClient httpClient, OpenAiProperties properties) {
         this.httpClient = httpClient;
         this.properties = properties;
         this.objectMapper = new ObjectMapper().findAndRegisterModules();
+        this.fallback = new RuleBasedContentPlaceExtractor();
     }
 
     @Override
     public List<String> extract(Long userId, String title, String text) {
         if (text == null || text.isBlank()) return List.of();
+        try {
+            return extractWithOpenAi(userId, title, text);
+        } catch (ExternalProviderException exception) {
+            log.warn("OpenAI 장소 추출을 사용할 수 없어 규칙 기반 추출로 전환합니다: {}", exception.failure());
+            return fallback.extract(userId, title, text);
+        }
+    }
+
+    private List<String> extractWithOpenAi(Long userId, String title, String text) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", properties.getModel());
         body.put("instructions", INSTRUCTIONS);

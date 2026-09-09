@@ -74,6 +74,24 @@ class SocialContentImporterTest {
     }
 
     @Test
+    void truncatesOnlyTheImportTitleWhenTikTokCaptionExceedsTheDatabaseLimit() throws Exception {
+        String caption = "서울 여행 ".repeat(100);
+        try (StubServer server = new StubServer("/oembed", exchange -> respond(exchange, 200,
+                new ObjectMapper().writeValueAsString(java.util.Map.of("title", caption))))) {
+            ContentImportProviderProperties properties = properties(server.uri("/youtube"));
+            properties.setTiktokOembedBaseUrl(server.uri("/oembed"));
+            TikTokContentImporter importer = new TikTokContentImporter(properties,
+                    new SocialMetadataClient(properties, new ObjectMapper()));
+
+            ImportedContent content = importer.load(
+                    URI.create("https://www.tiktok.com/@route/video/123456789"), null);
+
+            assertThat(content.title()).hasSize(500);
+            assertThat(content.text()).isEqualTo(caption.strip());
+        }
+    }
+
+    @Test
     void usesUserProvidedTextWithoutCallingAPlatform() {
         ContentImportProviderProperties properties = new ContentImportProviderProperties();
         YouTubeContentImporter youtube = new YouTubeContentImporter(properties,

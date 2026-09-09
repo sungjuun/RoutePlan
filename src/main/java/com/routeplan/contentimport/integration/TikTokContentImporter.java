@@ -11,6 +11,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class TikTokContentImporter implements ContentImporter {
+    private static final int MAX_IMPORT_TITLE_LENGTH = 500;
+
     private final ContentImportProviderProperties properties;
     private final SocialMetadataClient client;
 
@@ -37,6 +39,11 @@ public class TikTokContentImporter implements ContentImporter {
         }
         String title = response.path("title").asText("").strip();
         if (title.isBlank()) return ImportedContent.awaiting("TikTok 설명을 가져오지 못했습니다. 캡션이나 장소 목록을 붙여 넣어 주세요.");
-        return ImportedContent.content(title, title);
+        return ImportedContent.content(importTitle(title), title);
+    }
+
+    private String importTitle(String caption) {
+        if (caption.length() <= MAX_IMPORT_TITLE_LENGTH) return caption;
+        return caption.substring(0, MAX_IMPORT_TITLE_LENGTH).stripTrailing();
     }
 }
